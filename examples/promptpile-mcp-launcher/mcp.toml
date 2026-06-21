@@ -11,7 +11,7 @@ list_timeout_ms = 300000
 failure_policy = "best-effort"
 flat_names = false
 
-# Filesystem MCP: allowed root is the `allowed` directory next to this file (cwd when launching from run-example.bat).
+# Filesystem MCP: allowed root is the `allowed` directory next to this file (cwd when launching from run-example.bat or run-example.sh).
 [servers.fs]
 command = "npx"
 args = ["--no-install", "@modelcontextprotocol/server-filesystem", "allowed"]

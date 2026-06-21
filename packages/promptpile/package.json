@@ -1,6 +1,6 @@
 {
   "name": "promptpile",
-  "version": "1.0.0",
+  "version": "1.0.0-beta.0",
   "description": "Promptpile: assemble markdown/JSON messages and call Chat Completions APIs",
   "main": "dist/index.js",
   "bin": {

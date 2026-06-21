@@ -1,6 +1,6 @@
 {
   "name": "promptpile-mcp",
-  "version": "0.1.0",
+  "version": "0.1.0-beta.0",
   "description": "Promptpile 与 MCP：stdio 会话 + 本机 HTTP 网关（launch / export-tools / exec-calls / check）",
   "main": "dist/src/index.js",
   "bin": {

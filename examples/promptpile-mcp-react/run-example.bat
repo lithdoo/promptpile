@@ -14,8 +14,8 @@ set "MCP_BASE_URL=http://127.0.0.1:%MCP_PORT%"
 set "PROMPTPILE_MCP_BASE_URL=%MCP_BASE_URL%"
 
 REM LLM dump: *.req.json / *.res.json in this directory (thought/observe/check/final tags).
-REM To disable: comment the line below.
-set "PROMPTPILE_REACT_DEBUG=1"
+REM Set to 1 to enable request/response dumps.
+set "PROMPTPILE_REACT_DEBUG=0"
 
 REM --- Step 1: gateway ready or start launcher ---
 curl -sf "%MCP_BASE_URL%/health" >nul 2>&1
@@ -63,7 +63,7 @@ if errorlevel 1 (
 
 REM --- Step 3: promptpile-react (config: promptpile-react.toml) ---
 echo.
-echo LLM dumps enabled: PROMPTPILE_REACT_DEBUG=1 ^(files in %CD%\*.req.json / *.res.json^)
+echo LLM debug setting: PROMPTPILE_REACT_DEBUG=%PROMPTPILE_REACT_DEBUG%
 echo Starting promptpile-react ^(config: promptpile-react.toml^). User input: type message then Ctrl+Z Enter ^(Windows^) to submit each round. Ctrl+C to exit.
 echo.
 
