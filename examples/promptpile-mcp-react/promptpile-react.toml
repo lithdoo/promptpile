@@ -1,0 +1,31 @@
+[[llm_api]]
+name = "deepseek"
+model = "deepseek-v4-flash"
+base_url = "https://api.deepseek.com/"
+api_key_env = "DEEPSEEK_API_KEY"
+
+[[llm_api]]
+name = "deepseek-nothink"
+model = "deepseek-v4-flash"
+base_url = "https://api.deepseek.com/"
+api_key_env = "DEEPSEEK_API_KEY"
+extra_body = { thinking = { type = "disabled" } }
+
+[promptpile-react]
+dir = "./messages"
+llm_api = "deepseek"
+tools_file = ".tools.toml"
+after_hook = "../after-hook-mcp-exec-calls.bat"
+max_step = 8
+input = true
+continue = true
+quiet = false
+
+thought_prompt = "../.react.core.md"
+observe_prompt = "../.react.observe.md"
+observe_llm_api_temperature = 0.2
+observe_llm_api_extra_body = { }
+check_prompt = "../.react.check.md"
+check_llm_api = "deepseek-nothink"
+check_llm_api_temperature = 0.2
+final_prompt = "../.react.final.md"

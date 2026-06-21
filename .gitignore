@@ -7,3 +7,6 @@ packages/*/dist/
 !.env.example
 *.req.json
 *.res.json
+packages/promptpile/outputs/
+examples/promptpile-mcp-launcher/.playwright-mcp/
+examples/promptpile-mcp-launcher/.tools.toml

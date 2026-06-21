@@ -1,0 +1,11 @@
+[[llm_api]]
+name = "deepseek"
+model = "deepseek-chat"
+base_url = "https://api.deepseek.com/v1"
+api_key_env = "DEEPSEEK_API_KEY"
+
+[promptpile]
+llm_api = "deepseek"
+dir = "./messages"
+disable_tool = true
+quiet = false
