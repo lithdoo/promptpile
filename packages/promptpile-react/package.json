@@ -1,6 +1,6 @@
 {
   "name": "promptpile-react",
-  "version": "1.0.0-beta.0",
+  "version": "0.1.0-beta.0",
   "description": "在 promptpile CLI 之上的 agent 编排（子进程调用 CLI；`-i` 写入 user 消息时依赖 workspace `promptpile` 包内的 file-handler）",
   "main": "dist/index.js",
   "bin": {
@@ -31,7 +31,7 @@
     "@iarna/toml": "^2.2.5",
     "@types/node": "^25.5.2",
     "commander": "^14.0.3",
-    "promptpile": "1.0.0-beta.0",
+    "promptpile": "0.1.0-beta.0",
     "typescript": "~5.9.3"
   },
   "devDependencies": {
