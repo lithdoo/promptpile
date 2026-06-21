@@ -7,9 +7,9 @@
 - **Node.js 18+**；使用 **Playwright MCP** 时官方建议 **Node.js 20+**（见 [Playwright MCP 安装说明](https://playwright.dev/mcp/installation)）。
 - 已在 **`examples/`** 执行 **`npm install`**；`promptpile-mcp` 由本目录的 `package.json` 通过本地 `file:` 依赖安装。
 - 已在仓库根目录执行 **`npm install`** 和 **`npm run build`**，并在 **`examples/`** 目录执行 **`npm install`**。filesystem 与 Playwright 服务由 `mcp.toml` 中的 **`npx --no-install`** 从 `examples/node_modules` 启动。
-- **Fetch MCP**：官方实现通过 **Python / uv** 分发（[`mcp-server-fetch`](https://pypi.org/project/mcp-server-fetch/)），**npm 上不存在** `@modelcontextprotocol/server-fetch`。本示例在 `mcp.toml` 中使用 **`uvx mcp-server-fetch`**。Windows 可在本目录运行 **`install-uv.bat`**（调用 [Astral 官方安装脚本](https://docs.astral.sh/uv/getting-started/installation/)，需联网），安装后一般会包含 **`uv`** / **`uvx`**；也可自行按 [uv 文档](https://docs.astral.sh/uv/) 安装。
-  - 若本机尚无 Python，可运行 **`install-python.bat`**：当 **`python`** 不在 PATH 时，通过 **winget** 安装 **Python 3.14**（包 ID `Python.Python.3.14`；需已安装 **winget**，可能出现 UAC）。本示例 fetch 仍以 **`uvx`** 为准；Python 可用于 pip 场景或将 **`mcp.toml`** 中 fetch 改为官方文档里的 **`python -m mcp_server_fetch`** 等形式。
-  - **明明终端里能跑 `uvx`，但网关仍报 fetch 失败 / `server_down:fetch`？** MCP SDK 只会把**当前 Node 进程**的 `PATH` 传给子进程；从某些 IDE 启动时，进程里的 PATH 可能比「新开 cmd」旧。**`run-example.bat`** 已在启动前从注册表合并 **系统 + 用户** Path，一般即可找到刚安装的 `uvx`。若仍失败，请在新开的 **cmd** 里执行 `where uvx`，确认路径后再运行 bat，或完全退出 IDE 后重开。
+- **Fetch MCP**：官方实现通过 **Python / uv** 分发（[`mcp-server-fetch`](https://pypi.org/project/mcp-server-fetch/)），**npm 上不存在** `@modelcontextprotocol/server-fetch`。本示例在 `mcp.toml` 中使用 **`uvx mcp-server-fetch`**。Windows 可运行 **`install-uv.bat`**；Linux/macOS 可运行 **`./install-uv.sh`**（调用 [Astral 官方安装脚本](https://docs.astral.sh/uv/getting-started/installation/)，需联网），安装后一般会包含 **`uv`** / **`uvx`**；也可自行按 [uv 文档](https://docs.astral.sh/uv/) 安装。
+  - 若本机尚无 Python，Windows 可运行 **`install-python.bat`**；Linux/macOS 可运行 **`./install-python.sh`**，脚本会使用可用的 apt、dnf、pacman 或 Homebrew 安装 Python 3。Windows 脚本通过 **winget** 安装 Python 3.14（包 ID `Python.Python.3.14`，可能需要 UAC）。本示例 fetch 仍以 **`uvx`** 为准。
+  - **明明终端里能跑 `uvx`，但网关仍报 fetch 失败 / `server_down:fetch`？** MCP SDK 只会把**当前 Node 进程**的 `PATH` 传给子进程；从某些 IDE 启动时，进程里的 PATH 可能比「新开 cmd」旧。Windows 的 **`run-example.bat`** 会在启动前从注册表合并 **系统 + 用户** Path；Linux/macOS 的 **`run-example.sh`** 使用当前 shell 的 `PATH`，一般即可找到刚安装的 `uvx`。若仍失败，请在新开的 **cmd** 里执行 `where uvx`，确认路径后再运行 bat，或完全退出 IDE 后重开。
   - 若未安装 `uv`，在 **`failure_policy = "best-effort"`** 下 fetch 服务会被跳过，**filesystem 仍可用**。
 - **Playwright MCP**（[`@playwright/mcp`](https://www.npmjs.com/package/@playwright/mcp)）：`mcp.toml` 中为 **`npx --no-install @playwright/mcp --headless`**（无界面浏览器）。首次使用浏览器能力时可能自动下载浏览器二进制，体积与耗时较大。不需要 Playwright 时可删除 **`[servers.playwright]`** 整段以减轻启动负担。
 - 可选：仅使用 filesystem 时，可编辑 **`mcp.toml`** 删除或注释 **`[servers.fetch]`** 整段，避免日志中的跳过提示。
@@ -22,12 +22,18 @@
 run-example.bat
 ```
 
+Linux / macOS：
+
+```bash
+./run-example.sh
+```
+
 网关默认监听 **`http://127.0.0.1:8765`**（见 `mcp.toml` 中 `[gateway].port`）。
 
 **终端 B**（在任意目录，已在 `examples/` 安装依赖）：
 
-```bat
-cd /d path\to\promptpile\examples\promptpile-mcp-launcher
+```bash
+cd path/to/promptpile/examples/promptpile-mcp-launcher
 npx --no-install promptpile-mcp export-tools --base-url http://127.0.0.1:8765
 ```
 

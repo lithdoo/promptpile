@@ -1,6 +1,6 @@
 {
   "name": "promptpile-plan",
-  "version": "0.0.0",
+  "version": "0.0.0-beta.0",
   "description": "在 promptpile CLI 之上的 plan-and-exec 编排（子进程调用，非 npm 依赖 promptpile 本体）",
   "main": "dist/index.js",
   "bin": {

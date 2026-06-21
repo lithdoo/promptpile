@@ -7,3 +7,6 @@ messages/
 # PROMPTPILE_REACT_DEBUG LLM dumps
 *.req.json
 *.res.json
+
+# Linux/macOS background gateway log
+.mcp-gateway.log
