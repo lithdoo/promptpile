@@ -1,0 +1,38 @@
+{
+  "name": "promptpile-plan",
+  "version": "0.0.0",
+  "description": "在 promptpile CLI 之上的 plan-and-exec 编排（子进程调用，非 npm 依赖 promptpile 本体）",
+  "main": "dist/index.js",
+  "bin": {
+    "promptpile-plan": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts"
+  },
+  "keywords": [
+    "promptpile-plan",
+    "promptpile",
+    "plan",
+    "exec",
+    "command-line"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "files": [
+    "dist",
+    "README.md",
+    "package.json"
+  ],
+  "dependencies": {
+    "@types/node": "^25.5.2",
+    "commander": "^14.0.3",
+    "typescript": "~5.9.3"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.2"
+  }
+}

@@ -1,0 +1,79 @@
+
+[[llm_api]]
+    name="deepseek"
+    model="chat"
+    base_url="https://api.deepseek.com/v1"
+    # 密钥直写（勿提交真实值）；与 api_key_env 二选一即可
+    api_key = ""
+    # 从「用户/系统环境变量」取值：此处填变量名（如 DEEPSEEK_API_KEY），运行时读取 process.env[该名]。
+    # 若 api_key_env 非空，建议实现为优先于 api_key，避免把密钥写进仓库。
+    api_key_env = "DEEPSEEK_API_KEY"
+
+[[llm_api]]
+    name="openai"
+    model="chat"
+    base_url="https://api.deepseek.com/v1"
+    api_key = ""
+    api_key_env = "OPENAI_API_KEY"
+
+[promptpile]
+    dir = './message'
+    output = './message/output.md'
+    quiet = false
+    after_hook = './after_hook.sh'
+    tool_choice = 'auto'
+    # 工具定义文件：仅 .toml，路径相对扫描目录根；文件内可写 extends = ["./base-tools.toml"]
+    tools_file = './.tools.toml'
+    disable_tool = false
+    continue = false
+    input = true
+    # insert_files / append_files 仅供裸跑 promptpile；react 在代码里用 --insert-files
+
+    # 从定义的 llm_api 里选
+    llm_api = 'deepseek' 
+
+    # 或者直接设置，这种方式的优先级更高，如果同时设置 llm_api 可以 override 部分参数
+    llm_api_key = ''
+    # 与 llm_api_key 二选一或并存：填「另一个环境变量」的名称，从用户/系统环境中取密钥（如 MY_PROMPTPILE_KEY）。
+    # 若 llm_api_key_env 非空，建议实现为覆盖直写 llm_api_key（不在配置文件里落明文）。
+    llm_api_key_env = ''
+    llm_api_model= ''
+    llm_api_base_url=''
+    llm_api_temperature = 0.8
+    llm_api_extra_body = { top_p = 0.9 }
+
+[promptpile-react]
+    # 以下参数单独读取，如果未配置则从 promptpile 采用的同名配置
+    dir = './message'
+    quiet = false
+    after_hook = './after_hook.sh'
+    tools_file = './.tools.toml'
+    continue = false
+    input = true
+
+    # 以下是 promptpile-react 的自有配置项
+    max_step = 10
+    thought_prompt = './thought.md'
+    observe_prompt = './observe.md'
+    final_prompt = '.final.md'
+
+    # 可以为每个阶段单独设置 llm_api 未设置则采用 promptpile 的 llm_api 配置
+    thought_llm_api = 'deepseek'
+    observe_llm_api = 'deepseek'
+    final_llm_api = 'deepseek'
+    
+    # 这种方式的优先级更高, thought/observe/final 均可配置，如果同时设置 llm_api 可以 override 部分参数，规则同 promptpile 的 llm_api
+    thought_llm_api_key = ''
+    thought_llm_api_model= ''
+    thought_llm_api_key_env = ''
+    thought_llm_api_base_url=''
+    thought_llm_api_temperature = 0.7
+    thought_llm_api_extra_body = { top_p = 0.85 }
+    observe_llm_api_extra_body = { }
+    check_prompt = './check.md'
+    check_llm_api = 'deepseek'
+    check_llm_api_temperature = 0.2
+    check_llm_api_extra_body = { }
+    final_llm_api_extra_body = { }
+
+

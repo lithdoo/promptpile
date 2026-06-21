@@ -1,0 +1,55 @@
+{
+  "name": "promptpile-mcp",
+  "version": "0.1.0",
+  "description": "Promptpile 与 MCP：stdio 会话 + 本机 HTTP 网关（launch / export-tools / exec-calls / check）",
+  "main": "dist/src/index.js",
+  "bin": {
+    "promptpile-mcp": "dist/src/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "npm run build && node --test dist/src/mcp-config.test.js dist/src/mcp/tool-name.test.js dist/src/http/execution.test.js dist/src/exec-calls/check-status.test.js dist/src/exec-calls/post-exec.test.js dist/src/exec-calls/scan-call-files.test.js dist/src/exec-calls/write-result-jsonl.test.js dist/src/commands/exec-calls.test.js",
+    "test:smoke": "npm run build && npm run mcp:smoke",
+    "prepare": "npm run build",
+    "mcp:smoke": "node dist/scripts/mcp-smoke.js",
+    "start": "node dist/src/index.js",
+    "dev": "ts-node src/index.ts"
+  },
+  "keywords": [
+    "promptpile-mcp",
+    "promptpile",
+    "mcp",
+    "model-context-protocol",
+    "command-line"
+  ],
+  "author": "",
+  "license": "ISC",
+  "engines": {
+    "node": ">=18"
+  },
+  "type": "commonjs",
+  "files": [
+    "dist",
+    "README.md",
+    "DESIGN.md",
+    "docs/after-hook.example.sh",
+    "package.json"
+  ],
+  "dependencies": {
+    "@iarna/toml": "^2.2.5",
+    "@koa/router": "^12.0.2",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@types/node": "^25.5.2",
+    "commander": "^14.0.3",
+    "koa": "^2.16.4",
+    "koa-bodyparser": "^4.4.1",
+    "typescript": "~5.9.3",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/koa": "^3.0.2",
+    "@types/koa__router": "^12.0.5",
+    "@types/koa-bodyparser": "^4.3.13",
+    "ts-node": "^10.9.2"
+  }
+}

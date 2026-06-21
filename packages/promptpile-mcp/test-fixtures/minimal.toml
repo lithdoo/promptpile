@@ -1,0 +1,5 @@
+# 仅用于本地手工验收 launch / curl（stub 后端）
+version = 1
+
+[gateway]
+port = 38471

@@ -1,0 +1,43 @@
+{
+  "name": "promptpile",
+  "version": "1.0.0",
+  "description": "Promptpile: assemble markdown/JSON messages and call Chat Completions APIs",
+  "main": "dist/index.js",
+  "bin": {
+    "promptpile": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "test": "npm run build && node test/resolve-config.cjs && node test/output-pile.cjs && node test/tools-extends.cjs && node test/llm-dump.cjs && node test/message-sidecar-files.cjs && node test/empty-dir-insert.cjs && node test/llm-sampling.cjs && node test/llm-extra-body.cjs && node test/assistant-extra-reasoning.cjs && node test/atomic-and-diagnostics.cjs && node test/after-hook-security.cjs"
+  },
+  "keywords": [
+    "promptpile",
+    "ai",
+    "chat",
+    "markdown",
+    "command-line"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "files": [
+    "dist",
+    "README.md",
+    "package.json"
+  ],
+  "dependencies": {
+    "@iarna/toml": "^2.2.5",
+    "@types/node": "^25.5.2",
+    "commander": "^14.0.3",
+    "glob": "^13.0.6",
+    "node-fetch": "^2.7.0",
+    "typescript": "~5.9.3"
+  },
+  "devDependencies": {
+    "@types/node-fetch": "^2.6.12",
+    "ts-node": "^10.9.2"
+  }
+}

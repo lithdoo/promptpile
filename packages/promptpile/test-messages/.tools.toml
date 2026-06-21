@@ -1,0 +1,5 @@
+# Minimal tools file for local runs (explicit --tools-file or TOML tools_file required).
+[[tools]]
+name = "promptpile_test_placeholder"
+description = "Replace with real tools for your project"
+parameters = { type = "object", properties = {} }

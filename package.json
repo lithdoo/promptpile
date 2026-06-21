@@ -1,0 +1,15 @@
+{
+  "name": "promptpile-monorepo",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w promptpile && npm run build -w promptpile-mcp && npm run build -w promptpile-react && npm run build -w promptpile-plan",
+    "test": "npm run test -w promptpile && npm run test -w promptpile-mcp && npm run test -w promptpile-react && npm run build -w promptpile-plan"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
