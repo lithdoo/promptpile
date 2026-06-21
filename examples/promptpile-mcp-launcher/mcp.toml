@@ -1,0 +1,32 @@
+version = 1
+
+[gateway]
+port = 8765
+
+[defaults]
+init_timeout_ms = 300000
+list_timeout_ms = 300000
+
+[behavior]
+failure_policy = "best-effort"
+flat_names = false
+
+# Filesystem MCP: allowed root is the `allowed` directory next to this file (cwd when launching from run-example.bat).
+[servers.fs]
+command = "npx"
+args = ["--no-install", "@modelcontextprotocol/server-filesystem", "allowed"]
+
+# Official fetch MCP is distributed as Python (PyPI); npm has no @modelcontextprotocol/server-fetch.
+# Requires `uv` / uvx on PATH. If unavailable, best-effort skips this server; filesystem still works.
+[servers.fetch]
+command = "uvx"
+args = ["mcp-server-fetch"]
+
+[servers.fetch.env]
+PYTHONIOENCODING = "utf-8"
+
+# Microsoft Playwright MCP — real browser (JS-heavy sites). Heavier than fetch; browsers may download on first use.
+# Docs: https://playwright.dev/mcp/installation — Node 20+ recommended.
+[servers.playwright]
+command = "npx"
+args = ["--no-install", "@playwright/mcp", "--headless"]

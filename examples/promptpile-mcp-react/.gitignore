@@ -1,0 +1,9 @@
+# Session dir: tools export, message files, assistant outputs
+messages/
+
+# Optional local overrides (not used by the example; do not commit secrets)
+.env
+
+# PROMPTPILE_REACT_DEBUG LLM dumps
+*.req.json
+*.res.json

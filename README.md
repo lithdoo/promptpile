@@ -24,3 +24,11 @@ Node.js 18 or newer is required.
 - Message and tool shapes currently follow OpenAI Chat Completions.
 - `promptpile-react` still imports selected `promptpile/dist/*` modules; public API decoupling is planned separately.
 - This repository can be consumed by other repositories as a Git submodule.
+
+## Examples
+
+- [`promptpile-chat-loop`](./examples/promptpile-chat-loop/) — basic multi-round chat loop.
+- [`promptpile-mcp-launcher`](./examples/promptpile-mcp-launcher/) — local MCP stdio gateway with filesystem, fetch and Playwright servers.
+- [`promptpile-mcp-react`](./examples/promptpile-mcp-react/) — ReAct loop backed by the MCP gateway.
+
+Run `npm install` and `npm run build` at the repository root first. MCP examples also require `npm install` in `examples/`.

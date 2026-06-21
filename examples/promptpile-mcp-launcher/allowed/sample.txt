@@ -1,0 +1,1 @@
+This directory is the only path exposed to the MCP filesystem server (see mcp.toml).
