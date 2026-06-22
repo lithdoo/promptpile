@@ -1,0 +1,27 @@
+{
+  "name": "promptpile-compress",
+  "version": "0.1.0",
+  "private": true,
+  "description": "独立的会话目录压缩与检索工具 — 压缩 promptpile 消息目录，提供检索工具和 MCP 服务",
+  "main": "dist/index.js",
+  "bin": {
+    "promptpile-compress": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "echo \"tests TBD\""
+  },
+  "dependencies": {
+    "@iarna/toml": "^3.0.0",
+    "commander": "^12.0.0"
+  },
+  "optionalDependencies": {
+    "tiktoken": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
