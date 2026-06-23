@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "echo \"tests TBD\""
+    "test": "npm run build && node --test dist/restore/scanner.test.js dist/restore/index.test.js"
   },
   "dependencies": {
     "@iarna/toml": "^3.0.0",
@@ -19,6 +19,7 @@
     "tiktoken": "*"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
     "typescript": "^5.0.0"
   },
   "engines": {
