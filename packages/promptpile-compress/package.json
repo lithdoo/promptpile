@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "npm run build && node --test dist/restore/scanner.test.js dist/restore/index.test.js"
+    "test": "npm run build && node --test dist/restore/scanner.test.js dist/restore/index.test.js dist/compress/index.test.js"
   },
   "dependencies": {
     "@iarna/toml": "^3.0.0",
