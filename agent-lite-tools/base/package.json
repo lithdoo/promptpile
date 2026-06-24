@@ -1,0 +1,20 @@
+{
+  "name": "@agent-tool-lite/base",
+  "version": "1.0.0",
+  "description": "Shared base interfaces for agent-lite tools.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build"
+  },
+  "keywords": ["agent-tools", "base", "types"],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "files": ["dist", "README.md", "package.json"],
+  "dependencies": {
+    "@types/node": "^25.5.2",
+    "typescript": "^5.0.0"
+  }
+}

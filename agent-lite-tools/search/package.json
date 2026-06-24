@@ -1,0 +1,24 @@
+{
+  "name": "@agent-tool-lite/search",
+  "version": "1.0.0",
+  "description": "Glob and Grep agent tools via @vscode/ripgrep (bundled rg binary), aligned with Claude Code behavior subset",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "test": "npm run build && tsc -p tsconfig.test.json && node --test test-dist/glob-files.test.js test-dist/build-grep-args.test.js test-dist/run-ripgrep.test.js test-dist/glob-tool.test.js test-dist/grep-tool.test.js test-dist/ignore-file-watch.test.js"
+  },
+  "keywords": ["ripgrep", "glob", "grep", "agent-tools"],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "files": ["dist", "README.md", "package.json"],
+  "dependencies": {
+    "@agent-tool-lite/base": "1.0.0",
+    "@types/node": "^25.5.2",
+    "@vscode/ripgrep": "^1.17.1",
+    "chokidar": "^4.0.3",
+    "typescript": "^5.0.0"
+  }
+}

@@ -1,0 +1,3 @@
+{"id":"call_00_t1hlvczbOxcmWPxESCiXujcY","type":"function","function":{"name":"WebFetch","arguments":"{\"url\": \"https://www.zhihu.com/topic/25346596\", \"prompt\": \"SCP基金会是什么？提取主要介绍内容\"}"}}
+{"id":"call_01_0ltXgDgj43mfOsP0Fjoi2zxH","type":"function","function":{"name":"WebFetch","arguments":"{\"url\": \"https://zhidao.baidu.com/question/1522185279267195180.html\", \"prompt\": \"SCP基金会官网是什么？如何进入？\"}"}}
+{"id":"call_02_OgJhr2hxnhgDjZvkkaEGkSZj","type":"function","function":{"name":"WebFetch","arguments":"{\"url\": \"https://www.zhihu.com/column/c_1561816061825228800\", \"prompt\": \"SCP收容物介绍，提取内容\"}"}}

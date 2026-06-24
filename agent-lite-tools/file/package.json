@@ -1,0 +1,34 @@
+{
+  "name": "@agent-tool-lite/file",
+  "version": "1.0.0",
+  "description": "Filesystem helpers ported from Claude Code (readFileInRange, sync file read with metadata)",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "test": "npm run build && tsc -p tsconfig.test.json && node --test test-dist/read-file-in-range.test.js test-dist/file-read-sync.test.js test-dist/read-file-in-range-tool.test.js test-dist/format-file-size.test.js test-dist/safe-resolve-path.test.js test-dist/file-write.test.js test-dist/file-write-tool.test.js test-dist/file-edit.test.js test-dist/file-edit-tool.test.js test-dist/roots-file-watch.test.js"
+  },
+  "keywords": [
+    "filesystem",
+    "read-file"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "files": [
+    "dist",
+    "README.md",
+    "package.json"
+  ],
+  "dependencies": {
+    "@agent-tool-lite/base": "1.0.0",
+    "@types/node": "^25.5.2",
+    "chokidar": "^4.0.3",
+    "diff": "^5.2.2",
+    "typescript": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/diff": "^7.0.2"
+  }
+}

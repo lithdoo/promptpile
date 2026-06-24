@@ -1,0 +1,41 @@
+# Glob/Grep ignore rules (one pattern per line). Lines starting with # are skipped.
+# Patterns are resolved relative to this file's directory unless absolute.
+# Edit freely; the ignore controller watches this file for changes.
+
+# Dependencies
+**/node_modules/**
+**/vendor/**
+
+# Package managers (large / noisy)
+**/package-lock.json
+**/pnpm-lock.yaml
+**/yarn.lock
+
+# Build outputs & caches
+**/dist/**
+**/build/**
+**/out/**
+**/.next/**
+**/.nuxt/**
+**/coverage/**
+**/.turbo/**
+**/.cache/**
+
+# VCS & IDE
+**/.git/**
+**/.svn/**
+**/.idea/**
+**/.vscode/**
+
+# Env & secrets (avoid grepping keys)
+**/.env
+**/.env.*
+
+# Logs & temp
+**/*.log
+**/tmp/**
+**/temp/**
+
+# OS junk
+**/.DS_Store
+**/Thumbs.db

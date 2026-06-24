@@ -3,9 +3,12 @@
   "private": true,
   "version": "1.0.0",
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "agent-lite-tools/*"
   ],
   "scripts": {
+    "build:agent-tools": "npm run build -w @agent-tool-lite/base && npm run build -w @agent-tool-lite/file && npm run build -w @agent-tool-lite/search && npm run build -w @agent-tool-lite/shell && npm run build -w @agent-tool-lite/web",
+    "test:agent-tools": "npm run test -w @agent-tool-lite/file && npm run test -w @agent-tool-lite/search && npm run test -w @agent-tool-lite/shell && npm run test -w @agent-tool-lite/web",
     "build": "npm run build -w promptpile && npm run build -w promptpile-mcp && npm run build -w promptpile-react && npm run build -w promptpile-plan && npm run build -w promptpile-compress",
     "test": "npm run test -w promptpile && npm run test -w promptpile-mcp && npm run test -w promptpile-react && npm run build -w promptpile-plan && npm run test -w promptpile-compress"
   },

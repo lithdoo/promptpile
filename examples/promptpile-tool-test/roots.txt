@@ -1,0 +1,9 @@
+# File-tool access roots for executeToolCall.
+# - One absolute or relative path per line.
+# - Lines starting with # are ignored.
+# - Relative paths are resolved against this file's directory.
+# - This only restricts the @agent-tool-lite/file tools; shell tools are not
+#   filtered here, but they share the cwd passed to execute().
+# - The roots file is hot-reloaded by the access controller's watcher; you can
+#   edit it while a script is running.
+.

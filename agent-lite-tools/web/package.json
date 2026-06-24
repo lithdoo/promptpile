@@ -1,0 +1,26 @@
+{
+  "name": "@agent-tool-lite/web",
+  "version": "1.0.0",
+  "description": "Web tool placeholders for agent-lite-tools.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "test": "npm run build && tsc -p tsconfig.test.json && node --test test-dist/web-fetch-tool.test.js test-dist/ai-config-controller.test.js test-dist/searxng-config-controller.test.js test-dist/searxng-search-tool.test.js test-dist/env-like-parser.test.js"
+  },
+  "keywords": ["web", "agent-tools"],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "files": ["dist", "README.md", "package.json"],
+  "dependencies": {
+    "@agent-tool-lite/base": "1.0.0",
+    "@types/node": "^25.5.2",
+    "@types/turndown": "^5.0.5",
+    "axios": "^1.9.0",
+    "chokidar": "^4.0.3",
+    "turndown": "^7.2.0",
+    "typescript": "^5.0.0"
+  }
+}

@@ -10,6 +10,10 @@
     "promptpile": "file:../packages/promptpile",
     "promptpile-mcp": "file:../packages/promptpile-mcp",
     "promptpile-react": "file:../packages/promptpile-react",
+    "@agent-tool-lite/file": "file:../agent-lite-tools/file",
+    "@agent-tool-lite/search": "file:../agent-lite-tools/search",
+    "@agent-tool-lite/shell": "file:../agent-lite-tools/shell",
+    "@agent-tool-lite/web": "file:../agent-lite-tools/web",
     "@modelcontextprotocol/server-filesystem": "^2026.1.14",
     "@playwright/mcp": "^0.0.75"
   },

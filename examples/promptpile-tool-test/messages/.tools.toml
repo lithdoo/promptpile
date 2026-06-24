@@ -1,0 +1,90 @@
+[[tools]]
+name = "read_file"
+description = "Read a text file from disk. Returns a slice of lines (0-based line index), with UTF-8 BOM stripped and CRLF normalized to LF in the returned content. Small files use a fast path; large or non-regular files stream. Set limit and/or max_bytes to avoid reading huge files in one go. If truncate_on_byte_limit is true, output is clipped to the byte budget at line boundaries (truncated_by_bytes on the result) instead of throwing."
+parameters = '{"type":"object","additionalProperties":false,"properties":{"file_path":{"type":"string","description":"Absolute or relative path to the file to read."},"offset":{"type":"number","description":"0-based line index to start from (inclusive). Default 0."},"limit":{"type":"number","description":"Maximum number of lines to return. Omit to read to end of file (subject to max_bytes if set)."},"max_bytes":{"type":"number","description":"Maximum file size in bytes (guardrail). If the file is larger, throws unless truncate_on_byte_limit is true."},"truncate_on_byte_limit":{"type":"boolean","description":"If true with max_bytes set, cap returned text at the byte limit on line boundaries; sets truncated_by_bytes on the result instead of throwing."}},"required":["file_path"]}'
+
+[[tools]]
+name = "Write"
+description = "Write a text file in full. For **existing** files, the file must have been read first (full read, not a line slice) and the same readFileState map must be passed in execute options. New files can be created without a prior read. Path can be absolute, relative to cwd, or use ~ for home."
+parameters = '{"type":"object","additionalProperties":false,"properties":{"file_path":{"type":"string","description":"Path to the file to write (absolute, relative, or ~)."},"content":{"type":"string","description":"Full new file content."}},"required":["file_path","content"]}'
+
+[[tools]]
+name = "Edit"
+description = "Edit a file by replacing an exact string with another. For **existing** files, the file must have been read first (full read, not a line slice) and the same readFileState map must be passed. To create a new file, set old_string to the empty string. Path can be absolute, relative to cwd, or use ~ for home."
+parameters = '{"type":"object","additionalProperties":false,"properties":{"file_path":{"type":"string","description":"Path to the file to edit (absolute, relative, or ~)."},"old_string":{"type":"string","description":"Text to find and replace. Use empty string to create a new file."},"new_string":{"type":"string","description":"Replacement text."},"replace_all":{"type":"boolean","description":"If true, replace every occurrence of old_string."}},"required":["file_path","old_string","new_string"]}'
+
+[[tools]]
+name = "Glob"
+description = """
+- Fast file pattern matching tool that works with any codebase size
+- Supports glob patterns like "**/*.js" or "src/**/*.ts"
+- Returns matching file paths sorted by modification time
+- Use this tool when you need to find files by name patterns
+- When you are doing an open ended search that may require multiple rounds of globbing and grepping, use the Agent tool instead"""
+parameters = '{"type":"object","additionalProperties":false,"properties":{"pattern":{"type":"string","description":"The glob pattern to match files against"},"path":{"type":"string","description":"The directory to search in. If not specified, the current working directory will be used. IMPORTANT: Omit this field to use the default directory. DO NOT enter \"undefined\" or \"null\" - simply omit it for the default behavior. Must be a valid directory path if provided."}},"required":["pattern"]}'
+
+[[tools]]
+name = "Grep"
+description = """
+A powerful search tool built on ripgrep
+
+  Usage:
+  - ALWAYS use Grep for search tasks. NEVER invoke `grep` or `rg` as a Bash command. The Grep tool uses ripgrep with a stable interface.
+  - Supports full regex syntax (e.g., "log.*Error", "function\\s+\\w+")
+  - Filter files with glob parameter (e.g., "*.js", "**/*.tsx") or type parameter (e.g., "js", "py", "rust")
+  - Output modes: "content" shows matching lines, "files_with_matches" shows only file paths (default), "count" shows match counts
+  - Use the Agent tool for open-ended searches requiring multiple rounds
+  - Pattern syntax: Uses ripgrep (not grep) - literal braces need escaping (use `interface\\{\\}` to find `interface{}` in Go code)
+  - Multiline matching: By default patterns match within single lines only. For cross-line patterns, use multiline: true
+"""
+parameters = '{"type":"object","additionalProperties":false,"properties":{"pattern":{"type":"string","description":"The regular expression pattern to search for in file contents"},"path":{"type":"string","description":"File or directory to search in (rg PATH). Defaults to current working directory."},"glob":{"type":"string","description":"Glob pattern to filter files (e.g. \"*.js\", \"*.{ts,tsx}\") - maps to rg --glob"},"output_mode":{"type":"string","enum":["content","files_with_matches","count"],"description":"Output mode: \"content\" shows matching lines (supports -A/-B/-C context, -n line numbers, head_limit), \"files_with_matches\" shows file paths (supports head_limit), \"count\" shows match counts (supports head_limit). Defaults to \"files_with_matches\"."},"-B":{"type":"number","description":"Lines before each match (rg -B). Requires output_mode: \"content\"."},"-A":{"type":"number","description":"Lines after each match (rg -A). Requires output_mode: \"content\"."},"-C":{"type":"number","description":"Alias for context."},"context":{"type":"number","description":"Lines before and after each match (rg -C). Requires output_mode: \"content\"."},"-n":{"type":"boolean","description":"Show line numbers in output (rg -n). Requires output_mode: \"content\". Defaults to true."},"-i":{"type":"boolean","description":"Case insensitive search (rg -i)"},"type":{"type":"string","description":"File type to search (rg --type). Common types: js, py, rust, go, java, etc."},"head_limit":{"type":"number","description":"Limit output to first N lines/entries. Defaults to 250 when unspecified. Pass 0 for unlimited."},"offset":{"type":"number","description":"Skip first N lines/entries before applying head_limit. Defaults to 0."},"multiline":{"type":"boolean","description":"Enable multiline mode (rg -U --multiline-dotall). Default: false."}},"required":["pattern"]}'
+
+[[tools]]
+name = "Bash"
+description = """
+Run a **bash** (or resolved zsh) command in a **subprocess** and return stdout/stderr.
+
+- **Synchronous**: waits until the process exits, the per-call **timeout** elapses, or `options.signal` aborts.
+- **Working directory**: use `options.cwd` for each call. This package does **not** persist cwd across tool calls.
+- **Not included**: sandbox, background execution, notifications, or UI/analytics hooks.
+- Prefer **@agent-tool-lite/file** (or your host read/write tools) for reading, writing, and searching files instead of `cat`/`sed` when possible.
+- **Timeouts** follow Claude defaults unless overridden by `BASH_DEFAULT_TIMEOUT_MS` / `BASH_MAX_TIMEOUT_MS` env vars (see README).
+- **Optional** `description` is for host logging only; it does not change how the command runs.
+
+**Windows**: bash is used if `bash.exe` is on PATH (e.g. Git for Windows) or common install paths; otherwise execution fails with a helpful error."""
+parameters = '{"type":"object","additionalProperties":false,"properties":{"command":{"type":"string","description":"Shell command to run (passed to bash -lc)."},"timeout":{"type":"number","description":"Optional timeout in milliseconds (clamped to max). Defaults from BASH_DEFAULT_TIMEOUT_MS or 2 minutes."},"description":{"type":"string","description":"Optional short summary for host logs (not shown to the shell). Max 2000 characters."}},"required":["command"]}'
+
+[[tools]]
+name = "PowerShell"
+description = """
+Run a **PowerShell** command in a **subprocess** (`-NoProfile -NonInteractive -Command`) and return stdout/stderr.
+
+- **Windows only** in this package: on other platforms, `execute` throws (use `bashTool` or a host-specific runner instead).
+- **Synchronous**: waits until exit, **timeout**, or `options.signal` aborts.
+- **Working directory**: `options.cwd` per call only; **no** session cwd persistence here.
+- **Not included**: sandbox, background tasks, notifications, UI/analytics.
+- Prefer **@agent-tool-lite/file** for file read/write/search when applicable; use PowerShell for git/npm/docker/cmdlets as needed.
+- **Optional** `description` is for host logging only.
+
+**Edition note**: both PowerShell 7 (`pwsh`) and Windows PowerShell 5.1 may be chosen from PATH; script compatibility is the caller’s responsibility."""
+parameters = '{"type":"object","additionalProperties":false,"properties":{"command":{"type":"string","description":"PowerShell script or expression (-Command)."},"timeout":{"type":"number","description":"Optional timeout in milliseconds (same clamp as Bash / Claude bash tool)."},"description":{"type":"string","description":"Optional short summary for host logs. Max 2000 characters."}},"required":["command"]}'
+
+[[tools]]
+name = "WebFetch"
+description = """
+抓取指定 URL 的网页内容并返回可读文本结果。
+
+- 支持 HTML 转 Markdown。
+- 对二进制内容会写入系统临时目录并返回路径。
+- 可选启用二次模型摘要（当 AI_MODEL/AI_API_KEY/AI_API_BASE_URL 配置齐全时）。"""
+parameters = '{"type":"object","additionalProperties":false,"properties":{"url":{"type":"string","description":"要抓取的 URL（必须是完整 URL）"},"prompt":{"type":"string","description":"可选摘要提示词；当启用 AI 摘要链路时生效"}},"required":["url","prompt"]}'
+
+[[tools]]
+name = "SearxngSearch"
+description = """
+通过本地 SearXNG 实例执行搜索并返回结构化结果。
+
+- 支持 categories / engines / language / safeSearch 等参数。
+- 结果可选使用 AI 进行二次摘要（配置齐全时启用）。
+- 摘要失败会降级，不影响搜索结果返回。"""
+parameters = '{"type":"object","additionalProperties":false,"properties":{"query":{"type":"string","description":"搜索关键词"},"page":{"type":"integer","description":"页码（从 1 开始）"},"limit":{"type":"integer","description":"返回条数上限"},"categories":{"type":"array","items":{"type":"string"},"description":"分类列表"},"engines":{"type":"array","items":{"type":"string"},"description":"搜索引擎列表"},"language":{"type":"string","description":"语言（例如 zh、en-US）"},"safeSearch":{"type":"integer","description":"安全搜索等级 0/1/2"},"timeRange":{"type":"string","enum":["day","month","year"],"description":"时间范围过滤"},"summaryPrompt":{"type":"string","description":"可选摘要提示词；仅在 AI 配置完整时生效"}},"required":["query"]}'

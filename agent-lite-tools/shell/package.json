@@ -1,0 +1,22 @@
+{
+  "name": "@agent-tool-lite/shell",
+  "version": "1.0.0",
+  "description": "Minimal Bash and PowerShell agent tools (sync spawn, timeout, cwd per call).",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "test": "npm run build && tsc -p tsconfig.test.json && node --test test-dist/bash-tool.test.js test-dist/powershell-tool.test.js test-dist/run-shell.test.js test-dist/parse-args.test.js"
+  },
+  "keywords": ["shell", "bash", "powershell", "agent-tools"],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "files": ["dist", "README.md", "package.json"],
+  "dependencies": {
+    "@agent-tool-lite/base": "1.0.0",
+    "@types/node": "^25.5.2",
+    "typescript": "^5.0.0"
+  }
+}
