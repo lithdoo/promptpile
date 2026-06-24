@@ -161,7 +161,7 @@ export interface CompressStrategy {
 说明：
 
 - `CompressionManifest` 是 compress 写入、restore 读取的共享结构。restore 只解析 `version` 和 `archivedTurnIndices`，忽略其余字段。
-- `compression.json` 不保存 `summary` 全文，避免与顶层 `[N]system.md` 形成双写状态。summary 的权威副本只有顶层 `[N]system.md`；staging 阶段的 `.summary.md` 只是提交前的临时文件。
+- `compression.json` 不保存 `summary` 全文，避免与顶层 `[N]system.md` 形成双写状态。summary 的权威副本只有顶层 `[N]system.md`；archive 内的 `.summary.md` 只是非权威副本，用于提交阶段读取和后续人工排查。
 - `CompressStrategy` 是策略接口。`sliding-window` 的 `generateSummary` 为同步生成（不需要 LLM 调用），但接口返回 `Promise<string>` 以兼容未来的异步策略。
 - `ScannedFile` 是 compress 包内类型。restore 当前只公开 archive/recovery 相关类型，不公开消息文件解析结果；compress 不应依赖 restore 的未导出实现细节。
 
@@ -319,10 +319,11 @@ prepareStaging(directory, archiveTurns, summary, summaryIdx):
          archivedTurnIndices: [<sorted idx list>]
        }
 
-  5. 写入摘要临时文件
+  5. 写入摘要副本
      write <staging>/.summary.md  = summary text
-     // .summary.md 是固定名称，仅供 commitStaging 写入顶层 summary 使用；
-     // recover/listMessageFiles 不把它视为消息文件，staging 回滚时会随 staging 被删除
+     // .summary.md 是固定名称，供 commitStaging 写入顶层 summary 使用；
+     // staging rename 后会保留在 archive 内，但它不是权威状态。
+     // recover/listMessageFiles 不把它视为消息文件，restore 时会随 archive 被删除。
 ```
 
 ### 7.2 提交阶段
@@ -572,7 +573,7 @@ Phase 5 — CLI
 | `[0]system.md` 不存在 | 正常处理——压缩不依赖 system 文件存在 |
 | 已有 archive 目录（重压缩） | 先调用 restoreArchivedTurns 完整还原，再压缩 |
 | 多个 archive 目录 | restore 模块处理（按 idx 从新到旧全部还原） |
-| dry-run + staging 残留 | 报告 staging 回滚计划，不执行 |
+| dry-run + staging 残留 | 返回 `dry_run`，不执行回滚；CLI 首期只输出跳过原因 |
 
 ### 中断恢复边界
 
