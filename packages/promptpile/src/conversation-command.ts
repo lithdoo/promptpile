@@ -3,24 +3,27 @@ import path from 'path';
 import { Command } from 'commander';
 import { appendUserMessage, scanDirectory } from './file-handler';
 
-interface AppendUserOptions {
+export interface AppendUserOptions {
   directory: string;
   quiet?: boolean;
 }
 
-const isAppendUserCommand = (argv: string[]): boolean =>
-  argv[2] === 'conversation' && argv[3] === 'append-user';
-
-const parseAppendUserOptions = (argv: string[]): AppendUserOptions => {
-  const program = new Command();
-  program
-    .name('promptpile conversation append-user')
+export const registerConversationCommand = (
+  program: Command,
+  onAppendUser?: (options: AppendUserOptions) => void | Promise<void>
+): void => {
+  const conversation = program
+    .command('conversation')
+    .description('Manage conversation message artifacts');
+  const appendUser = conversation
+    .command('append-user')
     .description('Append one user message without invoking an LLM')
     .requiredOption('-d, --directory <path>', 'Existing message directory')
     .option('-q, --quiet', 'Suppress successful stdout output');
 
-  program.parse([argv[0], argv[1], ...argv.slice(4)], { from: 'node' });
-  return program.opts<AppendUserOptions>();
+  if (onAppendUser !== undefined) {
+    appendUser.action(onAppendUser);
+  }
 };
 
 const readStdinUtf8 = async (): Promise<string> => {
@@ -46,20 +49,12 @@ const requireExistingDirectory = (cwd: string, directory: string): string => {
   return resolved;
 };
 
-/**
- * Run a conversation-domain command when argv selects one.
- * Returns false for the normal completion command path.
- */
-export const tryRunConversationCommand = async (
-  argv: string[],
+/** Append one user message without loading completion config or invoking an LLM. */
+export const runAppendUserCommand = async (
+  options: AppendUserOptions,
   cwd: string
-): Promise<boolean> => {
-  if (!isAppendUserCommand(argv)) {
-    return false;
-  }
-
+): Promise<void> => {
   try {
-    const options = parseAppendUserOptions(argv);
     const directory = requireExistingDirectory(cwd, options.directory);
     const content = await readStdinUtf8();
     if (content.trim() === '') {
@@ -74,6 +69,4 @@ export const tryRunConversationCommand = async (
     console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
     process.exitCode = 1;
   }
-
-  return true;
 };

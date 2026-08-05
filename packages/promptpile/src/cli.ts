@@ -4,6 +4,10 @@ import { parseTemperatureInput } from './llm-sampling';
 import { parseOutputPileFd, parseOutputPileFormat } from './output-pile';
 import { Config } from './types';
 import { parseMissingToolResultsPolicy } from './tool-result-policy';
+import {
+  registerConversationCommand,
+  type AppendUserOptions
+} from './conversation-command';
 
 /** Result of {@link parseCli}; `configPath` is raw path from argv (resolve against cwd in resolve-config). */
 export interface CliParseResult {
@@ -18,12 +22,18 @@ export interface CliParseResult {
   options: Partial<Config>;
 }
 
-const buildProgram = (): Command => {
+export interface PromptpileCommandHandlers {
+  completion: () => void | Promise<void>;
+  appendUser: (options: AppendUserOptions) => void | Promise<void>;
+}
+
+export const buildProgram = (handlers?: PromptpileCommandHandlers): Command => {
   const program = new Command();
   program
     .name('promptpile')
     .description('Assemble message files and call Chat Completions APIs')
     .version('1.0.0')
+    .enablePositionalOptions()
     .option('--config <path>', 'TOML config file path (relative to cwd)')
     .option('--llm-config <path>', 'TOML file used only as the [[llm_api]] profile database')
     .option('--llm-api <name>', 'Select a named [[llm_api]] profile')
@@ -80,8 +90,21 @@ const buildProgram = (): Command => {
     .option(
       '--missing-tool-results <policy>',
       'Handle missing tool results: warn | error | ignore (default: warn)'
-    )
+    );
+
+  registerConversationCommand(program, handlers?.appendUser);
+  // Keep the root command as the backwards-compatible default completion path.
+  // parseCli builds the same tree without executing completion side effects.
+  program.action(handlers?.completion ?? (() => undefined));
   return program;
+};
+
+/** Parse and dispatch the public CLI command tree. */
+export const runCli = async (
+  argv: string[],
+  handlers: PromptpileCommandHandlers
+): Promise<void> => {
+  await buildProgram(handlers).parseAsync(argv, { from: 'node' });
 };
 
 export const parseCli = (argv: string[]): CliParseResult => {

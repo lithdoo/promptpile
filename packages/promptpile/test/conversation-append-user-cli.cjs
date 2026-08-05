@@ -23,6 +23,18 @@ const run = (args, input) => spawnSync(process.execPath, [cli, ...args], {
 });
 
 try {
+  const rootHelp = run(['--help']);
+  assert.strictEqual(rootHelp.status, 0, rootHelp.stderr);
+  assert.match(rootHelp.stdout, /Commands:\s+[\s\S]*conversation/);
+
+  const conversationHelp = run(['conversation', '--help']);
+  assert.strictEqual(conversationHelp.status, 0, conversationHelp.stderr);
+  assert.match(conversationHelp.stdout, /Commands:\s+[\s\S]*append-user/);
+
+  const unknownCommand = run(['conversation', 'unknown']);
+  assert.strictEqual(unknownCommand.status, 1);
+  assert.match(unknownCommand.stderr, /unknown command ['"]unknown['"]/);
+
   const messages = path.join(tmp, 'messages');
   fs.mkdirSync(messages);
 
