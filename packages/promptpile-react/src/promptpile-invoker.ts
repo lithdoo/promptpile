@@ -34,7 +34,7 @@ function tryResolveBundledPromptpileScript(): string | null {
 /**
  * 解析 promptpile 子进程启动方式：
  * 1. `PROMPTPILE_BIN` 非空 → 沿用（覆盖内置）
- * 2. 否则若依赖中存在已构建的 `promptpile/dist/index.js` → `node` + 该脚本（本仓库默认）
+ * 2. 否则若依赖中存在当前固定的已构建入口 → `node` + 该脚本（本仓库默认）
  * 3. 否则回退到 PATH 上的 `promptpile`
  */
 export function getPromptpileSpawnConfig(): PromptpileSpawnConfig {
