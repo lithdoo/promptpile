@@ -358,6 +358,21 @@ parameters = '{"type":"object","properties":{"city":{"type":"string"}},"required
 node dist/index.js --help
 ```
 
+### Append a user message without an LLM
+
+`conversation append-user` appends one user message to an existing message
+directory. It reads the complete UTF-8 message from stdin and does not load an
+API key, tools, model configuration, or after-hooks.
+
+```bash
+printf '%s' 'Analyze this repository' \
+  | promptpile conversation append-user -d ./messages
+```
+
+On success, stdout contains the written file path. Use `--quiet` to suppress
+that output. Empty input, a missing directory, or a non-directory target exits
+with status 1 without writing a message.
+
 配置示例见 [example.toml](./example.toml)、[example.sh](./example.sh)。
 
 ---

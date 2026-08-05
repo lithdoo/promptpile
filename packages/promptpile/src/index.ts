@@ -23,6 +23,7 @@ import { isPromptpileDiagnostic } from './diagnostic-log';
 import { createOutputPileWriter } from './output-pile';
 import type { AssistantExtraPayload, ChatApiToolChoice, ToolCall } from './types';
 import { applyMissingToolResultsPolicy } from './tool-result-policy';
+import { tryRunConversationCommand } from './conversation-command';
 
 const readUserInputFromTerminal = async (): Promise<string> => {
   console.log('Enter user message. Finish with Ctrl+Z then Enter (Windows), or Ctrl+D (macOS/Linux).');
@@ -101,6 +102,9 @@ const printToolCallsLines = (toolCalls: ToolCall[] | undefined, quiet: boolean):
 async function main(): Promise<void> {
   try {
     const cwd = process.cwd();
+    if (await tryRunConversationCommand(process.argv, cwd)) {
+      return;
+    }
     const config = resolveConfig(cwd, process.argv);
 
     if (!config.apiKey) {
