@@ -33,8 +33,8 @@ jobs:
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Install dependencies without workspace lifecycle builds
+        run: npm ci --ignore-scripts
 
       - name: Build active packages
         run: npm run build
@@ -42,7 +42,7 @@ jobs:
       - name: Test active packages
         run: npm test
 
-      - name: Build supporting agent tools
+      - name: Build supporting agent tools in dependency order
         run: npm run build:agent-tools
 
       - name: Test supporting agent tools
