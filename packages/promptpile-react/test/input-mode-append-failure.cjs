@@ -1,0 +1,90 @@
+'use strict';
+
+const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { spawnSync } = require('child_process');
+
+const root = path.join(__dirname, '..');
+const reactCli = path.join(root, 'dist', 'index.js');
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ppr-input-failure-'));
+
+try {
+  const messages = path.join(tmp, 'messages');
+  const logPath = path.join(tmp, 'invocations.jsonl');
+  fs.mkdirSync(messages);
+
+  const fakeJs = path.join(tmp, 'fake-promptpile.cjs');
+  fs.writeFileSync(
+    fakeJs,
+    [
+      "'use strict';",
+      "const fs = require('fs');",
+      "let stdin = '';",
+      "process.stdin.setEncoding('utf8');",
+      "process.stdin.on('data', chunk => { stdin += chunk; });",
+      "process.stdin.on('end', () => {",
+      "  const args = process.argv.slice(2);",
+      "  if (process.env.FAKE_PROMPTPILE_NODE_SHIM === '1') args.unshift('conversation');",
+      "  fs.appendFileSync(process.env.FAKE_PROMPTPILE_LOG, JSON.stringify({ args, stdin }) + '\\n');",
+      "  if (args[0] === 'conversation') {",
+      "    console.error('synthetic append failure');",
+      "    process.exitCode = 7;",
+      "  }",
+      "});",
+      ''
+    ].join('\n')
+  );
+
+  let fakeBin;
+  if (process.platform === 'win32') {
+    fakeBin = path.join(tmp, 'fake-promptpile.exe');
+    try {
+      fs.linkSync(process.execPath, fakeBin);
+    } catch {
+      fs.copyFileSync(process.execPath, fakeBin);
+    }
+    fs.copyFileSync(fakeJs, path.join(tmp, 'conversation'));
+  } else {
+    fakeBin = path.join(tmp, 'fake-promptpile');
+    fs.writeFileSync(
+      fakeBin,
+      `#!/bin/sh\nexec "${process.execPath}" "$(dirname "$0")/fake-promptpile.cjs" "$@"\n`
+    );
+    fs.chmodSync(fakeBin, 0o755);
+  }
+
+  const result = spawnSync(
+    process.execPath,
+    [reactCli, '--input', '--directory', messages, '--api-key', 'unused-key', '--max-step', '1'],
+    {
+      cwd: tmp,
+      input: 'user input\n',
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        NODE_NO_WARNINGS: '1',
+        PROMPTPILE_BIN: fakeBin,
+        FAKE_PROMPTPILE_LOG: logPath,
+        FAKE_PROMPTPILE_NODE_SHIM: process.platform === 'win32' ? '1' : '0'
+      }
+    }
+  );
+
+  assert.strictEqual(result.status, 1);
+  assert.match(result.stderr, /synthetic append failure/);
+
+  const invocations = fs.readFileSync(logPath, 'utf8').trim().split('\n').map(JSON.parse);
+  assert.strictEqual(invocations.length, 1, 'append failure aborts before any React phase starts');
+  assert.deepStrictEqual(
+    invocations[0].args,
+    ['conversation', 'append-user', '-d', messages, '--quiet']
+  );
+  assert.strictEqual(invocations[0].stdin, 'user input');
+  assert.deepStrictEqual(fs.readdirSync(messages), [], 'failed append writes no conversation files');
+
+  console.log('promptpile-react input append failure tests ok');
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+}

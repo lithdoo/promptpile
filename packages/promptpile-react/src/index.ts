@@ -4,6 +4,10 @@ import { appendUserFromTerminal } from './append-user-message';
 import { readUserInputFromTerminal } from './read-user-input';
 import { reactDebugLog } from './react-debug-log';
 import { PromptpileReactRuntime } from './react-runtime';
+import {
+  getPromptpileSpawnConfig,
+  type PromptpileSpawnConfig
+} from './promptpile-invoker';
 import { resolveReactConfig } from './resolve-react-config';
 import type { ResolvedReactConfig } from './types';
 
@@ -29,7 +33,7 @@ async function main(): Promise<void> {
   const config = resolveReactConfig(process.cwd(), process.argv);
 
   if (config.inputMode) {
-    await runInputMode(config);
+    await runInputMode(config, getPromptpileSpawnConfig());
     return;
   }
 
@@ -38,7 +42,10 @@ async function main(): Promise<void> {
   process.exitCode = runtime.stopReason === 'error' ? 1 : 0;
 }
 
-async function runInputMode(config: ResolvedReactConfig): Promise<void> {
+async function runInputMode(
+  config: ResolvedReactConfig,
+  spawn: PromptpileSpawnConfig
+): Promise<void> {
   const processRound = async (): Promise<boolean> => {
     const userContent = await readUserInputFromTerminal();
     if (!userContent) {
@@ -48,7 +55,7 @@ async function runInputMode(config: ResolvedReactConfig): Promise<void> {
     }
 
     try {
-      appendUserFromTerminal(config.directoryAbs, userContent);
+      await appendUserFromTerminal(spawn, config.directoryAbs, userContent, config.cwd);
       reactDebugLog('inputRound userAppended');
     } catch (e) {
       console.error('Error:', e instanceof Error ? e.message : e);
@@ -56,7 +63,7 @@ async function runInputMode(config: ResolvedReactConfig): Promise<void> {
       return false;
     }
 
-    const runtime = new PromptpileReactRuntime(config);
+    const runtime = new PromptpileReactRuntime(config, spawn);
     await runOneReactSession(runtime);
 
     if (runtime.stopReason === 'error') {

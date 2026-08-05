@@ -1,7 +1,7 @@
 {
   "name": "promptpile-react",
   "version": "0.1.0-beta.0",
-  "description": "在 promptpile CLI 之上的 agent 编排（子进程调用 CLI；`-i` 写入 user 消息时依赖 workspace `promptpile` 包内的 file-handler）",
+  "description": "在 promptpile 公共 CLI 之上的 ReAct agent 编排",
   "main": "dist/index.js",
   "bin": {
     "promptpile-react": "dist/index.js"
@@ -25,7 +25,7 @@
     "prepare": "npm run build",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
-    "test": "npm run build && node test/resolve-react-config.cjs"
+    "test": "npm run build && node test/resolve-react-config.cjs && node test/append-user-cli.cjs && node test/input-mode-append-failure.cjs"
   },
   "dependencies": {
     "@iarna/toml": "^2.2.5",

@@ -1,19 +1,33 @@
-import path from 'path';
-
-import { appendUserMessage, scanDirectory } from 'promptpile/dist/file-handler';
+import {
+  invokePromptpileAsync,
+  type PromptpileSpawnConfig
+} from './promptpile-invoker';
 
 /**
- * 将终端输入写入 `-d` 目录的下一条 user 消息文件（语义与 `promptpile -i` 相同）。
- *
- * @returns 写入文件的绝对路径或相对路径字符串（由 `appendUserMessage` 返回）
+ * 通过公开 CLI 将终端输入写入 `-d` 目录的下一条 user 消息文件。
  */
-export function appendUserFromTerminal(directory: string, content: string): string {
-  const dirAbs = path.resolve(process.cwd(), directory);
-  let files = scanDirectory(dirAbs);
-  const writtenPath = appendUserMessage(dirAbs, files, content);
-  files = scanDirectory(dirAbs);
-  if (files.length === 0) {
-    throw new Error('No message files after appendUserMessage; directory may be invalid.');
+export async function appendUserFromTerminal(
+  spawnConfig: PromptpileSpawnConfig,
+  directory: string,
+  content: string,
+  cwd: string
+): Promise<void> {
+  const result = await invokePromptpileAsync(
+    spawnConfig,
+    ['conversation', 'append-user', '-d', directory, '--quiet'],
+    { cwd, quiet: true, stdin: content }
+  );
+
+  if (result.error) {
+    throw new Error(
+      `Unable to run promptpile conversation append-user: ${result.error.message}`
+    );
   }
-  return writtenPath;
+  if (result.status !== 0) {
+    const tail = result.stderr.trim().slice(-500);
+    const detail = tail === '' ? '' : `: ${tail}`;
+    throw new Error(
+      `promptpile conversation append-user exited with code ${result.status ?? 'null'}${detail}`
+    );
+  }
 }

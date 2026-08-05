@@ -20,10 +20,10 @@ export class PromptpileReactRuntime implements IReactRuntime {
   private readonly config: ResolvedReactConfig;
   private readonly spawn: PromptpileSpawnConfig;
 
-  constructor(config: ResolvedReactConfig) {
+  constructor(config: ResolvedReactConfig, spawn?: PromptpileSpawnConfig) {
     this.config = config;
     this.maxStep = config.maxStep;
-    this.spawn = getPromptpileSpawnConfig();
+    this.spawn = spawn ?? getPromptpileSpawnConfig();
   }
 
   async nextStep(): Promise<void> {

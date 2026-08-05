@@ -1,6 +1,6 @@
 # promptpile-react
 
-在 **`promptpile` 命令行**之上编排 AI agent（React 式的状态 / 回合模型）。**调用模型时**通过子进程执行 **`promptpile` CLI**（不把 CLI 当 npm 库 `import`）；**默认**使用依赖包 **`promptpile`** 内已构建的 **`dist/index.js`**（以当前 Node **`process.execPath`** 启动），无需全局安装。**`-i` 写入终端用户消息**时，本包依赖 workspace 内的 **`promptpile` npm 包**，引用其 **`file-handler`**（与 `promptpile -i` 写 `[idx]user.md` 的规则一致）。
+在 **`promptpile` 命令行**之上编排 AI agent（React 式的状态 / 回合模型）。调用模型和追加终端用户消息都通过子进程执行 **`promptpile` 公共 CLI**；`-i` 使用 `promptpile conversation append-user`，不再导入 Promptpile 的文件扫描或写入实现。
 
 **当前版本**：解析 CLI、用 `PromptpileReactRuntime` 以 **`child_process.spawn`** 异步调用 **`promptpile`**（不再使用 `spawnSync`）。子进程 **stdout/stderr** 在运行期间 **实时转发** 到当前进程终端（`promptpile` 在 **text** 模式下流式写出的正文会逐块出现；粒度取决于管道与上游 chunk）。若传入 **`-q`**：子进程 argv 仍带 **`promptpile -q`**，且本进程 **不向终端转发** 子进程的 stdout/stderr（与少刷屏一致）。从 `-d` 目录读取 `.react.*.md` 提示词。主循环 **`nextStep()`**（`async`）每轮依次 **`await reactThoughtProcess()`** → **`await reactObserveProcess()`**（纯文本）→ **`await reactCheckProcess(observeText)`**（仅 observe 正文 + 决策 tool）。二者子进程 argv **不含** 主流程的 `-o`；**`-c`（continueMode）** 有两层含义：见下文「`-i` / `-c`」与 **`react*` 子进程 argv**。
 
@@ -129,11 +129,11 @@ React CLI
 
 | 标志 | 行为 |
 |------|------|
-| **`-i`** | 在本进程按 `promptpile` 同款提示从终端读入多行（Ctrl+Z / Ctrl+D 结束），调用 **`file-handler`** 写入下一条 **user** 消息（需已解析出扫描目录，通常来自 `-d` 或 `--config`）。**不会**向子进程传入 `-i`。 |
+| **`-i`** | 在本进程按 `promptpile` 同款提示从终端读入多行（Ctrl+Z / Ctrl+D 结束），将原文写入 `promptpile conversation append-user -d <directory> --quiet` 的 stdin。子命令成功后才开始本轮 ReAct；失败则中止本轮。**不会**向 completion 子进程传入 `-i`。 |
 | **仅 `-i`** | 读入 **一次** → 跑完整 ReAct（`nextStep` 循环 + `finalAnswer()`）→ 退出。 |
 | **`-i` + `-c`** | **外层循环**：每轮读入 → append → 新建 **`PromptpileReactRuntime`** → ReAct + `finalAnswer()` → 再次读入…直至某轮 **空输入**（报错退出，与 `promptpile -i` 一致）或 **`Ctrl+C`**。内层 **Thought / Final** 子进程在 `continueMode` 时追加 `-c`；**Observe 不续写** `messages/`。 |
 
-首次安装前请在 **`packages/promptpile`** 执行 **`npm run build`**，以便 **`promptpile/dist/file-handler`** 存在。
+首次安装前请确保依赖包 **`promptpile`** 已构建，且其公开 CLI 支持 `conversation append-user`。
 
 ## 安装与构建
 

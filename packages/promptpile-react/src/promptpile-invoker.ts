@@ -67,7 +67,7 @@ function appendStderrCapped(store: { value: string }, s: string): void {
 export function invokePromptpileAsync(
   spawnConfig: PromptpileSpawnConfig,
   cliArgs: string[],
-  options: { cwd?: string; quiet: boolean; env?: NodeJS.ProcessEnv }
+  options: { cwd?: string; quiet: boolean; env?: NodeJS.ProcessEnv; stdin?: string }
 ): Promise<PromptpileInvokeResult> {
   const cwd = options.cwd ?? process.cwd();
   const argv = [...spawnConfig.argvPrefix, ...cliArgs];
@@ -87,9 +87,11 @@ export function invokePromptpileAsync(
     const child = spawn(spawnConfig.command, argv, {
       cwd,
       env: childEnv,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: [options.stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
       windowsHide: true
     });
+
+    let stdinError: NodeJS.ErrnoException | undefined;
 
     child.stdout?.setEncoding('utf8');
     child.stderr?.setEncoding('utf8');
@@ -109,6 +111,12 @@ export function invokePromptpileAsync(
       }
     });
 
+    child.stdin?.on('error', (err: NodeJS.ErrnoException) => {
+      // A child may reject arguments and close before consuming all stdin.
+      // Preserve the error, then wait for close so callers receive its status/stderr.
+      stdinError = err;
+    });
+
     child.on('error', (err: NodeJS.ErrnoException) => {
       finish({
         status: null,
@@ -121,9 +129,18 @@ export function invokePromptpileAsync(
     child.on('close', (code: number | null) => {
       finish({
         status: typeof code === 'number' ? code : null,
+        error: code === 0 ? stdinError : undefined,
         stdout: '',
         stderr: stderrStore.value
       });
     });
+
+    if (options.stdin !== undefined) {
+      try {
+        child.stdin?.end(options.stdin, 'utf8');
+      } catch (err) {
+        stdinError = err as NodeJS.ErrnoException;
+      }
+    }
   });
 }
