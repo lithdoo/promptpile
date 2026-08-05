@@ -1,6 +1,4 @@
-import { defineConfig } from 'vitepress'
-
-export default defineConfig({
+export default {
   lang: 'zh-CN',
   title: 'Promptpile',
   description: 'File-native、CLI-first 的轻量 Agent Runtime 生态',
@@ -75,4 +73,4 @@ export default defineConfig({
     editLink: { pattern: 'https://github.com/lithdoo/promptpile/edit/main/doc/:path', text: '在 GitHub 上编辑此页' },
     footer: { message: 'Promptpile documentation · ISC licensed project', copyright: 'Tracks the current main branch implementation.' }
   }
-})
+}
