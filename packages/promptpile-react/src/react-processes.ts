@@ -109,7 +109,7 @@ export abstract class ReactProcess {
     if (r.error.code === 'ENOENT') {
       if (!this.ctx.config.quiet) {
         console.error(
-          `Error: 找不到命令或脚本 "${this.ctx.spawn.displayName}"。请确认依赖包 promptpile 已 npm install 且已构建 dist，或将 promptpile 加入 PATH；也可设置 PROMPTPILE_BIN 覆盖。`
+          `Error: 找不到命令或脚本 "${this.ctx.spawn.displayName}"。请确认依赖包 promptpile 已安装且 package bin 可用，或将 promptpile 加入 PATH；也可设置 PROMPTPILE_BIN 覆盖。`
         );
       }
     } else if (!this.ctx.config.quiet) {

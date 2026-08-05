@@ -15,17 +15,53 @@ export type PromptpileInvokeResult = {
 /** 如何启动 promptpile 子进程（可能为全局命令或 node + 内置脚本）。 */
 export type PromptpileSpawnConfig = {
   command: string;
-  /** 插在 CLI 参数之前的 argv 片段（例如 `[bundled/dist/index.js]`）。 */
+  /** 插在 CLI 参数之前的 argv 片段（例如 package metadata 声明的 Node 脚本）。 */
   argvPrefix: string[];
   /** 面向用户的简短描述（错误提示用）。 */
   displayName: string;
 };
 
-function tryResolveBundledPromptpileScript(): string | null {
+type PackageJsonWithBin = {
+  name?: unknown;
+  bin?: unknown;
+};
+
+/** Resolve one npm package executable without assuming its build layout. */
+export function resolveDeclaredPackageBin(
+  packageJsonPath: string,
+  executableName: string
+): string | null {
   try {
-    const pkgJson = require.resolve('promptpile/package.json');
-    const script = path.join(path.dirname(pkgJson), 'dist', 'index.js');
-    return fs.existsSync(script) ? script : null;
+    const parsed = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as PackageJsonWithBin;
+    let declared: unknown;
+    if (typeof parsed.bin === 'string') {
+      declared = parsed.bin;
+    } else if (parsed.bin !== null && typeof parsed.bin === 'object') {
+      declared = (parsed.bin as Record<string, unknown>)[executableName];
+    }
+    if (typeof declared !== 'string' || declared.trim() === '') {
+      return null;
+    }
+
+    const packageDirectory = path.dirname(packageJsonPath);
+    const resolved = path.resolve(packageDirectory, declared.trim());
+    const relative = path.relative(packageDirectory, resolved);
+    if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+      return null;
+    }
+    return fs.statSync(resolved).isFile() ? resolved : null;
+  } catch {
+    return null;
+  }
+}
+
+function tryResolveBundledPromptpileScript(packageJsonPath?: string | null): string | null {
+  if (packageJsonPath === null) {
+    return null;
+  }
+  try {
+    const resolvedPackageJson = packageJsonPath ?? require.resolve('promptpile/package.json');
+    return resolveDeclaredPackageBin(resolvedPackageJson, 'promptpile');
   } catch {
     return null;
   }
@@ -34,15 +70,18 @@ function tryResolveBundledPromptpileScript(): string | null {
 /**
  * 解析 promptpile 子进程启动方式：
  * 1. `PROMPTPILE_BIN` 非空 → 沿用（覆盖内置）
- * 2. 否则若依赖中存在当前固定的已构建入口 → `node` + 该脚本（本仓库默认）
+ * 2. 否则读取依赖包 `package.json` 声明的 `bin.promptpile` → `node` + 该脚本
  * 3. 否则回退到 PATH 上的 `promptpile`
  */
-export function getPromptpileSpawnConfig(): PromptpileSpawnConfig {
+export function getPromptpileSpawnConfig(options?: {
+  /** Test/integration override; null skips package lookup and exercises PATH fallback. */
+  packageJsonPath?: string | null;
+}): PromptpileSpawnConfig {
   const bin = process.env.PROMPTPILE_BIN?.trim();
   if (bin) {
     return { command: bin, argvPrefix: [], displayName: bin };
   }
-  const bundled = tryResolveBundledPromptpileScript();
+  const bundled = tryResolveBundledPromptpileScript(options?.packageJsonPath);
   if (bundled) {
     return {
       command: process.execPath,

@@ -6,8 +6,8 @@
 
 ### 运行时与 `PROMPTPILE_BIN`
 
-- **默认**（未设置 **`PROMPTPILE_BIN`**）：解析依赖 **`promptpile`** 的 **`dist/index.js`**，用 **`process.execPath`** 执行；需已在 **`packages/promptpile`** 执行 **`npm install` / `npm run build`** 使 **`dist/`** 存在。
-- **回退**：若无法解析到内置脚本（例如单独安装本包且未带 `promptpile` 依赖），则仍尝试命令名 **`promptpile`**（需在 `PATH` 中）。
+- **默认**（未设置 **`PROMPTPILE_BIN`**）：解析依赖包 **`promptpile/package.json`** 声明的 `bin.promptpile`（也兼容字符串形式的 `bin`），并用当前 Node 的 **`process.execPath`** 执行该脚本；不假定具体构建目录或文件名。
+- **回退**：若依赖包、`bin` 声明或声明的目标文件不可用，则尝试命令名 **`promptpile`**（需在 `PATH` 中）。
 - **覆盖**：设置环境变量 **`PROMPTPILE_BIN`** 为可执行文件路径或命令名时，**完全**使用该值启动子进程（与旧行为、CI 或自定义包装脚本兼容）。
 - **`currentStep`**：已成功完成的 **ReAct 轮数**（每轮 `nextStep` 在 thought、observe、check **均成功**后 +1；从 0 递增）。
 - **`--max-step N`**：最多 **N** 轮上述成功；用尽后 `stopReason` 为 `max_step`。

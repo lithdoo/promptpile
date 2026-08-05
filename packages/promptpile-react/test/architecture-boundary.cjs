@@ -50,4 +50,14 @@ for (const forbiddenResolverFragment of [
   );
 }
 
+const invokerSource = fs.readFileSync(path.join(src, 'promptpile-invoker.ts'), 'utf8');
+assert.ok(
+  invokerSource.includes('resolveDeclaredPackageBin'),
+  'Promptpile executable discovery must follow package bin metadata'
+);
+assert.ok(
+  !invokerSource.includes("'dist', 'index.js'"),
+  'Promptpile executable discovery must not hardcode the build layout'
+);
+
 console.log('promptpile-react architecture boundary tests ok');
