@@ -22,7 +22,7 @@ Node.js 18 or newer is required.
 ## Current architecture notes
 
 - Message and tool shapes currently follow OpenAI Chat Completions.
-- `promptpile-react` still imports selected `promptpile/dist/*` modules; public API decoupling is planned separately.
+- `promptpile-react` integrates with Promptpile only through the documented `promptpile` CLI and conversation artifacts. It neither imports `promptpile/dist/*` internals nor assumes a fixed CLI build path.
 - This repository can be consumed by other repositories as a Git submodule.
 
 ## Examples

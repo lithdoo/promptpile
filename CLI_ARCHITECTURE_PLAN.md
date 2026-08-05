@@ -1,6 +1,6 @@
 # Promptpile CLI Boundary Architecture & Migration Plan
 
-> Status: Proposed
+> Status: Implemented (phases 0–9, August 2026)
 >
 > Scope: `promptpile` + `promptpile-react`
 >
@@ -8,14 +8,14 @@
 
 ## 1. Summary
 
-`promptpile-react` currently uses two different integration models at the same time:
+Before this migration, `promptpile-react` used two different integration models at the same time:
 
 1. It treats `promptpile` as an external CLI and invokes it through a subprocess for model calls.
 2. It also imports unpublished implementation modules from `promptpile/dist/*` for conversation mutation and configuration parsing.
 
 The second path makes internal Promptpile refactors observable by React and creates an unstable package boundary. A file rename or build-layout change inside `promptpile` can break `promptpile-react` even if the public CLI behavior is unchanged.
 
-This proposal chooses a **CLI-first boundary** rather than extracting a new `promptpile-core` package.
+The implemented design chooses a **CLI-first boundary** rather than extracting a new `promptpile-core` package. Sections describing the old implementation are retained as migration rationale; the acceptance checklist records the final result.
 
 The key rule is:
 
@@ -1399,22 +1399,22 @@ These can be squashed later; the sequence is useful because each step has a clea
 
 The migration is complete when all of the following are true:
 
-- [ ] `promptpile conversation append-user` exists and never invokes an LLM.
-- [ ] `--llm-config` loads only `[[llm_api]]` profile data.
-- [ ] `--llm-api` selects a named profile and explicit missing profiles fail.
-- [ ] `--api-key-env` is available or an equivalent safe mechanism preserves React's phase-specific env override capability.
-- [ ] Existing Promptpile `--config` behavior remains covered and compatible.
-- [ ] React no longer imports `promptpile/dist/file-handler`.
-- [ ] React no longer imports `promptpile/dist/llm-sampling`.
-- [ ] React no longer imports `promptpile/dist/llm-extra-body`.
-- [ ] React no longer imports `promptpile/dist/toml-config`.
-- [ ] React no longer assumes the executable is at `dist/index.js`.
-- [ ] React does not resolve `[[llm_api]]` profile contents itself.
-- [ ] Thought / Observe / Check / Final behavior remains covered by integration tests.
-- [ ] Input and continue modes remain behaviorally correct.
-- [ ] No resolved API key is unnecessarily passed through argv for profile/env-based configuration.
-- [ ] Production React source contains zero `promptpile/dist/` references.
-- [ ] Root and package documentation describe the CLI boundary as the supported integration model.
+- [x] `promptpile conversation append-user` exists and never invokes an LLM.
+- [x] `--llm-config` loads only `[[llm_api]]` profile data.
+- [x] `--llm-api` selects a named profile and explicit missing profiles fail.
+- [x] `--api-key-env` is available or an equivalent safe mechanism preserves React's phase-specific env override capability.
+- [x] Existing Promptpile `--config` behavior remains covered and compatible.
+- [x] React no longer imports `promptpile/dist/file-handler`.
+- [x] React no longer imports `promptpile/dist/llm-sampling`.
+- [x] React no longer imports `promptpile/dist/llm-extra-body`.
+- [x] React no longer imports `promptpile/dist/toml-config`.
+- [x] React no longer assumes the executable is at `dist/index.js`.
+- [x] React does not resolve `[[llm_api]]` profile contents itself.
+- [x] Thought / Observe / Check / Final behavior remains covered by integration tests.
+- [x] Input and continue modes remain behaviorally correct.
+- [x] No resolved API key is unnecessarily passed through argv for profile/env-based configuration.
+- [x] Production React source contains zero `promptpile/dist/` references.
+- [x] Root and package documentation describe the CLI boundary as the supported integration model.
 
 ---
 

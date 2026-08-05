@@ -12,13 +12,6 @@ export interface PhaseLlmSelection {
   extraBodyOverride?: string;
 }
 
-export interface ReactPromptPaths {
-  thought?: string;
-  observe?: string;
-  check?: string;
-  final?: string;
-}
-
 /** CLI overrides (highest merge priority). */
 export interface ReactCliOverrides {
   configPath?: string;

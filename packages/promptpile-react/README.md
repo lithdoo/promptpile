@@ -2,6 +2,8 @@
 
 在 **`promptpile` 命令行**之上编排 AI agent（React 式的状态 / 回合模型）。调用模型和追加终端用户消息都通过子进程执行 **`promptpile` 公共 CLI**；`-i` 使用 `promptpile conversation append-user`，不再导入 Promptpile 的文件扫描或写入实现。
 
+包边界只包括已文档化的 CLI 参数、stdin 和消息/输出文件；`promptpile/dist/*` 构建产物属于私有实现，不是本包的运行时或类型依赖。
+
 **当前版本**：解析 CLI、用 `PromptpileReactRuntime` 以 **`child_process.spawn`** 异步调用 **`promptpile`**（不再使用 `spawnSync`）。子进程 **stdout/stderr** 在运行期间 **实时转发** 到当前进程终端（`promptpile` 在 **text** 模式下流式写出的正文会逐块出现；粒度取决于管道与上游 chunk）。若传入 **`-q`**：子进程 argv 仍带 **`promptpile -q`**，且本进程 **不向终端转发** 子进程的 stdout/stderr（与少刷屏一致）。从 `-d` 目录读取 `.react.*.md` 提示词。主循环 **`nextStep()`**（`async`）每轮依次 **`await reactThoughtProcess()`** → **`await reactObserveProcess()`**（纯文本）→ **`await reactCheckProcess(observeText)`**（仅 observe 正文 + 决策 tool）。二者子进程 argv **不含** 主流程的 `-o`；**`-c`（continueMode）** 有两层含义：见下文「`-i` / `-c`」与 **`react*` 子进程 argv**。
 
 ### 运行时与 `PROMPTPILE_BIN`
@@ -171,6 +173,8 @@ npm run build -w promptpile-react
 npm run test
 npm run dev -- --config=example.toml -q
 ```
+
+测试套件包含静态架构约束，以及使用假 Promptpile 子进程贯穿 Thought / Observe / Check / Final 的 CLI 边界集成测试；不需要真实模型或网络。
 
 ## 许可证
 
