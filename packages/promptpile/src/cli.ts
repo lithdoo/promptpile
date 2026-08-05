@@ -9,6 +9,10 @@ import { parseMissingToolResultsPolicy } from './tool-result-policy';
 export interface CliParseResult {
   /** Raw path from argv; resolve against cwd where used. */
   configPath?: string;
+  /** Raw profile-database path from argv; resolve against cwd where used. */
+  llmConfigPath?: string;
+  /** Explicitly selected LLM profile name. */
+  llmApiName?: string;
   options: Partial<Config>;
 }
 
@@ -19,6 +23,8 @@ const buildProgram = (): Command => {
     .description('Assemble message files and call Chat Completions APIs')
     .version('1.0.0')
     .option('--config <path>', 'TOML config file path (relative to cwd)')
+    .option('--llm-config <path>', 'TOML file used only as the [[llm_api]] profile database')
+    .option('--llm-api <name>', 'Select a named [[llm_api]] profile')
     .option('-d, --directory <path>', 'Directory to scan for files')
     .option('-m, --model <model>', 'AI model to use')
     .option('-k, --api-key <key>', 'AI API key')
@@ -80,6 +86,8 @@ export const parseCli = (argv: string[]): CliParseResult => {
   program.parse(argv, { from: 'node' });
   const options = program.opts() as {
     config?: string;
+    llmConfig?: string;
+    llmApi?: string;
     directory?: string;
     model?: string;
     apiKey?: string;
@@ -116,11 +124,9 @@ export const parseCli = (argv: string[]): CliParseResult => {
     options.outputPileFormat ?? options.outputPipeFormat
   );
 
-  const rawConfig = options.config as string | undefined;
-  let configPath: string | undefined;
-  if (typeof rawConfig === 'string' && rawConfig.trim() !== '') {
-    configPath = rawConfig.trim();
-  }
+  const configPath = trimOpt(options.config);
+  const llmConfigPath = trimOpt(options.llmConfig);
+  const llmApiName = trimOpt(options.llmApi);
 
   const rawToolsFile = options.toolsFile as string | undefined;
   const toolsFileCli =
@@ -159,6 +165,8 @@ export const parseCli = (argv: string[]): CliParseResult => {
 
   return {
     configPath,
+    llmConfigPath,
+    llmApiName,
     options: {
       directory: options.directory,
       model: options.model,

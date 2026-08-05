@@ -2,7 +2,12 @@ import fs from 'fs';
 import path from 'path';
 import type { Config } from './types';
 import { parseCli } from './cli';
-import { loadTomlConfigFile, type ParsedTomlConfig } from './toml-config';
+import {
+  loadLlmApiProfilesFile,
+  loadPromptpileTomlTable,
+  loadTomlConfigFile,
+  type ParsedTomlConfig
+} from './toml-config';
 import { coerceExtraBodyValue, type ExtraBody } from './llm-extra-body';
 import {
   coerceTemperatureValue,
@@ -77,8 +82,12 @@ const getBool = (r: Record<string, unknown>, key: string): boolean | undefined =
   return undefined;
 };
 
-const buildTomlLayer = (parsed: ParsedTomlConfig): FlatLayer => {
-  const p = parsed.promptpile;
+const buildTomlLayer = (
+  runtimeParsed: ParsedTomlConfig,
+  profiles: ParsedTomlConfig['llmApis'],
+  selectedProfileName: string | undefined
+): FlatLayer => {
+  const p = runtimeParsed.promptpile;
   const out: FlatLayer = {};
   const dir = getStr(p, 'dir');
   if (dir !== undefined) {
@@ -135,7 +144,6 @@ const buildTomlLayer = (parsed: ParsedTomlConfig): FlatLayer => {
   }
   out.missingToolResults = parseMissingToolResultsPolicy(p.missing_tool_results);
 
-  const profileName = getStr(p, 'llm_api');
   let model = getStr(p, 'llm_api_model');
   let baseUrl = getStr(p, 'llm_api_base_url');
   let apiKey = getStr(p, 'llm_api_key');
@@ -145,9 +153,9 @@ const buildTomlLayer = (parsed: ParsedTomlConfig): FlatLayer => {
     p.llm_api_extra_body !== undefined
       ? coerceExtraBodyValue(p.llm_api_extra_body)
       : undefined;
-  if (profileName) {
-    const prof = parsed.llmApis.find(
-      x => x.name.toLowerCase() === profileName!.toLowerCase()
+  if (selectedProfileName) {
+    const prof = profiles.find(
+      x => x.name.toLowerCase() === selectedProfileName.toLowerCase()
     );
     if (prof) {
       model = model ?? trim(prof.model);
@@ -234,35 +242,65 @@ const mapCliToFlat = (cli: Partial<Config>): FlatLayer => ({
 export const resolveConfig = (cwd: string, argv: string[]): Config => {
   let cliPartial: Partial<Config>;
   let configPath: string | undefined;
+  let llmConfigPath: string | undefined;
+  let explicitLlmApiName: string | undefined;
   try {
     const parsed = parseCli(argv);
     configPath = parsed.configPath;
+    llmConfigPath = parsed.llmConfigPath;
+    explicitLlmApiName = parsed.llmApiName;
     cliPartial = parsed.options;
   } catch (e) {
     console.error('Error: Invalid CLI options:', e instanceof Error ? e.message : e);
     process.exit(1);
   }
 
-  const rawConfigPath = configPath;
-
-  let tomlParsed: ParsedTomlConfig = { promptpile: {}, llmApis: [] };
-  if (rawConfigPath !== undefined && rawConfigPath !== '') {
-    const abs = path.isAbsolute(rawConfigPath)
-      ? rawConfigPath
-      : path.resolve(cwd, rawConfigPath);
+  const resolveExistingConfigPath = (rawPath: string, label: string): string => {
+    const abs = path.isAbsolute(rawPath) ? rawPath : path.resolve(cwd, rawPath);
     if (!fs.existsSync(abs)) {
-      console.error(`Error: config file not found: ${abs}`);
+      console.error(`Error: ${label} file not found: ${abs}`);
       process.exit(1);
     }
+    return abs;
+  };
+
+  let runtimeParsed: ParsedTomlConfig = { promptpile: {}, llmApis: [] };
+  if (configPath) {
+    const abs = resolveExistingConfigPath(configPath, 'config');
     try {
-      tomlParsed = loadTomlConfigFile(abs);
+      runtimeParsed = llmConfigPath
+        ? { promptpile: loadPromptpileTomlTable(abs), llmApis: [] }
+        : loadTomlConfigFile(abs);
     } catch (e) {
       console.error(`Error: failed to parse TOML config: ${abs}`, e);
       process.exit(1);
     }
   }
 
-  const tomlLayer = buildTomlLayer(tomlParsed);
+  let profiles = runtimeParsed.llmApis;
+  if (llmConfigPath) {
+    const abs = resolveExistingConfigPath(llmConfigPath, 'LLM config');
+    try {
+      profiles = loadLlmApiProfilesFile(abs);
+    } catch (e) {
+      console.error(`Error: failed to parse LLM config file: ${abs}`, e);
+      process.exit(1);
+    }
+  }
+
+  const configuredProfileName = getStr(runtimeParsed.promptpile, 'llm_api');
+  const selectedProfileName = explicitLlmApiName ?? configuredProfileName;
+  if (
+    explicitLlmApiName !== undefined &&
+    !profiles.some(
+      profile => profile.name.toLowerCase() === explicitLlmApiName!.toLowerCase()
+    )
+  ) {
+    console.error(`Error: LLM API profile not found: ${explicitLlmApiName}`);
+    process.exit(1);
+  }
+
+  const tomlLayer = buildTomlLayer(runtimeParsed, profiles, selectedProfileName);
   const cliLayer = mapCliToFlat(cliPartial);
 
   const directory = pickStr(

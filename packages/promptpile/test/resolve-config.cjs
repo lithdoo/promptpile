@@ -88,6 +88,96 @@ try {
   assert.strictEqual(cfgProfileCli.temperature, 0.2, 'CLI temperature overrides runtime and profile');
   assert.deepStrictEqual(cfgProfileCli.extraBody, { source: 'cli' }, 'CLI extra body overrides runtime and profile');
 
+  const runtimeTomlPath = path.join(tmp, 'runtime.toml');
+  const profilesTomlPath = path.join(tmp, 'profiles.toml');
+  fs.writeFileSync(
+    runtimeTomlPath,
+    [
+      '[promptpile]',
+      'dir = "messages"',
+      'llm_api = "reasoning"',
+      'llm_api_temperature = 0.35',
+      '',
+      '[[llm_api]]',
+      'name = "reasoning"',
+      'model = "runtime-file-profile"',
+      '',
+      '[[llm_api]]',
+      'name = "invalid-but-shadowed"',
+      'temperature = "not-a-number"',
+      ''
+    ].join('\n')
+  );
+  fs.writeFileSync(
+    profilesTomlPath,
+    [
+      '[promptpile]',
+      'dir = "must-be-ignored"',
+      'llm_api = "must-be-ignored"',
+      'llm_api_model = "must-be-ignored"',
+      '',
+      '[promptpile-react]',
+      'max_step = 99',
+      '',
+      '[[llm_api]]',
+      'name = "reasoning"',
+      'model = "profile-db-reasoning"',
+      'base_url = "https://reasoning.example/v1"',
+      'api_key = "reasoning-profile-key"',
+      'temperature = 0.7',
+      'extra_body = { source = "reasoning-profile" }',
+      '',
+      '[[llm_api]]',
+      'name = "observer"',
+      'model = "profile-db-observer"',
+      'base_url = "https://observer.example/v1"',
+      'temperature = 0.5',
+      ''
+    ].join('\n')
+  );
+
+  const cfgSeparateProfiles = resolveConfig(tmp, [
+    'node', fakeScript,
+    '--config', 'runtime.toml',
+    '--llm-config', 'profiles.toml'
+  ]);
+  assert.strictEqual(cfgSeparateProfiles.directory, msgAbs, '--config remains the runtime config source');
+  assert.strictEqual(cfgSeparateProfiles.model, 'profile-db-reasoning', '--llm-config replaces the profile source');
+  assert.strictEqual(cfgSeparateProfiles.apiBaseUrl, 'https://reasoning.example/v1');
+  assert.strictEqual(cfgSeparateProfiles.apiKey, 'reasoning-profile-key');
+  assert.strictEqual(cfgSeparateProfiles.temperature, 0.35, 'runtime field overrides llm-config profile field');
+  assert.deepStrictEqual(cfgSeparateProfiles.extraBody, { source: 'reasoning-profile' });
+
+  const cfgExplicitProfile = resolveConfig(tmp, [
+    'node', fakeScript,
+    '--config', 'runtime.toml',
+    '--llm-config', 'profiles.toml',
+    '--llm-api', 'ObSeRvEr'
+  ]);
+  assert.strictEqual(cfgExplicitProfile.model, 'profile-db-observer', '--llm-api overrides configured profile name');
+  assert.strictEqual(cfgExplicitProfile.apiBaseUrl, 'https://observer.example/v1');
+  assert.strictEqual(cfgExplicitProfile.temperature, 0.35, 'runtime field still overrides explicitly selected profile');
+
+  const cfgProfileOnly = resolveConfig(tmp, [
+    'node', fakeScript,
+    '--llm-config', 'profiles.toml',
+    '--llm-api', 'reasoning'
+  ]);
+  assert.strictEqual(cfgProfileOnly.directory, msgAbs, 'runtime fields in --llm-config are ignored');
+  assert.strictEqual(cfgProfileOnly.model, 'profile-db-reasoning');
+  assert.strictEqual(cfgProfileOnly.temperature, 0.7);
+  assert.deepStrictEqual(cfgProfileOnly.extraBody, { source: 'reasoning-profile' });
+
+  const cfgProfileWithCliField = resolveConfig(tmp, [
+    'node', fakeScript,
+    '--llm-config', 'profiles.toml',
+    '--llm-api', 'reasoning',
+    '--model', 'explicit-cli-model',
+    '--temperature', '0.15'
+  ]);
+  assert.strictEqual(cfgProfileWithCliField.model, 'explicit-cli-model', 'CLI field overrides llm-config profile');
+  assert.strictEqual(cfgProfileWithCliField.temperature, 0.15, 'CLI temperature overrides llm-config profile');
+
   fs.writeFileSync(
     tomlPath,
     '[promptpile]\nllm_api = "missing"\n\n[[llm_api]]\nname = "available"\nmodel = "profile-model"\n'

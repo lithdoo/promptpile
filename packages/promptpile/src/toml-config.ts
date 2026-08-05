@@ -21,10 +21,12 @@ export interface ParsedTomlConfig {
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
-export const loadTomlConfigFile = (absPath: string): ParsedTomlConfig => {
+const loadTomlDocument = (absPath: string): Record<string, unknown> => {
   const raw = fs.readFileSync(absPath, 'utf8');
-  const doc = toml.parse(raw) as Record<string, unknown>;
-  const promptpile = isRecord(doc.promptpile) ? doc.promptpile : {};
+  return toml.parse(raw) as Record<string, unknown>;
+};
+
+const parseLlmApis = (doc: Record<string, unknown>): LlmApiProfile[] => {
   const rawApis = doc.llm_api;
   const llmApis: LlmApiProfile[] = [];
   if (Array.isArray(rawApis)) {
@@ -51,5 +53,20 @@ export const loadTomlConfigFile = (absPath: string): ParsedTomlConfig => {
       });
     }
   }
+  return llmApis;
+};
+
+export const loadPromptpileTomlTable = (absPath: string): Record<string, unknown> => {
+  const doc = loadTomlDocument(absPath);
+  return isRecord(doc.promptpile) ? doc.promptpile : {};
+};
+
+export const loadLlmApiProfilesFile = (absPath: string): LlmApiProfile[] =>
+  parseLlmApis(loadTomlDocument(absPath));
+
+export const loadTomlConfigFile = (absPath: string): ParsedTomlConfig => {
+  const doc = loadTomlDocument(absPath);
+  const promptpile = isRecord(doc.promptpile) ? doc.promptpile : {};
+  const llmApis = parseLlmApis(doc);
   return { promptpile, llmApis };
 };
