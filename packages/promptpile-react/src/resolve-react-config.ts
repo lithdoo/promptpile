@@ -1,9 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import { loadReactPromptsFromConfig } from './load-react-prompts';
-import { pickBool, pickInt, pickNum, pickRecord, pickStr } from './merge-utils';
+import { pickBool, pickInt, pickStr } from './merge-utils';
 import { parseReactCli } from './cli';
-import { applyCliLlmOverrides, resolveLlmProfile } from './resolve-llm-profile';
 import {
   buildReactOnlyTomlLayer,
   buildSharedTomlLayer,
@@ -11,7 +10,7 @@ import {
   type ReactOnlyTomlLayer,
   type SharedTomlLayer
 } from './toml-config-react';
-import type { PhaseLlmConfig, ResolvedReactConfig, ReactCliOverrides } from './types';
+import type { PhaseLlmSelection, ResolvedReactConfig, ReactCliOverrides } from './types';
 
 const resolveScanRelative = (scanAbs: string, rel: string | undefined): string | undefined => {
   if (rel === undefined) {
@@ -28,7 +27,6 @@ const resolveCwdRelative = (cwd: string, rel: string | undefined): string | unde
 };
 
 const mergePhaseLlm = (
-  llmApis: ReturnType<typeof loadReactTomlConfig>['llmApis'],
   defaultProfile: string | undefined,
   phase: {
     profileName?: string;
@@ -36,33 +34,34 @@ const mergePhaseLlm = (
     keyEnv?: string;
     model?: string;
     baseUrl?: string;
-    temperature?: number;
-    extraBody?: Record<string, unknown>;
+    temperature?: string;
+    extraBody?: string;
   },
   cli: ReactCliOverrides,
   shared: {
-    tomlTemperature?: number;
-    tomlExtraBody?: Record<string, unknown>;
+    tomlTemperature?: string;
+    tomlExtraBody?: string;
   }
-): PhaseLlmConfig => {
-  const temperatureOverride = pickNum(
-    phase.temperature,
-    shared.tomlTemperature
-  );
-  const extraBodyOverride = pickRecord(
-    phase.extraBody,
-    shared.tomlExtraBody
-  );
-  const base = resolveLlmProfile(llmApis, {
-    profileName: phase.profileName ?? defaultProfile,
-    model: phase.model,
-    apiKey: phase.key,
-    apiKeyEnv: phase.keyEnv,
-    apiBaseUrl: phase.baseUrl,
-    temperature: temperatureOverride,
-    extraBody: extraBodyOverride
-  });
-  return applyCliLlmOverrides(base, cli);
+): PhaseLlmSelection => {
+  const apiKeyOverride = pickStr(cli.apiKey, phase.key);
+  return {
+    profileName: pickStr(phase.profileName, defaultProfile),
+    modelOverride: pickStr(cli.model, phase.model),
+    apiKeyOverride,
+    apiKeyEnvOverride:
+      apiKeyOverride === undefined ? pickStr(phase.keyEnv) : undefined,
+    apiBaseUrlOverride: pickStr(cli.apiBaseUrl, phase.baseUrl),
+    temperatureOverride: pickStr(
+      cli.temperature,
+      phase.temperature,
+      shared.tomlTemperature
+    ),
+    extraBodyOverride: pickStr(
+      cli.extraBody,
+      phase.extraBody,
+      shared.tomlExtraBody
+    )
+  };
 };
 
 export const resolveReactConfig = (cwd: string, argv: string[]): ResolvedReactConfig => {
@@ -74,7 +73,6 @@ export const resolveReactConfig = (cwd: string, argv: string[]): ResolvedReactCo
     process.exit(1);
   }
 
-  let llmApis: ReturnType<typeof loadReactTomlConfig>['llmApis'] = [];
   let sharedTomlReact: SharedTomlLayer = {};
   let sharedTomlPile: SharedTomlLayer = {};
   let reactToml: ReactOnlyTomlLayer = {};
@@ -90,7 +88,6 @@ export const resolveReactConfig = (cwd: string, argv: string[]): ResolvedReactCo
     }
     try {
       const loaded = loadReactTomlConfig(configPathAbs);
-      llmApis = loaded.llmApis;
       sharedTomlPile = buildSharedTomlLayer(loaded.promptpile);
       sharedTomlReact = buildSharedTomlLayer(loaded.promptpileReact);
       reactToml = buildReactOnlyTomlLayer(loaded.promptpileReact);
@@ -174,7 +171,6 @@ export const resolveReactConfig = (cwd: string, argv: string[]): ResolvedReactCo
   };
 
   const thought = mergePhaseLlm(
-    llmApis,
     defaultProfile,
     {
       profileName: reactToml.thoughtLlmApi,
@@ -189,7 +185,6 @@ export const resolveReactConfig = (cwd: string, argv: string[]): ResolvedReactCo
     sharedLlm
   );
   const observe = mergePhaseLlm(
-    llmApis,
     defaultProfile,
     {
       profileName: reactToml.observeLlmApi,
@@ -204,7 +199,6 @@ export const resolveReactConfig = (cwd: string, argv: string[]): ResolvedReactCo
     sharedLlm
   );
   const check = mergePhaseLlm(
-    llmApis,
     defaultProfile,
     {
       profileName: reactToml.checkLlmApi,
@@ -219,7 +213,6 @@ export const resolveReactConfig = (cwd: string, argv: string[]): ResolvedReactCo
     sharedLlm
   );
   const finalPhase = mergePhaseLlm(
-    llmApis,
     defaultProfile,
     {
       profileName: reactToml.finalLlmApi,

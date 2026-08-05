@@ -1,6 +1,3 @@
-import { coerceExtraBodyValue, type ExtraBody } from 'promptpile/dist/llm-extra-body';
-import { coerceTemperatureValue } from 'promptpile/dist/llm-sampling';
-
 export const trim = (v: string | undefined): string | undefined => {
   if (v === undefined) {
     return undefined;
@@ -33,20 +30,29 @@ export const getBool = (r: Record<string, unknown>, key: string): boolean | unde
   return undefined;
 };
 
-export const getNum = (r: Record<string, unknown>, key: string): number | undefined => {
+export const getRawCliValue = (
+  r: Record<string, unknown>,
+  key: string
+): string | undefined => {
   const v = r[key];
   if (v === undefined) {
     return undefined;
   }
-  return coerceTemperatureValue(v);
+  return trim(String(v));
 };
 
-export const getExtraBody = (r: Record<string, unknown>, key: string): ExtraBody | undefined => {
+export const getJsonCliValue = (
+  r: Record<string, unknown>,
+  key: string
+): string | undefined => {
   const v = r[key];
   if (v === undefined) {
     return undefined;
   }
-  return coerceExtraBodyValue(v);
+  if (typeof v === 'string') {
+    return trim(v);
+  }
+  return JSON.stringify(v);
 };
 
 export const getInt = (r: Record<string, unknown>, key: string): number | undefined => {
@@ -93,28 +99,6 @@ export const pickBool = (
 export const pickInt = (
   ...values: (number | undefined)[]
 ): number | undefined => {
-  for (const v of values) {
-    if (v !== undefined) {
-      return v;
-    }
-  }
-  return undefined;
-};
-
-export const pickNum = (
-  ...values: (number | undefined)[]
-): number | undefined => {
-  for (const v of values) {
-    if (v !== undefined) {
-      return v;
-    }
-  }
-  return undefined;
-};
-
-export const pickRecord = (
-  ...values: (ExtraBody | undefined)[]
-): ExtraBody | undefined => {
   for (const v of values) {
     if (v !== undefined) {
       return v;

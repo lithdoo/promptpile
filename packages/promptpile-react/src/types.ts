@@ -1,11 +1,15 @@
 import type { ReactPromptTexts } from './load-react-prompts';
 
-export interface PhaseLlmConfig {
-  model: string;
-  apiKey: string;
-  apiBaseUrl: string;
-  temperature: number;
-  extraBody?: Record<string, unknown>;
+export interface PhaseLlmSelection {
+  profileName?: string;
+  modelOverride?: string;
+  apiKeyOverride?: string;
+  apiKeyEnvOverride?: string;
+  apiBaseUrlOverride?: string;
+  /** Raw CLI value; Promptpile owns validation and defaults. */
+  temperatureOverride?: string;
+  /** Raw JSON CLI value; Promptpile owns validation. */
+  extraBodyOverride?: string;
 }
 
 export interface ReactPromptPaths {
@@ -22,8 +26,8 @@ export interface ReactCliOverrides {
   model?: string;
   apiKey?: string;
   apiBaseUrl?: string;
-  temperature?: number;
-  extraBody?: Record<string, unknown>;
+  temperature?: string;
+  extraBody?: string;
   quiet?: boolean;
   toolsFile?: string;
   afterHookPath?: string;
@@ -43,10 +47,10 @@ export interface ResolvedReactConfig {
   toolsFileForCli?: string;
   afterHookForCli?: string;
   phases: {
-    thought: PhaseLlmConfig;
-    observe: PhaseLlmConfig;
-    check: PhaseLlmConfig;
-    final: PhaseLlmConfig;
+    thought: PhaseLlmSelection;
+    observe: PhaseLlmSelection;
+    check: PhaseLlmSelection;
+    final: PhaseLlmSelection;
   };
   prompts: ReactPromptTexts;
 }

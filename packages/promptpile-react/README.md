@@ -17,7 +17,7 @@
 
 ## 配置（`resolveReactConfig`）
 
-入口在 [`resolve-react-config.ts`](src/resolve-react-config.ts) 合并配置；子进程 argv 由 [`build-phase-argv.ts`](src/build-phase-argv.ts) 按阶段生成，**不传** `--config` 给 `promptpile`。
+入口在 [`resolve-react-config.ts`](src/resolve-react-config.ts) 合并 React 编排配置；子进程 argv 由 [`build-phase-argv.ts`](src/build-phase-argv.ts) 按阶段生成。React 不把完整 `--config` 传给 Promptpile，而是用 `--llm-config` 将同一文件仅作为 profile 数据库。
 
 **合并优先级：**
 
@@ -28,9 +28,10 @@ React CLI
   > 内置默认
 ```
 
-- **仅 react 消费**：`max_step`、`thought_prompt` / `observe_prompt` / `check_prompt` / `final_prompt`、分阶段 `*_llm_api` / `*_llm_api_temperature` / `*_llm_api_extra_body`（含 `check_*`）等；合并后经 `buildPhaseArgv` 向子进程传 `-m/-k/-b/--temperature` 及可选 `--extra-body`（JSON 字符串）。
+- **仅 React 消费**：`max_step`、`thought_prompt` / `observe_prompt` / `check_prompt` / `final_prompt`，以及分阶段的 profile 名称和显式 override 意图。
+- **Promptpile 消费**：React 不读取或解析 `[[llm_api]]` 内容。每个阶段传入 `--llm-config <config>`、可选 `--llm-api <phase-profile>`，以及该阶段明确配置的 `-m/-k/--api-key-env/-b/--temperature/--extra-body` override。未显式覆盖的 profile 字段、默认值与校验都由 Promptpile 决定。
 - **不读取、不转发**：`[promptpile]` 的 `output`、`tool_choice`、`disable_tool`、`insert_files`、`append_files`（ReAct 各阶段在代码里固定行为：Observe 全量目录 + `--append-files` + `-o` 纯文本；Check 空目录 + `--insert-files`（check + observe 正文）+ `react_check_decision`；Final `--disable-tool`；Thought/Final 用 `--insert-files`）。
-- 普通配置不从 `.env` 或 `process.env` 读取；密钥仍可由 TOML `api_key_env` 引用指定环境变量。示例见 [`example.toml`](example.toml)、[`example.sh`](example.sh)。
+- 普通配置不从 `.env` 或 `process.env` 读取。Profile 中的 `api_key_env` 由 Promptpile 子进程解析；阶段专用的 `*_llm_api_key_env` 只把环境变量名称传给 `--api-key-env`，React 不读取 secret。示例见 [`example.toml`](example.toml)、[`example.sh`](example.sh)。
 
 ## 编排调试（`PROMPTPILE_REACT_DEBUG`）
 
@@ -150,15 +151,15 @@ npm run build -w promptpile-react
 
 | 选项 | 说明 |
 |------|------|
-| `--config <path>` | 读取 `[[llm_api]]`、`[promptpile-react]`；共享键可回退 `[promptpile]`（见上文合并顺序） |
+| `--config <path>` | React 读取 `[promptpile-react]` 与少量 `[promptpile]` 编排兼容键；不读取 `[[llm_api]]` 内容。各阶段将该路径作为 `--llm-config` 传给 Promptpile |
 | `-d, --directory <path>` | 消息扫描目录（覆盖 TOML） |
 | `-m, --model` / `-k, --api-key` / `-b, --api-base-url` | 覆盖**所有阶段** LLM（当次 CLI 最高优先级） |
-| `--temperature <n>` | 覆盖**所有阶段**采样温度（`0`–`2`）；子进程传 `--temperature`；未设时默认 **0.8** |
+| `--temperature <n>` | 作为原始显式 override 传给所有阶段的 Promptpile 子进程；范围校验和未设置时的默认值由 Promptpile 负责 |
 | `--extra-body <json>` | 覆盖**所有阶段**额外请求体字段；子进程传 `--extra-body`（JSON 字符串）；未设则不传 |
 | `-q, --quiet` | 子进程带 `-q`；本进程不转发子进程 stdout/stderr |
 | `--tools-file <path>` | Thought 阶段 tools（CLI 路径相对 **cwd**，覆盖 TOML） |
 | `--after-hook-path <path>` | **仅 Thought** 阶段；CLI 相对 cwd |
-| `-i, --input` | 本进程写 user 消息，不传 `promptpile -i` |
+| `-i, --input` | 本进程读取终端内容，通过 `promptpile conversation append-user` 子进程写 user 消息；不传 `promptpile -i` |
 | `-c, --continue` | **Thought / Final** 子进程 argv 含 `-c`（Observe 不含）；与 `-i` 同时可外层循环读终端 |
 | `--max-step <n>` | 仅本包；未设则入口只跑 **1** 轮 `nextStep` |
 

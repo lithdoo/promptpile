@@ -1,6 +1,4 @@
 import { Command } from 'commander';
-import { parseExtraBodyInput } from 'promptpile/dist/llm-extra-body';
-import { parseTemperatureInput } from 'promptpile/dist/llm-sampling';
 import type { ReactCliOverrides } from './types';
 
 const trimmed = (v: unknown): string | undefined => {
@@ -88,18 +86,6 @@ export const parseReactCli = (argv: string[]): ReactCliOverrides => {
     extraBody?: string;
   };
 
-  let temperature: number | undefined;
-  const rawTemperature = o.temperature;
-  if (typeof rawTemperature === 'string' && rawTemperature.trim() !== '') {
-    temperature = parseTemperatureInput(rawTemperature.trim());
-  }
-
-  let extraBody: Record<string, unknown> | undefined;
-  const rawExtraBody = o.extraBody;
-  if (typeof rawExtraBody === 'string' && rawExtraBody.trim() !== '') {
-    extraBody = parseExtraBodyInput(rawExtraBody.trim());
-  }
-
   return {
     configPath: trimmed(o.config),
     directory: trimmed(o.directory),
@@ -112,8 +98,8 @@ export const parseReactCli = (argv: string[]): ReactCliOverrides => {
     inputMode: o.input === true ? true : undefined,
     continueMode: o.continue === true ? true : undefined,
     maxStep: parseMaxStepCli(o.maxStep),
-    temperature,
-    extraBody
+    temperature: trimmed(o.temperature),
+    extraBody: trimmed(o.extraBody)
   };
 };
 

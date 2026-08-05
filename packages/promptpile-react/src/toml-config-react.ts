@@ -1,11 +1,14 @@
 import fs from 'fs';
 import toml from '@iarna/toml';
-import type { LlmApiProfile } from 'promptpile/dist/toml-config';
-import { loadTomlConfigFile } from 'promptpile/dist/toml-config';
-import { getBool, getExtraBody, getInt, getNum, getStr } from './merge-utils';
+import {
+  getBool,
+  getInt,
+  getJsonCliValue,
+  getRawCliValue,
+  getStr
+} from './merge-utils';
 
 export interface ReactTomlLayers {
-  llmApis: LlmApiProfile[];
   promptpile: Record<string, unknown>;
   promptpileReact: Record<string, unknown>;
 }
@@ -16,11 +19,10 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
 export const loadReactTomlConfig = (absPath: string): ReactTomlLayers => {
   const raw = fs.readFileSync(absPath, 'utf8');
   const doc = toml.parse(raw) as Record<string, unknown>;
-  const base = loadTomlConfigFile(absPath);
+  const promptpile = isRecord(doc.promptpile) ? doc.promptpile : {};
   const promptpileReact = isRecord(doc['promptpile-react']) ? doc['promptpile-react'] : {};
   return {
-    llmApis: base.llmApis,
-    promptpile: base.promptpile,
+    promptpile,
     promptpileReact
   };
 };
@@ -34,8 +36,8 @@ export interface SharedTomlLayer {
   continueMode?: boolean;
   inputMode?: boolean;
   defaultLlmApi?: string;
-  llmApiTemperature?: number;
-  llmApiExtraBody?: Record<string, unknown>;
+  llmApiTemperature?: string;
+  llmApiExtraBody?: string;
 }
 
 export const buildSharedTomlLayer = (table: Record<string, unknown>): SharedTomlLayer => ({
@@ -46,8 +48,8 @@ export const buildSharedTomlLayer = (table: Record<string, unknown>): SharedToml
   continueMode: getBool(table, 'continue'),
   inputMode: getBool(table, 'input'),
   defaultLlmApi: getStr(table, 'llm_api'),
-  llmApiTemperature: getNum(table, 'llm_api_temperature'),
-  llmApiExtraBody: getExtraBody(table, 'llm_api_extra_body')
+  llmApiTemperature: getRawCliValue(table, 'llm_api_temperature'),
+  llmApiExtraBody: getJsonCliValue(table, 'llm_api_extra_body')
 });
 
 export interface ReactOnlyTomlLayer {
@@ -76,14 +78,14 @@ export interface ReactOnlyTomlLayer {
   finalLlmApiKeyEnv?: string;
   finalLlmApiModel?: string;
   finalLlmApiBaseUrl?: string;
-  thoughtLlmApiTemperature?: number;
-  observeLlmApiTemperature?: number;
-  checkLlmApiTemperature?: number;
-  finalLlmApiTemperature?: number;
-  thoughtLlmApiExtraBody?: Record<string, unknown>;
-  observeLlmApiExtraBody?: Record<string, unknown>;
-  checkLlmApiExtraBody?: Record<string, unknown>;
-  finalLlmApiExtraBody?: Record<string, unknown>;
+  thoughtLlmApiTemperature?: string;
+  observeLlmApiTemperature?: string;
+  checkLlmApiTemperature?: string;
+  finalLlmApiTemperature?: string;
+  thoughtLlmApiExtraBody?: string;
+  observeLlmApiExtraBody?: string;
+  checkLlmApiExtraBody?: string;
+  finalLlmApiExtraBody?: string;
 }
 
 export const buildReactOnlyTomlLayer = (table: Record<string, unknown>): ReactOnlyTomlLayer => ({
@@ -112,12 +114,12 @@ export const buildReactOnlyTomlLayer = (table: Record<string, unknown>): ReactOn
   finalLlmApiKeyEnv: getStr(table, 'final_llm_api_key_env'),
   finalLlmApiModel: getStr(table, 'final_llm_api_model'),
   finalLlmApiBaseUrl: getStr(table, 'final_llm_api_base_url'),
-  thoughtLlmApiTemperature: getNum(table, 'thought_llm_api_temperature'),
-  observeLlmApiTemperature: getNum(table, 'observe_llm_api_temperature'),
-  checkLlmApiTemperature: getNum(table, 'check_llm_api_temperature'),
-  finalLlmApiTemperature: getNum(table, 'final_llm_api_temperature'),
-  thoughtLlmApiExtraBody: getExtraBody(table, 'thought_llm_api_extra_body'),
-  observeLlmApiExtraBody: getExtraBody(table, 'observe_llm_api_extra_body'),
-  checkLlmApiExtraBody: getExtraBody(table, 'check_llm_api_extra_body'),
-  finalLlmApiExtraBody: getExtraBody(table, 'final_llm_api_extra_body')
+  thoughtLlmApiTemperature: getRawCliValue(table, 'thought_llm_api_temperature'),
+  observeLlmApiTemperature: getRawCliValue(table, 'observe_llm_api_temperature'),
+  checkLlmApiTemperature: getRawCliValue(table, 'check_llm_api_temperature'),
+  finalLlmApiTemperature: getRawCliValue(table, 'final_llm_api_temperature'),
+  thoughtLlmApiExtraBody: getJsonCliValue(table, 'thought_llm_api_extra_body'),
+  observeLlmApiExtraBody: getJsonCliValue(table, 'observe_llm_api_extra_body'),
+  checkLlmApiExtraBody: getJsonCliValue(table, 'check_llm_api_extra_body'),
+  finalLlmApiExtraBody: getJsonCliValue(table, 'final_llm_api_extra_body')
 });

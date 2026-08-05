@@ -58,7 +58,16 @@ thought_llm_api = "deepseek"
   ]);
   assert.strictEqual(cfg.directoryAbs, msgAbs, 'promptpile-react dir wins over promptpile');
   assert.strictEqual(cfg.maxStep, 3, 'toml max_step is used');
-  assert.strictEqual(cfg.phases.thought.apiKey, 'secret-from-named-env', 'TOML api_key_env reads its named environment variable');
+  assert.strictEqual(cfg.phases.thought.profileName, 'deepseek');
+  assert.doesNotMatch(JSON.stringify(cfg), /secret-from-named-env/, 'React does not resolve profile secrets');
+  const profileArgv = buildPhaseArgv('thought', cfg);
+  assert.deepStrictEqual(
+    profileArgv.slice(0, 6),
+    ['-d', msgAbs, '--llm-config', tomlPath, '--llm-api', 'deepseek'],
+    'React delegates profile loading and selection to Promptpile'
+  );
+  assert.ok(!profileArgv.includes('-k'), 'profile key is not expanded into argv');
+  assert.ok(!profileArgv.includes('--api-key-env'), 'profile-owned env name is resolved by Promptpile');
 
   fs.writeFileSync(
     tomlPath,
@@ -84,10 +93,18 @@ thought_llm_api = "deepseek"
     '-m',
     'm-cli'
   ]);
-  assert.strictEqual(cfgCli.phases.thought.model, 'm-cli', 'cli -m overrides phase model');
+  assert.strictEqual(cfgCli.phases.thought.modelOverride, 'm-cli', 'cli -m becomes an explicit phase override');
 
   const cfgDefaultTemp = resolveReactConfig(tmp, ['node', fakeScript, '-k', 'key']);
-  assert.strictEqual(cfgDefaultTemp.phases.thought.temperature, 0.8, 'default temperature');
+  assert.strictEqual(
+    cfgDefaultTemp.phases.thought.temperatureOverride,
+    undefined,
+    'React does not materialize Promptpile default temperature'
+  );
+  const defaultArgv = buildPhaseArgv('thought', cfgDefaultTemp);
+  assert.ok(!defaultArgv.includes('-m'), 'React does not materialize Promptpile default model');
+  assert.ok(!defaultArgv.includes('-b'), 'React does not materialize Promptpile default base URL');
+  assert.ok(!defaultArgv.includes('--temperature'), 'React omits unset temperature');
 
   fs.writeFileSync(
     tomlPath,
@@ -101,8 +118,8 @@ llm_api_temperature = 0.3
   );
   const cfgSharedReactTemp = resolveReactConfig(tmp, ['node', fakeScript, '--config', 'app.toml', '-k', 'key']);
   assert.strictEqual(
-    cfgSharedReactTemp.phases.thought.temperature,
-    0.3,
+    cfgSharedReactTemp.phases.thought.temperatureOverride,
+    '0.3',
     'promptpile-react shared temperature overrides promptpile shared temperature'
   );
 
@@ -121,7 +138,7 @@ thought_llm_api_temperature = 0.3
 `
   );
   const cfgTomlTemp = resolveReactConfig(tmp, ['node', fakeScript, '--config', 'app.toml', '-k', 'key']);
-  assert.strictEqual(cfgTomlTemp.phases.thought.temperature, 0.3, 'toml thought_llm_api_temperature');
+  assert.strictEqual(cfgTomlTemp.phases.thought.temperatureOverride, '0.3', 'toml thought_llm_api_temperature');
 
   const cfgCliTemp = resolveReactConfig(tmp, [
     'node',
@@ -133,9 +150,9 @@ thought_llm_api_temperature = 0.3
     '--temperature',
     '0.1'
   ]);
-  assert.strictEqual(cfgCliTemp.phases.thought.temperature, 0.1, 'cli --temperature');
-  assert.strictEqual(cfgCliTemp.phases.observe.temperature, 0.1, 'cli --temperature observe');
-  assert.strictEqual(cfgCliTemp.phases.check.temperature, 0.1, 'cli --temperature check');
+  assert.strictEqual(cfgCliTemp.phases.thought.temperatureOverride, '0.1', 'cli --temperature');
+  assert.strictEqual(cfgCliTemp.phases.observe.temperatureOverride, '0.1', 'cli --temperature observe');
+  assert.strictEqual(cfgCliTemp.phases.check.temperatureOverride, '0.1', 'cli --temperature check');
 
   const thoughtArgv = buildPhaseArgv('thought', cfgTomlTemp);
   const tempIdx = thoughtArgv.indexOf('--temperature');
@@ -144,6 +161,7 @@ thought_llm_api_temperature = 0.3
 
   const observeArgv = buildPhaseArgv('observe', cfg);
   assert.ok(!observeArgv.includes('--config'), 'observe argv has no --config');
+  assert.ok(observeArgv.includes('--llm-config'), 'observe argv uses profile-only config');
   assert.ok(!observeArgv.includes('--after-hook-path'), 'observe argv has no after-hook');
   assert.ok(!observeArgv.includes('--tool-choice'), 'observe argv has no tool-choice');
   assert.ok(observeArgv.includes('--disable-tool'), 'observe argv disables tools');
@@ -192,8 +210,8 @@ thought_llm_api_extra_body = { phase = "thought" }
   );
   const cfgTomlExtra = resolveReactConfig(tmp, ['node', fakeScript, '--config', 'app.toml', '-k', 'key']);
   assert.deepStrictEqual(
-    cfgTomlExtra.phases.thought.extraBody,
-    { phase: 'thought' },
+    cfgTomlExtra.phases.thought.extraBodyOverride,
+    JSON.stringify({ phase: 'thought' }),
     'toml thought_llm_api_extra_body'
   );
 
@@ -207,9 +225,9 @@ thought_llm_api_extra_body = { phase = "thought" }
     '--extra-body',
     '{"cli":1}'
   ]);
-  assert.deepStrictEqual(cfgCliExtra.phases.thought.extraBody, { cli: 1 }, 'cli --extra-body thought');
-  assert.deepStrictEqual(cfgCliExtra.phases.observe.extraBody, { cli: 1 }, 'cli --extra-body observe');
-  assert.deepStrictEqual(cfgCliExtra.phases.check.extraBody, { cli: 1 }, 'cli --extra-body check');
+  assert.strictEqual(cfgCliExtra.phases.thought.extraBodyOverride, '{"cli":1}', 'cli --extra-body thought');
+  assert.strictEqual(cfgCliExtra.phases.observe.extraBodyOverride, '{"cli":1}', 'cli --extra-body observe');
+  assert.strictEqual(cfgCliExtra.phases.check.extraBodyOverride, '{"cli":1}', 'cli --extra-body check');
 
   fs.writeFileSync(
     tomlPath,
@@ -226,7 +244,7 @@ check_llm_api_temperature = 0.25
 `
   );
   const cfgCheckTemp = resolveReactConfig(tmp, ['node', fakeScript, '--config', 'app.toml', '-k', 'key']);
-  assert.strictEqual(cfgCheckTemp.phases.check.temperature, 0.25, 'toml check_llm_api_temperature');
+  assert.strictEqual(cfgCheckTemp.phases.check.temperatureOverride, '0.25', 'toml check_llm_api_temperature');
 
   const thoughtExtraArgv = buildPhaseArgv('thought', cfgTomlExtra);
   const extraIdx = thoughtExtraArgv.indexOf('--extra-body');
@@ -239,6 +257,61 @@ check_llm_api_temperature = 0.25
 
   const cfgNoExtraArgv = buildPhaseArgv('observe', cfgDefaultTemp);
   assert.ok(!cfgNoExtraArgv.includes('--extra-body'), 'observe argv omits --extra-body when unset');
+
+  fs.writeFileSync(
+    tomlPath,
+    `
+[promptpile-react]
+dir = "${msgRel}"
+thought_llm_api = "missing-is-promptpile-owned"
+thought_llm_api_key_env = "THOUGHT_KEY_ENV"
+thought_llm_api_temperature = "invalid-temperature"
+thought_llm_api_extra_body = "[]"
+`
+  );
+  const cfgDelegatedValidation = resolveReactConfig(tmp, [
+    'node', fakeScript, '--config', 'app.toml'
+  ]);
+  const delegatedArgv = buildPhaseArgv('thought', cfgDelegatedValidation);
+  assert.ok(delegatedArgv.includes('--llm-config'));
+  assert.deepStrictEqual(
+    delegatedArgv.slice(delegatedArgv.indexOf('--llm-api'), delegatedArgv.indexOf('--llm-api') + 2),
+    ['--llm-api', 'missing-is-promptpile-owned'],
+    'React forwards profile selection without checking profile contents'
+  );
+  assert.deepStrictEqual(
+    delegatedArgv.slice(delegatedArgv.indexOf('--api-key-env'), delegatedArgv.indexOf('--api-key-env') + 2),
+    ['--api-key-env', 'THOUGHT_KEY_ENV'],
+    'phase-specific API key env name is forwarded without resolving its secret'
+  );
+  assert.deepStrictEqual(
+    delegatedArgv.slice(delegatedArgv.indexOf('--temperature'), delegatedArgv.indexOf('--temperature') + 2),
+    ['--temperature', 'invalid-temperature'],
+    'Promptpile owns temperature validation'
+  );
+  assert.deepStrictEqual(
+    delegatedArgv.slice(delegatedArgv.indexOf('--extra-body'), delegatedArgv.indexOf('--extra-body') + 2),
+    ['--extra-body', '[]'],
+    'Promptpile owns extra-body validation'
+  );
+
+  fs.writeFileSync(
+    tomlPath,
+    `
+[promptpile-react]
+dir = "${msgRel}"
+thought_llm_api_key = "direct-phase-key"
+thought_llm_api_key_env = "IGNORED_PHASE_ENV"
+`
+  );
+  const cfgDirectKey = resolveReactConfig(tmp, ['node', fakeScript, '--config', 'app.toml']);
+  const directKeyArgv = buildPhaseArgv('thought', cfgDirectKey);
+  assert.deepStrictEqual(
+    directKeyArgv.slice(directKeyArgv.indexOf('-k'), directKeyArgv.indexOf('-k') + 2),
+    ['-k', 'direct-phase-key'],
+    'direct phase key follows Promptpile direct-key precedence'
+  );
+  assert.ok(!directKeyArgv.includes('--api-key-env'));
 } finally {
   process.chdir(prevCwd);
   for (const [key, value] of envBefore) {
