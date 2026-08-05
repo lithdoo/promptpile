@@ -91,11 +91,21 @@ test('writeTextFile: rejects when file changed on disk after read (mtime)', asyn
   fs.writeFileSync(fp, 'v1\n', 'utf8')
   const range = await readFileInRange(fp, 0, undefined, undefined)
   const state = new Map()
-  setStateFromReadInRange(state, path.resolve(fp), range, {
+  const resolved = path.resolve(fp)
+  setStateFromReadInRange(state, resolved, range, {
     offsetLines: 0,
     maxLines: undefined,
   })
+
+  // Do not rely on the filesystem clock advancing between two immediate writes.
+  // Some CI filesystems can report the same mtime for both operations, making
+  // this race-detection test flaky. Force the external modification timestamp
+  // past the timestamp captured by the read state.
+  const capturedTimestamp = state.get(resolved)!.timestamp
   fs.appendFileSync(fp, 'extern\n', 'utf8')
+  const externallyModifiedAt = new Date(capturedTimestamp + 2000)
+  fs.utimesSync(fp, externallyModifiedAt, externallyModifiedAt)
+
   assert.throws(
     () => writeTextFile(fp, 'hacked\n', { readFileState: state }),
     (e: unknown) =>
