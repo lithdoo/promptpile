@@ -41,7 +41,7 @@
 
 ## 工作原理
 
-1. 解析 CLI 与 `--config` TOML，按优先级合并为最终配置（见 [配置说明](#配置说明)）。
+1. 解析 CLI、`--config` 运行时 TOML 与可选的 `--llm-config` profile 数据库，按字段优先级合并为最终配置（见 [配置说明](#配置说明)）。
 2. 校验 **API Key** 是否存在；不存在则退出并提示错误。
 3. 若配置了 `-o` / TOML `output`，在发起请求前 **创建输出目录并校验可写**；失败则退出且不调用 API。
 4. 按 [工具文件解析规则](#工具定义与历史工具调用toolstoml--assistantcalls--assistantresult) 解析 `tools`（**仅**显式 `.toml`，可含 `extends`）；**在调用 API 之前**完成校验，非法则退出；`--disable-tool` 时请求体中 **省略** `tools` 字段。
@@ -49,9 +49,9 @@
    - `^\[(\d+)\](.+?)\.(md|json)$`（扩展名不区分大小写）；
    - `^\[(\d+)\]assistant\.calls\.jsonl$`、`^\[(\d+)\]assistant\.extra\.json$`、`^\[(\d+)\]assistant\.result\.jsonl$`。
 6. 按序号 **升序** 组装 `messages`：先将根层文件按 **序号分组**，再在组内按固定顺序拼消息（见下节「序号与同一序号内的顺序」与 [工具章节](#工具定义与历史工具调用toolstoml--assistantcalls--assistantresult)）。
-7. 若指定 **`insert_files` / `append_files`**（CLI：`--insert-files`、`--append-files`；TOML / 环境变量见下表）：从各路径读取 **UTF-8** sidecar 文件（**相对路径相对当前工作目录**，与 `--tools-file` 一致）。多个路径用 **`|`** 分隔。每个文件的 **basename** 必须为 **`{name}.{role}.md`**（`name` 可含点，如 `react.core.system.md` → `role=system`）；`role` 仅允许 `system`、`user`、`assistant`。去除 BOM；`.md` 去 YAML front matter；trim 后 **仅空白** 则跳过该条。`insert_files` 按列表顺序 **插在** 扫描目录组装的 `messages` **之前**；`append_files` **追加在之后**。每条 sidecar 对应 **独立** 一条 API 消息（不与 `[idx]system.md` 合并）。文件不存在、不可读或命名非法则 **退出并报错**。sidecar 文件 **不会** 被 `scanDirectory` 当作 `[idx]role.md` 扫描。
-8. 合并 **`temperature`**（与 `llm_api_model` 同链：`llm_api_temperature` / `PROMPTPILE_LLM_API_TEMPERATURE` / `--temperature` / `[[llm_api]].temperature`）；各层均未设置时 **默认 `0.8`**，并写入请求体。
-9. 合并可选 **`extra_body`**（同链：`llm_api_extra_body` / `PROMPTPILE_LLM_API_EXTRA_BODY` / `--extra-body` / `[[llm_api]].extra_body`）；TOML 为内联表，env/CLI 为 JSON 对象字符串；各层均未设置时不写入；合并后浅展开进请求体（可覆盖 `temperature` 等字段）。
+7. 若指定 **`insert_files` / `append_files`**（CLI：`--insert-files`、`--append-files`；TOML 见下表）：从各路径读取 **UTF-8** sidecar 文件（**相对路径相对当前工作目录**，与 `--tools-file` 一致）。多个路径用 **`|`** 分隔。每个文件的 **basename** 必须为 **`{name}.{role}.md`**（`name` 可含点，如 `react.core.system.md` → `role=system`）；`role` 仅允许 `system`、`user`、`assistant`。去除 BOM；`.md` 去 YAML front matter；trim 后 **仅空白** 则跳过该条。`insert_files` 按列表顺序 **插在** 扫描目录组装的 `messages` **之前**；`append_files` **追加在之后**。每条 sidecar 对应 **独立** 一条 API 消息（不与 `[idx]system.md` 合并）。文件不存在、不可读或命名非法则 **退出并报错**。sidecar 文件 **不会** 被 `scanDirectory` 当作 `[idx]role.md` 扫描。
+8. 合并 **`temperature`**：`--temperature` > `[promptpile].llm_api_temperature` > 所选 profile 的 `temperature` > 默认 `0.8`，并写入请求体。
+9. 合并可选 **`extra_body`**：`--extra-body` > `[promptpile].llm_api_extra_body` > 所选 profile 的 `extra_body`；TOML 为内联表，CLI 为 JSON 对象字符串；各层均未设置时不写入；合并后浅展开进请求体（可覆盖 `temperature` 等字段）。
 10. 使用 `fetch`（来自 `node-fetch` v2）请求 `{baseURL}/chat/completions`，固定 **`stream: true`**：正文来自流式 `delta.content`，流结束后合并 **`delta.tool_calls`**；非 quiet 时在 stdout 打印正文，并在有 tool calls 时每行输出一条 tool_call JSON。
 
 普通消息的 **角色名** 会原样作为 `role` 传给 API。除 `tool` 外请使用网关接受的 role（常见为 `system`、`user`、`assistant`）。`tool` 消息来自 `[idx]assistant.result.jsonl` 的各行；若存在 **`[idx]assistant.calls.jsonl`** 但某 `tool_call_id` 在 result 中无对应行（或缺少 result 文件），程序会按 `missing_tool_results` 策略处理，并继续为缺失项 **合成** 一条 `tool` 消息，其 `content` 为固定中文错误句。默认策略为 `warn`：向 stderr 输出 warning 后继续。
@@ -303,15 +303,62 @@ parameters = '{"type":"object","properties":{"city":{"type":"string"}},"required
 
 ## 配置说明
 
-普通配置按 **优先级从高到低** 合并：**命令行 > TOML > 内置默认值**。实现见 `src/resolve-config.ts`。
+Promptpile 将运行时配置与 LLM profile 数据库视为两个独立来源：
 
-1. **命令行参数**
-2. **`--config <path>` 指定的 TOML**（路径相对当前工作目录；读取 `[promptpile]` 与 `[[llm_api]]`）
-3. **内置默认值**（如 `./messages`、`gpt-3.5-turbo`）
+- **`--config <path>`**：读取 `[promptpile]` 运行时配置；未指定 `--llm-config` 时，也从该文件读取 `[[llm_api]]`。
+- **`--llm-config <path>`**：只把该文件的 `[[llm_api]]` 作为 profile 数据库；其中的 `[promptpile]`、`[promptpile-react]` 或其它表不会改变目录、工具、输出、continue 等运行策略。
+
+两个路径均相对当前工作目录解析；文件缺失或 TOML 非法时退出码为 `1`。
+
+Profile 数据库来源优先级：
+
+```text
+--llm-config 中的 [[llm_api]]
+    >
+--config 中的 [[llm_api]]（仅当没有 --llm-config）
+```
+
+Profile 名称选择优先级：
+
+```text
+显式 --llm-api <name>
+    >
+[promptpile].llm_api
+    >
+不选择 profile
+```
+
+Profile 名称匹配不区分大小写。显式 `--llm-api` 找不到时严格失败并输出
+`Error: LLM API profile not found: <name>`；为保持兼容，旧 `[promptpile].llm_api`
+找不到时仍使用其它配置层或内置默认值。
+
+模型、Base URL、temperature、extra body 等 LLM 字段按字段独立合并：
+
+```text
+显式 CLI 字段
+    >
+[promptpile].llm_api_* 字段
+    >
+选中的 [[llm_api]] profile 字段
+    >
+Promptpile 内置默认值
+```
+
+普通非 LLM 运行时字段仍按 **CLI > `[promptpile]` > 内置默认值** 合并。实现见 `src/resolve-config.ts`。
+
+API key 保留既有的 direct-key 优先语义：
+
+1. 显式 `--api-key` 或 `--api-key-env` 覆盖所有 TOML/profile key 来源；二者互斥。
+2. TOML direct key 候选为 `[promptpile].llm_api_key` > profile `api_key`。
+3. TOML env-name 候选为 `[promptpile].llm_api_key_env` > profile `api_key_env`。
+4. 合并后若 direct key 存在则使用 direct key；否则才读取 `process.env[env-name]`。
+
+因此，当 TOML 的 direct key 与 env-name 同时存在时，direct key 当前优先。若需要显式强制
+使用某个环境变量，请使用 `--api-key-env <name>`；该变量不存在或仅含空白时命令严格失败。
 
 程序不读取 `.env`，也不把 `AI_MODEL`、`TOOLS_FILE`、`PROMPTPILE_*` 等普通环境变量作为配置层。环境变量仅用于以下明确的运行时接口：
 
-- TOML `api_key_env` / `llm_api_key_env`：其值是另一个环境变量的名称，用于读取密钥。
+- CLI `--api-key-env` 或 TOML `api_key_env` / `llm_api_key_env`：其值是另一个环境变量的名称，用于读取密钥。
 - `PROMPTPILE_DEBUG`：启用 stderr 诊断日志。
 - `PROMPTPILE_DUMP_LLM` / `PROMPTPILE_DUMP_LLM_TAG`：控制请求响应审计文件。
 - after-hook 子进程收到的 `PROMPTPILE_*` 上下文变量属于输出接口，不参与 promptpile 自身配置合并。
@@ -319,17 +366,20 @@ parameters = '{"type":"object","properties":{"city":{"type":"string"}},"required
 ### TOML（`--config`）
 
 - **`[promptpile]`**：与 `example.toml` 一致，如 `dir`、`output`（路径字符串）、`output_pile_file`、`output_pile_fd`、`output_pile_format`、`quiet`、`after_hook`、`tool_choice`、`tools_file`、`disable_tool`、`continue`、`input`、`insert_files`、`append_files`、`missing_tool_results`、`llm_api`、`llm_api_key`、`llm_api_key_env`、`llm_api_model`、`llm_api_base_url`、`llm_api_temperature`、`llm_api_extra_body`。旧名 `output_pipe` / `output_pipe_format` 仍兼容，新名优先。
-- **`[[llm_api]]`**：`name`、`model`、`base_url`、`api_key`、`api_key_env`、`temperature`、`extra_body`；由 `llm_api` 选择 profile 后再应用 `llm_api_*` 覆盖。
-- **密钥**：若配置了 `api_key_env` / `llm_api_key_env`，在直写 `api_key` / `llm_api_key` 仍为空时从 `process.env[该变量名]` 读取。
+- **`[[llm_api]]`**：`name`、`model`、`base_url`、`api_key`、`api_key_env`、`temperature`、`extra_body`；由 `--llm-api` 或 `[promptpile].llm_api` 选择 profile 后，再应用显式 CLI / `[promptpile].llm_api_*` 覆盖。
+- **密钥**：若配置了 `api_key_env` / `llm_api_key_env`，在同一合并结果中的直写 `api_key` / `llm_api_key` 仍为空时从 `process.env[该变量名]` 读取。该兼容语义保持不变。
 
 ### CLI 参数
 
 | 选项 | 说明 | 默认值 |
 |------|------|--------|
 | `--config <path>` | TOML 配置文件（相对 cwd） | 无 |
+| `--llm-config <path>` | 仅用作 `[[llm_api]]` profile 数据库的 TOML（相对 cwd）；不继承其中的运行时配置 | 无 |
+| `--llm-api <name>` | 显式选择 profile；名称不区分大小写，找不到时退出 `1` | `[promptpile].llm_api` |
 | `-d, --directory <path>` | 扫描目录 | 见上合并链 |
 | `-m, --model <model>` | 模型 ID | 见上合并链 |
 | `-k, --api-key <key>` | API Key | 无 |
+| `--api-key-env <name>` | 在 Promptpile 进程内从指定环境变量读取 API Key；与 `--api-key` 互斥 | 无 |
 | `-b, --api-base-url <url>` | Base URL | 见上合并链 |
 | `--temperature <n>` | 采样温度（`0`–`2`）；覆盖 `llm_api_temperature` / profile | `0.8` |
 | `--extra-body <json>` | 额外请求体字段（JSON 对象）；覆盖 `llm_api_extra_body` / profile | 无 |
@@ -358,20 +408,36 @@ parameters = '{"type":"object","properties":{"city":{"type":"string"}},"required
 node dist/index.js --help
 ```
 
-### Append a user message without an LLM
+### 不调用 LLM，追加一条用户消息
 
-`conversation append-user` appends one user message to an existing message
-directory. It reads the complete UTF-8 message from stdin and does not load an
-API key, tools, model configuration, or after-hooks.
+`conversation append-user` 向已存在的消息目录追加一条 user 消息。命令从 stdin
+读取完整 UTF-8 内容，支持多行，不要求 API key，也不会解析 LLM profile、加载工具、
+调用模型或运行 after-hook。
 
 ```bash
 printf '%s' 'Analyze this repository' \
   | promptpile conversation append-user -d ./messages
 ```
 
-On success, stdout contains the written file path. Use `--quiet` to suppress
-that output. Empty input, a missing directory, or a non-directory target exits
-with status 1 without writing a message.
+参数：
+
+```text
+-d, --directory <path>  必填；已存在的消息目录，相对路径相对 cwd
+-q, --quiet             成功时不输出文件路径
+```
+
+stdin 仅在 `content.trim()` 为空时被拒绝；非空内容不会被 trim，写入文件时保留原文。
+默认成功 stdout 为 `<写入文件路径>\n`，`--quiet` 成功 stdout 为空；诊断写入 stderr。
+成功退出码为 `0`，空输入、目录缺失、目标不是目录、扫描或写入失败时退出码为 `1`，
+且不会创建 assistant 文件。
+
+编排器应直接将已经读取的用户内容写入子进程 stdin，不要通过 shell 拼接或转义正文：
+
+```text
+spawn promptpile conversation append-user -d <directory> --quiet
+  stdin <- user content
+  exit 0 -> 开始后续编排
+```
 
 配置示例见 [example.toml](./example.toml)、[example.sh](./example.sh)。
 
@@ -396,6 +462,34 @@ node dist/index.js -d ./messages -k "sk-..." --disable-tool
 ```
 
 也可在 TOML 中配置 `api_key_env = "OPENAI_API_KEY"`，再由 shell 或密钥管理器提供该变量。
+
+对于单次调用，也可只传环境变量名称，避免把 secret 放入 argv：
+
+```bash
+node dist/index.js -d ./messages \
+  --api-key-env OPENAI_API_KEY \
+  --disable-tool
+```
+
+`--api-key` 与 `--api-key-env` 不能同时使用。显式环境变量不存在或仅含空白时，
+命令会在调用模型前失败，且诊断不会打印变量中的 secret。
+
+### 面向编排器选择 LLM profile
+
+编排器可保留自己的运行策略，只委托 Promptpile 解析 profile：
+
+```bash
+promptpile \
+  -d ./messages \
+  --llm-config ./promptpile-react.toml \
+  --llm-api reasoning \
+  --temperature 0.2 \
+  --tools-file ./tools.toml
+```
+
+这里 `--temperature 0.2` 是显式字段覆盖；model、Base URL、API key 和其它未覆盖字段
+由 `reasoning` profile 提供。`--llm-config` 文件中的 `[promptpile-react]` 和
+`[promptpile]` 不会改变本次命令的目录、工具或输出策略。
 
 ### 指定模型
 
@@ -607,8 +701,8 @@ packages/promptpile/
 │   ├── index.ts         # 入口：编排扫描、读文件、调 API、打印结果
 │   ├── cli.ts             # Commander：CLI 定义与解析（`parseCli`）
 │   ├── config.ts          # 遗留 `loadConfig` 兼容入口（不读取环境变量）
-│   ├── resolve-config.ts  # 两层合并：CLI、TOML
-│   ├── toml-config.ts     # 解析 `--config` TOML 的 `[promptpile]` / `[[llm_api]]`
+│   ├── resolve-config.ts  # 合并 CLI、runtime TOML、LLM profile 与默认值
+│   ├── toml-config.ts     # 分离加载 `[promptpile]` 与 `[[llm_api]]`
 │   ├── file-handler.ts  # 目录扫描、拼 ChatMessage[]
 │   ├── tools-loader.ts  # 显式 `.toml` 工具、`extends` 解析与 `loadTools`
 │   ├── after-hook.ts    # 解析并执行完成后钩子脚本
@@ -624,7 +718,7 @@ packages/promptpile/
 
 ## 安全与隐私
 
-- **API Key**：勿将真实密钥提交到仓库；优先使用系统/进程环境变量，或在 TOML 中使用 `api_key_env` 引用环境变量名。
+- **API Key**：勿将真实密钥提交到仓库；优先使用 `--api-key-env`，或在 TOML 中使用 `api_key_env` 引用环境变量名。`--api-key-env` 只把变量名称放入 argv，secret 在 Promptpile 进程内解析。
 - **日志**：默认不会在日志中打印完整 `messages` 负载；若自行修改代码或在外层包装脚本中记录请求体，请注意敏感数据与 CI 输出。
 - **网络**：请求发往 `apiBaseUrl` 所指向的服务器，请确认合规与数据出境要求。
 - **工具调用**：本工具 **不执行** 用户定义的工具函数；工具结果文件需自行保证来源可信。
@@ -636,6 +730,10 @@ packages/promptpile/
 | 现象 | 可能原因 | 处理建议 |
 |------|----------|----------|
 | `AI API key is required` | 未设置 `-k`，且 TOML 未提供 `api_key` 或有效的 `api_key_env` | 传入 `-k`，或配置 TOML `api_key_env` |
+| `--api-key and --api-key-env cannot be used together` | 同时提供了两种显式密钥来源 | 只保留其中一种；自动化场景优先 `--api-key-env` |
+| `API key environment variable is not set or empty` | `--api-key-env` 指向的变量不存在或仅含空白 | 在子进程环境中设置该变量，或修正变量名 |
+| `LLM API profile not found` | 显式 `--llm-api` 在当前 profile 数据库中不存在 | 检查名称及 `--llm-config` / `--config` 的 profile 来源 |
+| `LLM config file not found` / `failed to parse LLM config file` | `--llm-config` 路径不存在或 TOML/profile 字段非法 | 修正相对 cwd 的路径或 TOML 内容 |
 | `No files found matching` … | 目录下无匹配的消息文件 | 检查是否至少存在 `[数字]角色.md`、`.json` 或 `[idx]assistant.calls.jsonl` / `[idx]assistant.extra.json` / `[idx]assistant.result.jsonl` 等匹配项 |
 | `Error loading tools` / `Circular tools extends` / `Tools extends depth exceeds` | 工具 `.toml` 非法、`extends` 成环、递归过深、显式路径不存在或扩展名非 `.toml` 等 | 按 stderr 提示修正；条目须为扁平 `[[tools]]`；`extends` 路径相对当前 toml 所在目录 |
 | `Error: tools require an explicit .toml path` | 未传 `--disable-tool` 且未提供 `--tools-file` 或配置中的 `tools_file` | 指定 `.toml` 路径或添加 `--disable-tool` |
