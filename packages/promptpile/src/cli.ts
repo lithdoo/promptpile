@@ -13,6 +13,8 @@ export interface CliParseResult {
   llmConfigPath?: string;
   /** Explicitly selected LLM profile name. */
   llmApiName?: string;
+  /** Explicit environment-variable name used as the API key source. */
+  apiKeyEnvName?: string;
   options: Partial<Config>;
 }
 
@@ -28,6 +30,7 @@ const buildProgram = (): Command => {
     .option('-d, --directory <path>', 'Directory to scan for files')
     .option('-m, --model <model>', 'AI model to use')
     .option('-k, --api-key <key>', 'AI API key')
+    .option('--api-key-env <name>', 'Read the AI API key from this environment variable')
     .option('-b, --api-base-url <url>', 'AI API base URL')
     .option(
       '--temperature <n>',
@@ -91,6 +94,7 @@ export const parseCli = (argv: string[]): CliParseResult => {
     directory?: string;
     model?: string;
     apiKey?: string;
+    apiKeyEnv?: string;
     apiBaseUrl?: string;
     output?: string;
     outputPileFile?: string;
@@ -127,6 +131,7 @@ export const parseCli = (argv: string[]): CliParseResult => {
   const configPath = trimOpt(options.config);
   const llmConfigPath = trimOpt(options.llmConfig);
   const llmApiName = trimOpt(options.llmApi);
+  const apiKeyEnvName = trimOpt(options.apiKeyEnv);
 
   const rawToolsFile = options.toolsFile as string | undefined;
   const toolsFileCli =
@@ -167,6 +172,7 @@ export const parseCli = (argv: string[]): CliParseResult => {
     configPath,
     llmConfigPath,
     llmApiName,
+    apiKeyEnvName,
     options: {
       directory: options.directory,
       model: options.model,

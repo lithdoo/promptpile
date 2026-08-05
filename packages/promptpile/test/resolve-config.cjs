@@ -19,7 +19,8 @@ const envKeys = [
   'PROMPTPILE_OUTPUT_PILE_FD',
   'PROMPTPILE_OUTPUT_PILE_FORMAT',
   'PROMPTPILE_OUTPUT_PIPE_FORMAT',
-  'PROMPTPILE_TEST_KEY'
+  'PROMPTPILE_TEST_KEY',
+  'PROMPTPILE_CLI_KEY'
 ];
 const envBefore = new Map(envKeys.map(key => [key, process.env[key]]));
 try {
@@ -216,6 +217,18 @@ try {
   assert.strictEqual(cfgRuntimeKey.apiKey, 'runtime-key', 'promptpile direct key overrides profile key');
   const cfgCliKey = resolveConfig(tmp, ['node', fakeScript, '--config', 'app.toml', '--api-key', 'cli-key']);
   assert.strictEqual(cfgCliKey.apiKey, 'cli-key', 'CLI key overrides promptpile and profile keys');
+
+  process.env.PROMPTPILE_CLI_KEY = 'key-from-explicit-cli-env';
+  const cfgCliKeyEnv = resolveConfig(tmp, [
+    'node', fakeScript,
+    '--config', 'app.toml',
+    '--api-key-env', 'PROMPTPILE_CLI_KEY'
+  ]);
+  assert.strictEqual(
+    cfgCliKeyEnv.apiKey,
+    'key-from-explicit-cli-env',
+    '--api-key-env overrides promptpile and profile key sources'
+  );
 
   delete process.env.PROMPTPILE_TEST_KEY;
   fs.writeFileSync(tomlPath, '[promptpile]\nllm_api_key_env = "PROMPTPILE_TEST_KEY"\n');

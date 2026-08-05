@@ -244,14 +244,21 @@ export const resolveConfig = (cwd: string, argv: string[]): Config => {
   let configPath: string | undefined;
   let llmConfigPath: string | undefined;
   let explicitLlmApiName: string | undefined;
+  let explicitApiKeyEnvName: string | undefined;
   try {
     const parsed = parseCli(argv);
     configPath = parsed.configPath;
     llmConfigPath = parsed.llmConfigPath;
     explicitLlmApiName = parsed.llmApiName;
+    explicitApiKeyEnvName = parsed.apiKeyEnvName;
     cliPartial = parsed.options;
   } catch (e) {
     console.error('Error: Invalid CLI options:', e instanceof Error ? e.message : e);
+    process.exit(1);
+  }
+
+  if (cliPartial.apiKey !== undefined && explicitApiKeyEnvName !== undefined) {
+    console.error('Error: --api-key and --api-key-env cannot be used together');
     process.exit(1);
   }
 
@@ -321,17 +328,29 @@ export const resolveConfig = (cwd: string, argv: string[]): Config => {
     'https://api.openai.com/v1'
   );
 
-  const apiKeyDirect = pickOptStr(
-    cliLayer.apiKey,
-    tomlLayer.apiKey,
-  );
-  const apiKeyEnvName = pickOptStr(
-    undefined,
-    tomlLayer.apiKeyEnvName,
-  );
-  let apiKey = apiKeyDirect ?? '';
-  if (apiKey === '' && apiKeyEnvName !== undefined) {
-    apiKey = trim(process.env[apiKeyEnvName]) ?? '';
+  let apiKey: string;
+  if (explicitApiKeyEnvName !== undefined) {
+    const value = trim(process.env[explicitApiKeyEnvName]);
+    if (value === undefined) {
+      console.error(
+        `Error: API key environment variable is not set or empty: ${explicitApiKeyEnvName}`
+      );
+      process.exit(1);
+    }
+    apiKey = value;
+  } else {
+    const apiKeyDirect = pickOptStr(
+      cliLayer.apiKey,
+      tomlLayer.apiKey,
+    );
+    const apiKeyEnvName = pickOptStr(
+      undefined,
+      tomlLayer.apiKeyEnvName,
+    );
+    apiKey = apiKeyDirect ?? '';
+    if (apiKey === '' && apiKeyEnvName !== undefined) {
+      apiKey = trim(process.env[apiKeyEnvName]) ?? '';
+    }
   }
 
   const output = pickOptStr(
