@@ -1,34 +1,70 @@
 # promptpile
 
-Promptpile ecosystem monorepo, migrated from [lithdoo/hostra](https://github.com/lithdoo/hostra) at source commit `03d9e9e`.
+Promptpile is a **file-native, CLI-first lightweight agent runtime ecosystem**. Conversation state lives in inspectable files; one `promptpile` invocation performs one Chat Completions request; orchestration and tool execution are composed outside the core through public CLI and artifacts.
 
-| Package | Description |
-|---|---|
-| [promptpile](./packages/promptpile/) | File-driven Chat Completions CLI |
-| [promptpile-mcp](./packages/promptpile-mcp/) | MCP stdio gateway, tool export and calls execution |
-| [promptpile-react](./packages/promptpile-react/) | ReAct-style orchestration around the promptpile CLI |
-| [promptpile-plan](./packages/promptpile-plan/) | Plan-and-execute scaffold |
+**Documentation:** https://lithdoo.github.io/promptpile/
+
+```text
+                     orchestration
+             promptpile-react / promptpile-plan
+                         │ CLI
+                         ▼
+                    promptpile
+                    │       │
+              artifacts     LLM API
+                    │
+          ┌─────────┴──────────┐
+          │                    │
+   promptpile-mcp      promptpile-compress
+   tool execution       context lifecycle
+```
+
+## Packages
+
+| Package | Role | Status |
+| --- | --- | --- |
+| [`promptpile`](./packages/promptpile/) | File-driven single-completion CLI | Beta / active |
+| [`promptpile-react`](./packages/promptpile-react/) | ReAct orchestration over the public CLI | Beta / active |
+| [`promptpile-mcp`](./packages/promptpile-mcp/) | MCP gateway, tool export and call execution | Beta / active |
+| [`promptpile-compress`](./packages/promptpile-compress/) | Conversation compression / restore / retrieval | Experimental / private |
+| [`promptpile-plan`](./packages/promptpile-plan/) | Plan-and-execute orchestration | Scaffold |
+| [`agent-lite-tools`](./agent-lite-tools/) | Supporting file/search/shell/web tool packages | Supporting |
+
+## Architecture rules
+
+- Message and tool shapes currently follow OpenAI Chat Completions.
+- `promptpile` does **not** execute model-generated tools and does not automatically run a second completion.
+- `promptpile-react` integrates only through documented CLI/stdin/artifacts; it does not import `promptpile/dist/*` internals or assume a fixed build path.
+- Cross-package compatibility is documented as versioned contracts under [`doc/15-contracts`](./doc/15-contracts/README.md).
 
 ## Development
 
 ```bash
-npm install
+npm ci
 npm run build
 npm test
+npm run build:agent-tools
+npm run test:agent-tools
 ```
 
 Node.js 18 or newer is required.
 
-## Current architecture notes
+## Documentation
 
-- Message and tool shapes currently follow OpenAI Chat Completions.
-- `promptpile-react` integrates with Promptpile only through the documented `promptpile` CLI and conversation artifacts. It neither imports `promptpile/dist/*` internals nor assumes a fixed CLI build path.
-- This repository can be consumed by other repositories as a Git submodule.
+```bash
+npm run docs:dev
+npm run docs:build
+npm run docs:preview
+```
+
+The VitePress site is built from [`doc/`](./doc/) and deployed from `main` to GitHub Pages by GitHub Actions.
 
 ## Examples
 
 - [`promptpile-chat-loop`](./examples/promptpile-chat-loop/) — basic multi-round chat loop.
-- [`promptpile-mcp-launcher`](./examples/promptpile-mcp-launcher/) — local MCP stdio gateway with filesystem, fetch and Playwright servers.
+- [`promptpile-mcp-launcher`](./examples/promptpile-mcp-launcher/) — local MCP stdio gateway.
 - [`promptpile-mcp-react`](./examples/promptpile-mcp-react/) — ReAct loop backed by the MCP gateway.
 
-Run `npm install` and `npm run build` at the repository root first. MCP examples also require `npm install` in `examples/`.
+## License
+
+ISC
