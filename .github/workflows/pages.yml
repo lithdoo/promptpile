@@ -33,14 +33,28 @@ jobs:
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
-      - name: Install dependencies without workspace lifecycle builds
-        run: npm ci --ignore-scripts
+      - name: Install active package dependencies
+        run: >-
+          npm ci --ignore-scripts
+          --workspace=promptpile
+          --workspace=promptpile-mcp
+          --workspace=promptpile-react
+          --workspace=promptpile-plan
+          --workspace=promptpile-compress
 
       - name: Build active packages
         run: npm run build
 
       - name: Test active packages
         run: npm test
+
+      - name: Bootstrap agent tool base
+        run: |
+          npm ci --ignore-scripts --workspace=@agent-tool-lite/base
+          npm run build -w @agent-tool-lite/base
+
+      - name: Install supporting agent tool dependencies
+        run: npm ci --ignore-scripts --workspace=agent-lite-tools
 
       - name: Build supporting agent tools in dependency order
         run: npm run build:agent-tools
