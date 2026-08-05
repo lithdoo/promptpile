@@ -15,7 +15,7 @@ export type PromptpileInvokeResult = {
 /** 如何启动 promptpile 子进程（可能为全局命令或 node + 内置脚本）。 */
 export type PromptpileSpawnConfig = {
   command: string;
-  /** 插在 CLI 参数之前的 argv 片段（例如 package metadata 声明的 Node 脚本）。 */
+  /** 插在 CLI 参数之前的 argv 片段（默认是 package metadata 声明的 Node entry script）。 */
   argvPrefix: string[];
   /** 面向用户的简短描述（错误提示用）。 */
   displayName: string;
@@ -26,7 +26,11 @@ type PackageJsonWithBin = {
   bin?: unknown;
 };
 
-/** Resolve one npm package executable without assuming its build layout. */
+/**
+ * Resolve a package-declared Node entry script without assuming its build layout.
+ * The caller intentionally launches this path with `process.execPath`; this is not
+ * a generic npm executable/shim resolver. Use `PROMPTPILE_BIN` for native wrappers.
+ */
 export function resolveDeclaredPackageBin(
   packageJsonPath: string,
   executableName: string
@@ -70,7 +74,7 @@ function tryResolveBundledPromptpileScript(packageJsonPath?: string | null): str
 /**
  * 解析 promptpile 子进程启动方式：
  * 1. `PROMPTPILE_BIN` 非空 → 沿用（覆盖内置）
- * 2. 否则读取依赖包 `package.json` 声明的 `bin.promptpile` → `node` + 该脚本
+ * 2. 否则读取依赖包 `package.json` 声明的 `bin.promptpile` → `node` + Node-compatible entry script
  * 3. 否则回退到 PATH 上的 `promptpile`
  */
 export function getPromptpileSpawnConfig(options?: {

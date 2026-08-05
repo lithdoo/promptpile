@@ -826,7 +826,7 @@ Recommended logic:
 3. PATH `promptpile` fallback
 ```
 
-The implementation may still execute the resolved script via `process.execPath` when appropriate, but the script path must come from package metadata rather than a fixed `dist/index.js` convention.
+The implemented React integration executes the resolved script via `process.execPath`. Its package-metadata contract is therefore intentionally narrower than a generic npm executable launcher: `bin.promptpile` must point to a Node-compatible entry script. Native executables and custom wrappers remain supported through the explicit `PROMPTPILE_BIN` override. The script path comes from package metadata rather than a fixed `dist/index.js` convention.
 
 This changes the contract from:
 
@@ -837,7 +837,7 @@ This changes the contract from:
 to:
 
 ```text
-"The promptpile npm package declares a promptpile executable"
+"The promptpile npm package declares a Node-compatible promptpile entry script"
 ```
 
 which is the correct public boundary.

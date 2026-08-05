@@ -8,9 +8,9 @@
 
 ### 运行时与 `PROMPTPILE_BIN`
 
-- **默认**（未设置 **`PROMPTPILE_BIN`**）：解析依赖包 **`promptpile/package.json`** 声明的 `bin.promptpile`（也兼容字符串形式的 `bin`），并用当前 Node 的 **`process.execPath`** 执行该脚本；不假定具体构建目录或文件名。
+- **默认**（未设置 **`PROMPTPILE_BIN`**）：解析依赖包 **`promptpile/package.json`** 声明的 `bin.promptpile`（也兼容字符串形式的 `bin`），并用当前 Node 的 **`process.execPath`** 执行该脚本；因此这里的明确契约是 `bin.promptpile` 指向 **Node-compatible JavaScript entry script**，而不是任意原生 executable。它不假定具体构建目录或文件名。
 - **回退**：若依赖包、`bin` 声明或声明的目标文件不可用，则尝试命令名 **`promptpile`**（需在 `PATH` 中）。
-- **覆盖**：设置环境变量 **`PROMPTPILE_BIN`** 为可执行文件路径或命令名时，**完全**使用该值启动子进程（与旧行为、CI 或自定义包装脚本兼容）。
+- **覆盖**：设置环境变量 **`PROMPTPILE_BIN`** 为可执行文件路径或命令名时，**完全**使用该值启动子进程；原生 executable、自定义 wrapper、旧环境和 CI 应使用这个入口。
 - **`currentStep`**：已成功完成的 **ReAct 轮数**（每轮 `nextStep` 在 thought、observe、check **均成功**后 +1；从 0 递增）。
 - **`--max-step N`**：最多 **N** 轮上述成功；用尽后 `stopReason` 为 `max_step`。
 - **未传 `--max-step`**：内部为无上限（`Infinity`），为避免死循环，**入口只执行一轮** `nextStep` 后结束（仍可通过多次手动运行进程实现多轮）。
