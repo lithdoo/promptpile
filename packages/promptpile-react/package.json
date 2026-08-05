@@ -25,7 +25,7 @@
     "prepare": "npm run build",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
-    "test": "npm run build && node test/architecture-boundary.cjs && node test/binary-resolution.cjs && node test/resolve-react-config.cjs && node test/react-runtime-cli-boundary.cjs && node test/append-user-cli.cjs && node test/input-mode-append-failure.cjs"
+    "test": "npm run build && node test/architecture-boundary.cjs && node test/binary-resolution.cjs && node test/resolve-react-config.cjs && node test/react-runtime-cli-boundary.cjs && node test/real-promptpile-config-errors.cjs && node test/append-user-cli.cjs && node test/input-mode-append-failure.cjs"
   },
   "dependencies": {
     "@iarna/toml": "^2.2.5",

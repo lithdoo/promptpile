@@ -174,7 +174,7 @@ npm run test
 npm run dev -- --config=example.toml -q
 ```
 
-测试套件包含静态架构约束，以及使用假 Promptpile 子进程贯穿 Thought / Observe / Check / Final 的 CLI 边界集成测试；不需要真实模型或网络。
+测试套件包含静态架构约束、使用假 Promptpile 子进程贯穿 Thought / Observe / Check / Final 的 CLI 协议测试，以及 React CLI → package `bin` → 真实 Promptpile canonical parser 的错误路径集成测试；后者覆盖缺失 profile、非法 temperature / extra body 和缺失阶段 API-key env。全部测试都不需要真实模型或外部网络。
 
 ## 许可证
 
