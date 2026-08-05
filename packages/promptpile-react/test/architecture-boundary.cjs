@@ -2,14 +2,43 @@
 
 const assert = require('assert');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const root = path.join(__dirname, '..');
 const src = path.join(root, 'src');
 
-const productionFiles = fs.readdirSync(src, { withFileTypes: true })
-  .filter(entry => entry.isFile() && entry.name.endsWith('.ts'))
-  .map(entry => path.join(src, entry.name));
+const isTypeScriptSource = name => /\.(?:[cm]?ts|tsx)$/i.test(name);
+
+const listTypeScriptSources = directory => {
+  const files = [];
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const entryPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...listTypeScriptSources(entryPath));
+    } else if (entry.isFile() && isTypeScriptSource(entry.name)) {
+      files.push(entryPath);
+    }
+  }
+  return files;
+};
+
+const walkFixture = fs.mkdtempSync(path.join(os.tmpdir(), 'ppr-architecture-walk-'));
+try {
+  const nested = path.join(walkFixture, 'config', 'runtime');
+  fs.mkdirSync(nested, { recursive: true });
+  fs.writeFileSync(path.join(nested, 'probe.ts'), 'export {};\n');
+  fs.writeFileSync(path.join(nested, 'ignored.js'), 'module.exports = {};\n');
+  assert.deepStrictEqual(
+    listTypeScriptSources(walkFixture).map(file => path.relative(walkFixture, file)),
+    [path.join('config', 'runtime', 'probe.ts')],
+    'architecture source discovery must recurse into future src subdirectories'
+  );
+} finally {
+  fs.rmSync(walkFixture, { recursive: true, force: true });
+}
+
+const productionFiles = listTypeScriptSources(src);
 
 const privateBoundaryReferences = [];
 for (const file of productionFiles) {
