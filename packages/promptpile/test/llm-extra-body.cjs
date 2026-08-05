@@ -14,14 +14,19 @@ assert.strictEqual(parseExtraBodyInput(undefined), undefined);
 assert.strictEqual(parseExtraBodyInput(''), undefined);
 assert.strictEqual(parseExtraBodyInput('  '), undefined);
 assert.deepStrictEqual(parseExtraBodyInput('{"top_p":0.9}'), { top_p: 0.9 });
+assert.deepStrictEqual(parseExtraBodyInput('{"nested":{"enabled":true}}'), {
+  nested: { enabled: true }
+});
 
 assert.throws(() => parseExtraBodyInput('not-json'), /Invalid extra_body JSON/);
 assert.throws(() => parseExtraBodyInput('[]'), /must be a JSON object/);
 assert.throws(() => parseExtraBodyInput('null'), /must be a JSON object/);
+assert.throws(() => parseExtraBodyInput('"text"'), /must be a JSON object/);
 
 assert.deepStrictEqual(coerceExtraBodyValue({ a: 1 }), { a: 1 });
 assert.deepStrictEqual(coerceExtraBodyValue('{"b":2}'), { b: 2 });
 assert.strictEqual(coerceExtraBodyValue(undefined), undefined);
 assert.throws(() => coerceExtraBodyValue(42), /must be a TOML table/);
+assert.throws(() => coerceExtraBodyValue([]), /must be a TOML table/);
 
 console.log('llm-extra-body tests ok');

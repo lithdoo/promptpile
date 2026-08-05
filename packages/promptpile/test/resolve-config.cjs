@@ -48,10 +48,90 @@ try {
   const cfg3 = resolveConfig(tmp, ['node', fakeScript, '--config', 'app.toml', '-k', 'key', '-m', 'm-cli']);
   assert.strictEqual(cfg3.model, 'm-cli', 'cli overrides toml');
 
+  fs.writeFileSync(
+    tomlPath,
+    [
+      '[promptpile]',
+      'llm_api = "ReAsOnInG"',
+      'llm_api_model = "runtime-model"',
+      'llm_api_temperature = 0.4',
+      'llm_api_extra_body = { source = "runtime" }',
+      '',
+      '[[llm_api]]',
+      'name = "reasoning"',
+      'model = "profile-model"',
+      'base_url = "https://profile.example/v1"',
+      'temperature = 0.6',
+      'extra_body = { source = "profile" }',
+      ''
+    ].join('\n')
+  );
+  const cfgProfile = resolveConfig(tmp, ['node', fakeScript, '--config', 'app.toml']);
+  assert.strictEqual(cfgProfile.model, 'runtime-model', 'promptpile model overrides selected profile');
+  assert.strictEqual(cfgProfile.apiBaseUrl, 'https://profile.example/v1', 'profile supplies an unset base URL');
+  assert.strictEqual(cfgProfile.temperature, 0.4, 'promptpile temperature overrides selected profile');
+  assert.deepStrictEqual(
+    cfgProfile.extraBody,
+    { source: 'runtime' },
+    'promptpile extra body overrides selected profile'
+  );
+
+  const cfgProfileCli = resolveConfig(tmp, [
+    'node', fakeScript, '--config', 'app.toml',
+    '--model', 'cli-model',
+    '--api-base-url', 'https://cli.example/v1',
+    '--temperature', '0.2',
+    '--extra-body', '{"source":"cli"}'
+  ]);
+  assert.strictEqual(cfgProfileCli.model, 'cli-model', 'CLI model overrides runtime and profile');
+  assert.strictEqual(cfgProfileCli.apiBaseUrl, 'https://cli.example/v1', 'CLI base URL overrides profile');
+  assert.strictEqual(cfgProfileCli.temperature, 0.2, 'CLI temperature overrides runtime and profile');
+  assert.deepStrictEqual(cfgProfileCli.extraBody, { source: 'cli' }, 'CLI extra body overrides runtime and profile');
+
+  fs.writeFileSync(
+    tomlPath,
+    '[promptpile]\nllm_api = "missing"\n\n[[llm_api]]\nname = "available"\nmodel = "profile-model"\n'
+  );
+  const cfgMissingProfile = resolveConfig(tmp, ['node', fakeScript, '--config', 'app.toml']);
+  assert.strictEqual(
+    cfgMissingProfile.model,
+    'gpt-3.5-turbo',
+    'a missing profile selected by existing config currently falls back to defaults'
+  );
+
   process.env.PROMPTPILE_TEST_KEY = 'key-from-env-name';
   fs.writeFileSync(tomlPath, '[promptpile]\nllm_api_key_env = \'PROMPTPILE_TEST_KEY\'\n');
   const cfgKeyEnv = resolveConfig(tmp, ['node', fakeScript, '--config', 'app.toml']);
   assert.strictEqual(cfgKeyEnv.apiKey, 'key-from-env-name', 'TOML api_key_env reads process.env');
+
+  fs.writeFileSync(
+    tomlPath,
+    '[promptpile]\nllm_api_key = "direct-key"\nllm_api_key_env = "PROMPTPILE_TEST_KEY"\n'
+  );
+  const cfgDirectAndEnv = resolveConfig(tmp, ['node', fakeScript, '--config', 'app.toml']);
+  assert.strictEqual(cfgDirectAndEnv.apiKey, 'direct-key', 'direct key currently wins over env-backed key in one layer');
+
+  fs.writeFileSync(
+    tomlPath,
+    '[promptpile]\nllm_api = "keys"\n\n[[llm_api]]\nname = "keys"\napi_key = "profile-direct"\napi_key_env = "PROMPTPILE_TEST_KEY"\n'
+  );
+  const cfgProfileKeys = resolveConfig(tmp, ['node', fakeScript, '--config', 'app.toml']);
+  assert.strictEqual(cfgProfileKeys.apiKey, 'profile-direct', 'profile direct key currently wins over profile env key');
+
+  fs.writeFileSync(
+    tomlPath,
+    '[promptpile]\nllm_api = "keys"\nllm_api_key = "runtime-key"\n\n[[llm_api]]\nname = "keys"\napi_key = "profile-direct"\n'
+  );
+  const cfgRuntimeKey = resolveConfig(tmp, ['node', fakeScript, '--config', 'app.toml']);
+  assert.strictEqual(cfgRuntimeKey.apiKey, 'runtime-key', 'promptpile direct key overrides profile key');
+  const cfgCliKey = resolveConfig(tmp, ['node', fakeScript, '--config', 'app.toml', '--api-key', 'cli-key']);
+  assert.strictEqual(cfgCliKey.apiKey, 'cli-key', 'CLI key overrides promptpile and profile keys');
+
+  delete process.env.PROMPTPILE_TEST_KEY;
+  fs.writeFileSync(tomlPath, '[promptpile]\nllm_api_key_env = "PROMPTPILE_TEST_KEY"\n');
+  const cfgMissingEnv = resolveConfig(tmp, ['node', fakeScript, '--config', 'app.toml']);
+  assert.strictEqual(cfgMissingEnv.apiKey, '', 'missing API key environment variable currently resolves to empty');
+  process.env.PROMPTPILE_TEST_KEY = 'key-from-env-name';
 
   const cfgDefaultTemp = resolveConfig(tmp, ['node', fakeScript, '-k', 'key']);
   assert.strictEqual(cfgDefaultTemp.temperature, 0.8, 'default temperature when unset');

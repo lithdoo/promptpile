@@ -11,7 +11,7 @@
     "prepare": "npm run build",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
-    "test": "npm run build && node test/resolve-config.cjs && node test/output-pile.cjs && node test/tools-extends.cjs && node test/llm-dump.cjs && node test/message-sidecar-files.cjs && node test/empty-dir-insert.cjs && node test/llm-sampling.cjs && node test/llm-extra-body.cjs && node test/assistant-extra-reasoning.cjs && node test/atomic-and-diagnostics.cjs && node test/after-hook-security.cjs"
+    "test": "npm run build && node test/resolve-config.cjs && node test/append-user.cjs && node test/output-pile.cjs && node test/tools-extends.cjs && node test/llm-dump.cjs && node test/message-sidecar-files.cjs && node test/empty-dir-insert.cjs && node test/llm-sampling.cjs && node test/llm-extra-body.cjs && node test/assistant-extra-reasoning.cjs && node test/atomic-and-diagnostics.cjs && node test/after-hook-security.cjs"
   },
   "keywords": [
     "promptpile",
