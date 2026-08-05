@@ -13,7 +13,12 @@ Execution System ── conversation/calls artifacts ──► Tool Execution Sy
       │ public CLI
 Orchestration System
 
-Context Lifecycle System ◄── conversation artifacts ──► filesystem
+Conversation Protocol
+      │
+      ▼
+Context Lifecycle Mutation ──► Archive Protocol ──► Retrieval Consumers
+      ▲                              │
+      └──────── restore ─────────────┘
 ```
 
 ## Execution System
@@ -30,7 +35,13 @@ Context Lifecycle System ◄── conversation artifacts ──► filesystem
 
 ## Context Lifecycle System
 
-拥有长对话的压缩、索引、restore/retrieval 策略。它操作 conversation artifacts，但不成为普通 completion 的隐式副作用。
+拥有长对话的生命周期策略，但不要求由一个 package 实现所有能力：
+
+- `promptpile-compress` 执行有副作用的 compress / restore / recovery；
+- Archive Protocol 定义压缩历史的跨实现表示；
+- grep/vector 等 retrieval consumer 只读 Archive Protocol，可以独立演化。
+
+Context lifecycle 操作 conversation artifacts，但不成为普通 completion 的隐式副作用。
 
 ## 关键不变量
 
@@ -38,4 +49,5 @@ Context Lifecycle System ◄── conversation artifacts ──► filesystem
 - Promptpile core 不执行工具。
 - Orchestrator 与 Promptpile 的运行时边界是公开 CLI + artifacts。
 - MCP executor 与 Promptpile 通过 tool artifacts 解耦。
+- 压缩实现与历史检索实现通过 Archive Protocol 解耦。
 - Package 布局可以演化，但系统职责不能因代码复用需要而反向改变。

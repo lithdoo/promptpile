@@ -10,31 +10,28 @@
 
 ### 1. Package behavior
 
-每个 active package 测试自身 parser、filesystem、HTTP/MCP、runtime 等行为。
+每个 active package 测试自身 parser、filesystem、HTTP/MCP、runtime 等行为。Scaffold 在拥有 package metadata 与实现之前不冒充 active package。
 
 ### 2. Contract regression
 
-对公开 CLI/profile/conversation/tool artifact 的关键语义做回归测试，防止实现重构改变 contract。
+对公开 CLI/profile/conversation/tool artifact 的关键语义做回归测试。Archive Protocol 稳定阶段还需要 producer/consumer conformance fixtures：`promptpile-compress` 写出的 archive 必须能被独立 grep consumer 读取，而 consumer 不 import compress 私有实现。
 
 ### 3. Architecture guard
 
-例如 React 递归扫描 production TypeScript source，禁止重新引入 `promptpile/dist/*` 私有依赖。
+例如 React 递归扫描 production TypeScript source，禁止重新引入 `promptpile/dist/*` 私有依赖。Archive consumer 实现后应增加类似 guard，禁止依赖 `promptpile-compress/src` 或 `dist/*`。
 
-### 4. Cross-process integration
+### 4. Cross-process / cross-package integration
 
-不仅测试 fake CLI，还需要真实边界：React CLI → package `bin` → real Promptpile canonical parser。当前已覆盖 missing profile、非法 temperature/extra-body、missing API-key env 等错误路径，并检查 secret 不泄漏。
+不仅测试 fake CLI，还需要真实边界：React CLI → package `bin` → real Promptpile canonical parser。Archive lifecycle 下一阶段需要 `compress producer → protocol fixture → grep consumer → restore` 的跨 package integration。
 
 ## Pages gate
 
-GitHub Pages workflow 在发布文档前执行：
+当前 GitHub Pages workflow 对 active npm packages 执行安装、build 与 test，再验证 supporting agent tools，最后执行：
 
 ```text
-npm ci
-→ npm run build
-→ npm test
-→ npm run build:agent-tools
-→ npm run test:agent-tools
-→ npm run docs:build
+npm run docs:build
+→ upload Pages artifact
+→ deploy
 ```
 
-因此线上文档只从能通过当前仓库验证的 main commit 发布。
+`promptpile-compress-grep-search` 当前没有 `package.json`，所以不在 active-package gate。开始实现时，必须同一变更中加入 package metadata、root lockfile 和 Pages CI workspace 安装/验证。

@@ -14,9 +14,10 @@ Promptpile 文档按依赖方向组织：
 4. [边界模型](./10-architecture/boundary-model.md)
 5. [正式契约目录](./15-contracts/README.md)
 6. [Conversation Protocol v1](./15-contracts/conversation-protocol-v1.md)
-7. [CLI Contract v1](./15-contracts/cli-contract-v1.md)
-8. [Package 目录](./20-packages/README.md)
-9. [测试策略](./30-development/testing-strategy.md)
+7. [Archive Protocol v1](./15-contracts/archive-protocol-v1.md)
+8. [CLI Contract v1](./15-contracts/cli-contract-v1.md)
+9. [Package 目录](./20-packages/README.md)
+10. [测试策略](./30-development/testing-strategy.md)
 
 ## 读者路径
 
@@ -26,6 +27,8 @@ Promptpile 文档按依赖方向组织：
 | 理解 files + CLI | [系统总览](./10-architecture/system-overview.md) → [边界模型](./10-architecture/boundary-model.md) |
 | 写新的 orchestrator | [编排系统](./10-architecture/orchestration-system.md) → [CLI Contract v1](./15-contracts/cli-contract-v1.md) |
 | 写新的 tool executor | [工具执行系统](./10-architecture/tool-execution-system.md) → [Tool Artifacts v1](./15-contracts/tool-artifacts-v1.md) |
+| 修改 Compress | [上下文生命周期](./10-architecture/context-lifecycle-system.md) → [Archive Protocol v1](./15-contracts/archive-protocol-v1.md) → [promptpile-compress](./20-packages/promptpile-compress.md) |
+| 实现 archive 历史搜索 | [Archive Protocol v1](./15-contracts/archive-protocol-v1.md) → [promptpile-compress-grep-search](./20-packages/promptpile-compress-grep-search.md) |
 | 修改 React | [promptpile-react](./20-packages/promptpile-react.md) |
 | 修改 MCP | [promptpile-mcp](./20-packages/promptpile-mcp.md) |
 | 判断成熟度 | [成熟度与范围](./00-overview/maturity-and-scope.md) |

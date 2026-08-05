@@ -37,6 +37,7 @@ export default {
       { text: '15 · 正式契约', items: [
         { text: '契约目录', link: '/15-contracts/README' },
         { text: 'Conversation Protocol v1', link: '/15-contracts/conversation-protocol-v1' },
+        { text: 'Archive Protocol v1', link: '/15-contracts/archive-protocol-v1' },
         { text: 'CLI Contract v1', link: '/15-contracts/cli-contract-v1' },
         { text: 'Tool Artifacts v1', link: '/15-contracts/tool-artifacts-v1' },
         { text: 'Tools TOML v1', link: '/15-contracts/tools-toml-v1' }
@@ -47,6 +48,7 @@ export default {
         { text: 'promptpile-react', link: '/20-packages/promptpile-react' },
         { text: 'promptpile-mcp', link: '/20-packages/promptpile-mcp' },
         { text: 'promptpile-compress', link: '/20-packages/promptpile-compress' },
+        { text: 'promptpile-compress-grep-search', link: '/20-packages/promptpile-compress-grep-search' },
         { text: 'promptpile-plan', link: '/20-packages/promptpile-plan' },
         { text: 'agent-lite-tools', link: '/20-packages/agent-lite-tools' }
       ]},

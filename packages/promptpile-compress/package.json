@@ -2,7 +2,7 @@
   "name": "promptpile-compress",
   "version": "0.1.0",
   "private": true,
-  "description": "独立的会话目录压缩与检索工具 — 压缩 promptpile 消息目录，提供检索工具和 MCP 服务",
+  "description": "独立的 Promptpile conversation 压缩、归档与恢复实现",
   "main": "dist/index.js",
   "bin": {
     "promptpile-compress": "dist/index.js"
