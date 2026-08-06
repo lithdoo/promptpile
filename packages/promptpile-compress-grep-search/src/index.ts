@@ -2,10 +2,10 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 const ARCHIVE_PATTERN = /^\[(\d+)\]system\.md\.archive$/;
-const MESSAGE_PATTERN = /^\[(\d+)\](.+?)\.(md|json)$/i;
+const MESSAGE_PATTERN = /^\[(\d+)\](.+?)\.(md|json)$/;
 const ASSISTANT_SIDECAR_PATTERN =
-  /^\[(\d+)\]assistant\.(calls|result)\.jsonl$/i;
-const ASSISTANT_EXTRA_PATTERN = /^\[(\d+)\]assistant\.extra\.json$/i;
+  /^\[(\d+)\]assistant\.(calls|result)\.jsonl$/;
+const ASSISTANT_EXTRA_PATTERN = /^\[(\d+)\]assistant\.extra\.json$/;
 
 export interface ArchiveDescriptor {
   idx: number;
@@ -111,7 +111,7 @@ const parseArtifact = (
       path: path.join(archivePath, name),
       turnIdx: Number.parseInt(sidecar[1], 10),
       role: 'assistant',
-      fileKind: sidecar[2].toLowerCase() as 'calls' | 'result',
+      fileKind: sidecar[2] as 'calls' | 'result',
     };
   }
   const extra = name.match(ASSISTANT_EXTRA_PATTERN);
@@ -130,7 +130,7 @@ const parseArtifact = (
     name,
     path: path.join(archivePath, name),
     turnIdx: Number.parseInt(message[1], 10),
-    role: message[2].toLowerCase(),
+    role: message[2],
     fileKind: 'message',
   };
 };

@@ -25,6 +25,8 @@ Conversation scanner 只读取配置目录的**直接子文件**，不递归进�
 [idx]assistant.result.jsonl
 ```
 
+上述匹配大小写敏感：扩展名和专用 artifact 的 `assistant`、`calls`、`extra`、`result` 必须使用协议中给出的精确小写拼写。
+
 ## 2. 普通消息
 
 - `idx` 是十进制非负整数排序键。

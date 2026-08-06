@@ -15,10 +15,17 @@ describe('Archive Protocol reader', () => {
       JSON.stringify({ version: 1, archivedTurnIndices: [1, 2], unknown: true })
     );
     fs.writeFileSync(path.join(archive, '[2]assistant.md'), 'answer');
+    fs.writeFileSync(path.join(archive, '[1]CustomRole.md'), 'custom');
+    fs.writeFileSync(path.join(archive, '[1]ignored.MD'), 'ignored');
+    fs.writeFileSync(
+      path.join(archive, '[2]Assistant.RESULT.JSONL'),
+      'ignored\n'
+    );
     fs.writeFileSync(
       path.join(archive, '[2]assistant.result.jsonl'),
       '{"ok":true}\n'
     );
+    fs.mkdirSync(path.join(root, '[3]SYSTEM.MD.ARCHIVE'));
     try {
       const archives = await discoverArchives(root);
       assert.deepEqual(archives.map(({ idx }) => idx), [2]);
@@ -29,6 +36,11 @@ describe('Archive Protocol reader', () => {
         'message',
       ]);
       assert.equal(turn?.artifacts[0].content, 'answer');
+      const custom = await readArchivedTurn(root, 1);
+      assert.deepEqual(
+        custom?.artifacts.map(({ role, name }) => ({ role, name })),
+        [{ role: 'CustomRole', name: '[1]CustomRole.md' }]
+      );
       assert.equal(await readArchivedTurn(root, 9), null);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });

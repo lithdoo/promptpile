@@ -36,7 +36,7 @@
 - cooperating-writer directory lock、same-host stale-lock recovery 与 conversation generation precondition；
 - 可注入 mutation boundary、atomic temp cleanup 与 retry regression tests；
 - staging/archive-aware dry-run simulation 与可信统计；
-- 83 个 producer/lifecycle tests 与 4 个独立 consumer tests，覆盖 filesystem、protocol、CLI、semantic summary、budget/tokenizer、orchestrator 和跨包行为。
+- 84 个 producer/lifecycle tests 与 4 个独立 consumer tests，覆盖 filesystem、protocol、CLI、semantic summary、budget/tokenizer、orchestrator 和跨包行为。
 
 本轮计划缺口已关闭；真实上层应用接线、grep query surface 和长期版本迁移演练作为后续独立工作推进。
 

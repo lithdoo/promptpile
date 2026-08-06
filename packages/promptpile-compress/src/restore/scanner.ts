@@ -2,11 +2,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { ArchiveDir } from './types';
 
-const FILE_PATTERN = /^\[(\d+)\](.+?)\.(md|json)$/i;
-const ASSISTANT_CALL_PATTERN = /^\[(\d+)\]assistant\.calls\.jsonl$/i;
-const ASSISTANT_RESULT_PATTERN = /^\[(\d+)\]assistant\.result\.jsonl$/i;
-const ASSISTANT_EXTRA_PATTERN = /^\[(\d+)\]assistant\.extra\.json$/i;
-const ARCHIVE_DIR_PATTERN = /^\[(\d+)\]system\.md\.archive$/i;
+const FILE_PATTERN = /^\[(\d+)\](.+?)\.(md|json)$/;
+const ASSISTANT_CALL_PATTERN = /^\[(\d+)\]assistant\.calls\.jsonl$/;
+const ASSISTANT_RESULT_PATTERN = /^\[(\d+)\]assistant\.result\.jsonl$/;
+const ASSISTANT_EXTRA_PATTERN = /^\[(\d+)\]assistant\.extra\.json$/;
+const ARCHIVE_DIR_PATTERN = /^\[(\d+)\]system\.md\.archive$/;
 
 export const STAGING_DIR = '.promptpile-compress.staging';
 

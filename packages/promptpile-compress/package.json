@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "npm run build && node --test dist/index.test.js dist/lifecycle/lock.test.js dist/lifecycle/safety.test.js dist/lifecycle/orchestrator.test.js dist/restore/scanner.test.js dist/restore/index.test.js dist/compress/index.test.js dist/compress/summary.test.js dist/compress/tokenizer.test.js dist/compress/budget.test.js dist/contracts/archive-protocol.test.js",
+    "test": "npm run build && node --test dist/index.test.js dist/lifecycle/lock.test.js dist/lifecycle/safety.test.js dist/lifecycle/orchestrator.test.js dist/restore/scanner.test.js dist/restore/index.test.js dist/compress/scanner.test.js dist/compress/index.test.js dist/compress/summary.test.js dist/compress/tokenizer.test.js dist/compress/budget.test.js dist/contracts/archive-protocol.test.js",
     "benchmark": "npm run build && node scripts/benchmark-scanner.cjs"
   },
   "dependencies": {

@@ -20,6 +20,8 @@ describe('restore scanner', () => {
     assert.equal(isMessageFileName('compression.json'), false);
     assert.equal(isMessageFileName('.summary.md'), false);
     assert.equal(isMessageFileName('[2]assistant.calls.txt'), false);
+    assert.equal(isMessageFileName('[1]user.MD'), false);
+    assert.equal(isMessageFileName('[2]Assistant.CALLS.JSONL'), false);
   });
 
   it('finds archives in descending idx order and ignores nested files', async () => {
@@ -28,6 +30,7 @@ describe('restore scanner', () => {
       fs.mkdirSync(path.join(root, '[3]system.md.archive'));
       fs.mkdirSync(path.join(root, '[9]system.md.archive'));
       fs.mkdirSync(path.join(root, '[5]user.md.archive'));
+      fs.mkdirSync(path.join(root, '[8]SYSTEM.MD.ARCHIVE'));
       fs.writeFileSync(path.join(root, '[7]system.md.archive'), '');
 
       const archives = await findArchiveDirs(root);

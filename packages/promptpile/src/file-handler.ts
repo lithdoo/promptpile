@@ -16,10 +16,10 @@ import { formatMissingToolResultContent } from './types';
 const readUtf8FileFromDisk = (filePath: string): string =>
   fs.readFileSync(filePath, 'utf8');
 
-const FILE_PATTERN = /^\[(\d+)\](.+?)\.(md|json)$/i;
-const ASSISTANT_CALL_PATTERN = /^\[(\d+)\]assistant\.calls\.jsonl$/i;
-const ASSISTANT_RESULT_PATTERN = /^\[(\d+)\]assistant\.result\.jsonl$/i;
-const ASSISTANT_EXTRA_PATTERN = /^\[(\d+)\]assistant\.extra\.json$/i;
+const FILE_PATTERN = /^\[(\d+)\](.+?)\.(md|json)$/;
+const ASSISTANT_CALL_PATTERN = /^\[(\d+)\]assistant\.calls\.jsonl$/;
+const ASSISTANT_RESULT_PATTERN = /^\[(\d+)\]assistant\.result\.jsonl$/;
+const ASSISTANT_EXTRA_PATTERN = /^\[(\d+)\]assistant\.extra\.json$/;
 
 export const stripBom = (s: string) => (s.charCodeAt(0) === 0xfeff ? s.slice(1) : s);
 
@@ -116,7 +116,7 @@ export const scanDirectory = (directory: string): FileInfo[] => {
         path: fullPath,
         idx: parseInt(m[1], 10),
         role: m[2],
-        extension: m[3].toLowerCase() as 'md' | 'json',
+        extension: m[3] as 'md' | 'json',
         fileKind: 'message'
       });
     }

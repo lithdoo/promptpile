@@ -24,7 +24,7 @@ interface DiscoveredArchive {
   archivedTurnIndices: number[];
 }
 
-const ARCHIVE_PATTERN = /^\[(\d+)\]system\.md\.archive$/i;
+const ARCHIVE_PATTERN = /^\[(\d+)\]system\.md\.archive$/;
 const FIXTURE_ROOT = path.resolve(
   __dirname,
   '../../../../fixtures/archive-protocol-v1'

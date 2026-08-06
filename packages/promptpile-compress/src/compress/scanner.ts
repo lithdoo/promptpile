@@ -20,10 +20,10 @@ import type {
   TokenizerAdapter,
 } from './types';
 
-const MESSAGE_PATTERN = /^\[(\d+)\](.+?)\.(md|json)$/i;
+const MESSAGE_PATTERN = /^\[(\d+)\](.+?)\.(md|json)$/;
 const ASSISTANT_SIDE_CAR_PATTERN =
-  /^\[(\d+)\]assistant\.(calls|result)\.jsonl$/i;
-const ASSISTANT_EXTRA_PATTERN = /^\[(\d+)\]assistant\.extra\.json$/i;
+  /^\[(\d+)\]assistant\.(calls|result)\.jsonl$/;
+const ASSISTANT_EXTRA_PATTERN = /^\[(\d+)\]assistant\.extra\.json$/;
 
 export const parseMessageFileName = (
   directory: string,
@@ -37,7 +37,7 @@ export const parseMessageFileName = (
       idx: Number.parseInt(sideCarMatch[1], 10),
       role: 'assistant',
       extension: 'jsonl',
-      fileKind: sideCarMatch[2].toLowerCase() as MessageFileKind,
+      fileKind: sideCarMatch[2] as MessageFileKind,
     };
   }
 
@@ -59,8 +59,8 @@ export const parseMessageFileName = (
       name,
       path: path.join(directory, name),
       idx: Number.parseInt(messageMatch[1], 10),
-      role: messageMatch[2].toLowerCase() as MessageRole,
-      extension: messageMatch[3].toLowerCase() as MessageExtension,
+      role: messageMatch[2] as MessageRole,
+      extension: messageMatch[3] as MessageExtension,
       fileKind: 'message',
     };
   }
