@@ -230,4 +230,90 @@ describe('compressDirectory', () => {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it('dry-runs restore and recompress from an existing archive with real statistics', async () => {
+    const root = makeRoot();
+    try {
+      write(root, '[0]system.md', 'system');
+      write(root, '[1]user.md', 'first');
+      write(root, '[2]assistant.md', 'answer');
+      write(root, '[3]user.md', 'second');
+      await compressDirectory({
+        directory: root,
+        threshold: 0,
+        keepRecent: 1,
+      });
+      write(root, '[4]assistant.md', 'new answer');
+      const before = snapshot(root);
+
+      const dryRun = await compressDirectory({
+        directory: root,
+        threshold: 0,
+        keepRecent: 1,
+        dryRun: true,
+      });
+
+      assert.equal(dryRun.compressed, false);
+      assert.equal(dryRun.skipReason, 'dry_run');
+      assert.equal(dryRun.dryRunPlan?.archivesToRestore, 1);
+      assert.equal(dryRun.dryRunPlan?.outcome, 'compressed');
+      assert.ok(dryRun.tokensBefore > 0);
+      assert.ok(dryRun.turnsArchived > 0);
+      assert.deepEqual(snapshot(root), before);
+
+      const actual = await compressDirectory({
+        directory: root,
+        threshold: 0,
+        keepRecent: 1,
+      });
+      assert.equal(actual.compressed, true);
+      assert.equal(actual.turnsArchived, dryRun.turnsArchived);
+      assert.equal(actual.turnsKept, dryRun.turnsKept);
+      assert.equal(actual.tokensBefore, dryRun.tokensBefore);
+      assert.equal(actual.tokensAfter, dryRun.tokensAfter);
+      assert.equal(actual.summaryIdx, dryRun.summaryIdx);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('dry-runs staging recovery and compression without zero placeholders', async () => {
+    const root = makeRoot();
+    try {
+      const staging = path.join(root, STAGING_DIR);
+      fs.mkdirSync(staging);
+      fs.writeFileSync(path.join(staging, '[1]user.md'), 'staged user');
+      fs.writeFileSync(path.join(staging, 'compression.json'), '{}');
+      write(root, '[2]assistant.md', 'answer');
+      write(root, '[3]user.md', 'latest');
+      const before = snapshot(root);
+
+      const dryRun = await compressDirectory({
+        directory: root,
+        threshold: 0,
+        keepRecent: 1,
+        dryRun: true,
+      });
+
+      assert.equal(dryRun.skipReason, 'dry_run');
+      assert.equal(dryRun.dryRunPlan?.archivesToRestore, 0);
+      assert.deepEqual(dryRun.dryRunPlan?.recoveryActions, ['[1]user.md']);
+      assert.equal(dryRun.dryRunPlan?.outcome, 'compressed');
+      assert.ok(dryRun.tokensBefore > 0);
+      assert.ok(dryRun.turnsArchived > 0);
+      assert.deepEqual(snapshot(root), before);
+
+      const actual = await compressDirectory({
+        directory: root,
+        threshold: 0,
+        keepRecent: 1,
+      });
+      assert.equal(actual.compressed, true);
+      assert.equal(actual.turnsArchived, dryRun.turnsArchived);
+      assert.equal(actual.tokensBefore, dryRun.tokensBefore);
+      assert.equal(actual.tokensAfter, dryRun.tokensAfter);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

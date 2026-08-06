@@ -90,6 +90,8 @@ Archive 中的 authoritative historical state 是：
 
 `.promptpile-compress.staging/` 同样是 `promptpile-compress` 私有恢复状态，不属于 Archive Protocol，其他 consumer 必须忽略。
 
+`.promptpile-compress.lock` 是 lifecycle writer 的私有协调文件，也不属于 Archive Protocol。Consumer 必须忽略它，不得用 lock 的存在替代 archive/manifest 校验，也不得替 mutation implementation 清理 lock。
+
 ## 5. Producer / restore / consumer ownership
 
 ```text

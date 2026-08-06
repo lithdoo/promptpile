@@ -6,7 +6,7 @@
 >
 > 基线版本：`0.1.0` / private / experimental
 >
-> 当前阶段：P0 已完成，下一阶段 P1
+> 当前阶段：P0、P1 已完成，下一阶段 P2
 >
 > 最近复核：2026-08-06
 
@@ -33,15 +33,16 @@
 - 协议中性的 archive summary 与准确的 CLI capability 描述；
 - 含 8 类状态的 Archive Protocol v1 共享 conformance corpus；
 - 明确区分 live-before、summary 与 live-after 的 producer token metadata；
-- 40 个 filesystem、protocol 与 CLI behavior tests，当前全部通过。
+- cooperating-writer directory lock、same-host stale-lock recovery 与 conversation generation precondition；
+- 可注入 mutation boundary、atomic temp cleanup 与 retry regression tests；
+- staging/archive-aware dry-run simulation 与可信统计；
+- 60 个 filesystem、protocol、CLI 与 lifecycle behavior tests，当前全部通过。
 
 主要缺口：
 
 - `sliding-window` 只生成 archive pointer，不做 semantic distillation；
 - 字符估算仅适合作为粗略 trigger，`tiktoken` optional dependency 尚未使用；
-- mutation 依赖 exclusive-writer 前提，但代码未锁定、未检测长耗时步骤期间的目录变化；
-- fault-injection 覆盖不足，atomic write 临时文件和各 commit 边界的恢复语义尚未系统验证；
-- 已有 archive 或 staging 时，dry-run 返回的信息不足以描述实际后续动作。
+- orchestrator 尚未为不遵守 lifecycle lock 的 active completion 提供 exclusive phase。
 
 ## 3. 约束与非目标
 
@@ -66,24 +67,17 @@
 - compress 中不可达的 `rolled_back_staging` skip reason 已移除；
 - conformance paths 均验证 fixture 在执行前后 byte-for-byte 不变。
 
-### P1 · Mutation safety 与可恢复性
+### P1 · Mutation safety 与可恢复性（已完成：2026-08-06）
 
-工作项：
+完成结果：
 
-1. 为 cooperating lifecycle writers 增加 directory-level lock；记录 owner、创建时间与恢复策略，使用原子创建避免双写者同时获得锁。
-2. 在 scan/summary 与 commit 之间校验 conversation generation 或内容指纹；检测到非 cooperating writer 的变化时放弃提交并保留原文件。
-3. 明确锁只协调遵守协议的 writer；orchestrator 仍必须保证 active completion 与 lifecycle mutation 不并行。
-4. 抽出可注入的 filesystem mutation boundary，增加 fault-injection tests：移动到 staging、写 manifest、写临时 summary、rename archive、写 live summary、restore summary 删除、逐文件恢复、archive cleanup。
-5. 为 atomic write 增加失败后的临时文件清理与重试测试；评估需要的 file/directory sync 边界并记录跨平台保证。
-6. 改善 staging/archive 状态报告，使 dry-run 能展示 recovery、restore、recompress 的计划动作和可信 token/turn 统计，而不是返回全零占位。
-
-验收标准：
-
-- 两个 cooperating writers 不能同时 mutation 同一目录；
-- scan 后发生外部写入时 compress 在移动任何文件前退出；
-- 每个注入故障点均有“可自动重试”或“明确 fail closed”的测试结论；
-- 任意失败路径都不覆盖同名 conversation artifact，不把不完整 turn 当作成功提交；
-- dry-run 前后目录 byte-for-byte 不变，报告与随后真实执行的计划一致。
+- `.promptpile-compress.lock` 通过 atomic exclusive create 保证同一目录只有一个 cooperating lifecycle writer；metadata 记录 owner、PID、host、operation 与创建时间；
+- 同主机 dead PID lock 自动恢复，跨主机、live PID 与损坏 metadata fail closed；
+- scan 前后、summary 后及 staging 创建前校验 SHA-256 generation，检测到 conversation/archive/staging 变化即拒绝提交；
+- mutation hook 覆盖 staging、manifest、summary、archive commit、restore 与 cleanup，故障测试验证重试或 fail-closed 行为；
+- atomic write 失败会清理临时文件；POSIX sync file 与 parent directory，Windows 保留 file sync + same-directory rename 保证；
+- staging/archive dry-run 在隔离临时副本执行真实 lifecycle 模拟，目标目录不变，统计与随后真实执行一致；
+- 设计明确保留 orchestrator exclusive-phase 前提，不把 package lock 描述为跨系统事务。
 
 ### P2 · Semantic summary
 
@@ -141,9 +135,9 @@
 ```text
 P0 契约准确性（已完成）
     ↓
-P1 mutation safety（下一阶段）
+P1 mutation safety（已完成）
     ↓
-P2 semantic summary
+P2 semantic summary（下一阶段）
     ↓
 P3 context budget / performance
     ↓

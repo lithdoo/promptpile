@@ -1,3 +1,5 @@
+import type { LifecycleMutationHook } from '../lifecycle/mutation';
+
 export interface CompressionMetadata {
   version: 1;
   archivedTurnIndices: number[];
@@ -17,6 +19,13 @@ export interface RecoveryAction {
 export interface RestoreOptions {
   directory: string;
   dryRun?: boolean;
+  /** Experimental fault-injection/observability boundary for lifecycle writes. */
+  mutationHook?: LifecycleMutationHook;
+}
+
+export interface RecoveryOptions {
+  dryRun?: boolean;
+  mutationHook?: LifecycleMutationHook;
 }
 
 export type RestoreResult =

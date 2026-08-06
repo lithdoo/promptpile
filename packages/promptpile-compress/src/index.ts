@@ -61,6 +61,15 @@ export const parseCli = async (argv = process.argv): Promise<number> => {
 
           if (!result.compressed) {
             console.log(`跳过压缩: ${result.skipReason}`);
+            if (result.dryRunPlan) {
+              console.log(`dry-run 预计结果: ${result.dryRunPlan.outcome}`);
+              console.log(
+                `dry-run 将恢复 ${result.dryRunPlan.archivesToRestore} 个归档`
+              );
+              for (const action of result.dryRunPlan.recoveryActions) {
+                console.log(`dry-run recovery: ${action}`);
+              }
+            }
             if (result.tokensBefore !== undefined) {
               console.log(`压缩前 token 估算: ${result.tokensBefore}`);
             }
@@ -103,6 +112,9 @@ export const parseCli = async (argv = process.argv): Promise<number> => {
         });
         if (!result.restored) {
           console.log(`跳过还原: ${result.skipReason}`);
+          for (const action of result.recoveryActions) {
+            console.log(`recovery: ${action.detail}`);
+          }
           if (result.turnsRestored !== undefined) {
             console.log(`将还原 ${result.turnsRestored} 个 idx group`);
           }
@@ -140,5 +152,13 @@ if (require.main === module) {
   });
 }
 
-export * from './restore';
-export * from './compress';
+export { recover, restoreArchivedTurns } from './restore';
+export type { RecoveryOptions, RestoreOptions, RestoreResult } from './restore';
+export { compressDirectory } from './compress';
+export type {
+  CompressDryRunPlan,
+  CompressOptions,
+  CompressResult,
+  CompressSkipReason,
+} from './compress';
+export * from './lifecycle/mutation';

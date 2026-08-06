@@ -6,10 +6,13 @@ import {
   findStagingDir,
   listMessageFiles,
 } from './scanner';
+import { withDirectoryLifecycleLock } from '../lifecycle/lock';
+import { runLifecycleMutation } from '../lifecycle/mutation';
 import type {
   ArchiveDir,
   CompressionMetadata,
   RecoveryAction,
+  RecoveryOptions,
   RestoreOptions,
   RestoreResult,
 } from './types';
@@ -164,11 +167,10 @@ const prepareArchives = async (directory: string): Promise<PreparedArchive[]> =>
   return prepared;
 };
 
-export const recover = async (
-  directory: string,
-  options: { dryRun?: boolean } = {}
+export const recoverWithLockHeld = async (
+  resolved: string,
+  options: RecoveryOptions = {}
 ): Promise<RecoveryAction[]> => {
-  const resolved = await assertDirectory(directory);
   const stagingPath = await findStagingDir(resolved);
   if (!stagingPath) {
     return [];
@@ -194,20 +196,43 @@ export const recover = async (
   }
 
   for (const fileName of messageFiles) {
-    await fs.rename(path.join(stagingPath, fileName), path.join(resolved, fileName));
+    const sourcePath = path.join(stagingPath, fileName);
+    const targetPath = path.join(resolved, fileName);
+    await runLifecycleMutation(
+      options.mutationHook,
+      { point: 'rollback_staging_file', sourcePath, targetPath },
+      () => fs.rename(sourcePath, targetPath)
+    );
   }
   if ((await listMessageFiles(stagingPath)).length > 0) {
     throw new Error(`staging 中仍有消息文件，拒绝删除: ${stagingPath}`);
   }
-  await fs.rm(stagingPath, { recursive: true });
+  await runLifecycleMutation(
+    options.mutationHook,
+    { point: 'remove_staging', targetPath: stagingPath },
+    () => fs.rm(stagingPath, { recursive: true })
+  );
   return actions;
 };
 
-export const restoreArchivedTurns = async (
-  options: RestoreOptions
+export const recover = async (
+  directory: string,
+  options: RecoveryOptions = {}
+): Promise<RecoveryAction[]> => {
+  const resolved = await assertDirectory(directory);
+  return withDirectoryLifecycleLock(resolved, 'recover', () =>
+    recoverWithLockHeld(resolved, options)
+  );
+};
+
+export const restoreArchivedTurnsWithLockHeld = async (
+  options: RestoreOptions,
+  directory: string
 ): Promise<RestoreResult> => {
-  const directory = await assertDirectory(options.directory);
-  const recoveryActions = await recover(directory, { dryRun: options.dryRun });
+  const recoveryActions = await recoverWithLockHeld(directory, {
+    dryRun: options.dryRun,
+    mutationHook: options.mutationHook,
+  });
 
   if (options.dryRun && recoveryActions.length > 0) {
     return {
@@ -245,20 +270,29 @@ export const restoreArchivedTurns = async (
 
   for (const item of prepared) {
     const summaryPath = path.join(directory, `[${item.archive.idx}]system.md`);
-    try {
-      await fs.unlink(summaryPath);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        throw error;
+    await runLifecycleMutation(
+      options.mutationHook,
+      { point: 'delete_live_summary', targetPath: summaryPath },
+      async () => {
+        try {
+          await fs.unlink(summaryPath);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+            throw error;
+          }
+        }
       }
-    }
+    );
   }
 
   for (const item of prepared) {
     for (const fileName of item.messageFiles) {
-      await fs.rename(
-        path.join(item.archive.path, fileName),
-        path.join(directory, fileName)
+      const sourcePath = path.join(item.archive.path, fileName);
+      const targetPath = path.join(directory, fileName);
+      await runLifecycleMutation(
+        options.mutationHook,
+        { point: 'restore_message', sourcePath, targetPath },
+        () => fs.rename(sourcePath, targetPath)
       );
     }
   }
@@ -269,7 +303,11 @@ export const restoreArchivedTurns = async (
     }
   }
   for (const item of prepared) {
-    await fs.rm(item.archive.path, { recursive: true });
+    await runLifecycleMutation(
+      options.mutationHook,
+      { point: 'remove_archive', targetPath: item.archive.path },
+      () => fs.rm(item.archive.path, { recursive: true })
+    );
   }
 
   return {
@@ -282,4 +320,13 @@ export const restoreArchivedTurns = async (
   };
 };
 
-export type { RestoreOptions, RestoreResult } from './types';
+export const restoreArchivedTurns = async (
+  options: RestoreOptions
+): Promise<RestoreResult> => {
+  const directory = await assertDirectory(options.directory);
+  return withDirectoryLifecycleLock(directory, 'restore', () =>
+    restoreArchivedTurnsWithLockHeld(options, directory)
+  );
+};
+
+export type { RecoveryOptions, RestoreOptions, RestoreResult } from './types';

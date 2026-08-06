@@ -1,3 +1,5 @@
+import type { LifecycleMutationHook } from '../lifecycle/mutation';
+
 export type MessageRole = string;
 export type MessageExtension = 'md' | 'json' | 'jsonl';
 export type MessageFileKind = 'message' | 'calls' | 'result' | 'extra';
@@ -27,12 +29,20 @@ export interface CompressOptions {
   keepRecent?: number;
   strategy?: CompressStrategyKind;
   dryRun?: boolean;
+  /** Experimental fault-injection/observability boundary for lifecycle writes. */
+  mutationHook?: LifecycleMutationHook;
 }
 
 export type CompressSkipReason =
   | 'below_threshold'
   | 'no_turns_to_compress'
   | 'dry_run';
+
+export interface CompressDryRunPlan {
+  recoveryActions: string[];
+  archivesToRestore: number;
+  outcome: 'compressed' | 'below_threshold' | 'no_turns_to_compress';
+}
 
 export interface CompressResult {
   compressed: boolean;
@@ -47,6 +57,7 @@ export interface CompressResult {
   summaryIdx?: number;
   archivePath?: string;
   skipReason?: CompressSkipReason;
+  dryRunPlan?: CompressDryRunPlan;
 }
 
 export interface CompressionManifest {

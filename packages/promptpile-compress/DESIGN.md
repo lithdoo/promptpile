@@ -28,6 +28,9 @@ Package 不拥有历史搜索。grep、vector、remote retrieval 都应作为 Ar
 ```text
 src/
 ├── index.ts
+├── lifecycle/
+│   ├── lock.ts
+│   └── mutation.ts
 ├── compress/
 │   ├── index.ts
 │   ├── scanner.ts
@@ -61,6 +64,24 @@ Restore 在修改文件前校验 manifest、duplicate idx/file 与目标冲突�
 
 `recover()` 处理残留 staging。已有 archive 时重新 compress 会先 restore 完整历史，再从完整 conversation 重新计算，避免层层叠加 summary/archive。
 
+### 4.1 Writer coordination
+
+Compress、restore 与 recover 使用 conversation 顶层 `.promptpile-compress.lock` 协调 cooperating lifecycle writers。Lock 通过 exclusive create 获取，记录 owner id、PID、hostname、operation 与创建时间。公开入口不可重入；顶层 operation 只通过 package-private 内部函数复用已经持有的锁，mutation hook 不能绕过锁启动嵌套公开操作。
+
+同一主机上 owner PID 已不存在的有效 lock 可以自动恢复。跨主机 lock、仍存活的 PID 或损坏 metadata 均 fail closed，不按时间猜测并删除。Lock 是 package-private coordination artifact，read-only Archive Protocol consumer 必须忽略。
+
+Lock 不能阻止不遵守该约定的 writer。Compress 在 scan 前后以及 summary 后计算 SHA-256 conversation generation，覆盖 live message 内容、archive 和 staging；generation 变化时在创建 staging 前拒绝提交。校验与首次 mutation 之间仍不存在跨进程原子事务，因此 orchestrator 必须保证 active completion 与 lifecycle mutation 不并行。
+
+### 4.2 Mutation 与 durability 边界
+
+所有关键 filesystem mutation 都经过可注入 hook，覆盖 staging 创建、文件移动、manifest/summary 写入、archive commit、restore 与 cleanup，可用于 deterministic fault injection。
+
+Atomic file write 使用同目录唯一临时文件，写入后先 sync file 再 rename；失败时清理未提交临时文件。POSIX 在 rename 后额外 sync parent directory；Windows 当前只承诺 file sync + same-directory rename，不宣称 directory fsync 保证。Directory archive rename 在 POSIX 同样 sync conversation directory。
+
+### 4.3 Dry-run
+
+普通 dry-run 直接计算 selection。存在 staging 或 archive 时，在 OS 临时目录中的隔离副本执行真实 recover → restore → recompress 模拟，并在 `finally` 清理；目标 conversation 前后 byte-for-byte 不变。结果包含 recovery actions、待恢复 archive 数、planned outcome 以及与随后真实执行一致的 turn/token 统计。
+
 ## 5. 当前能力边界
 
 已实现：
@@ -70,8 +91,12 @@ Restore 在修改文件前校验 manifest、duplicate idx/file 与目标冲突�
 - threshold / dry-run；
 - sliding-window archive selection；
 - staging / atomic single-file writes；
+- directory-level cooperating-writer lock 与 same-host stale-lock recovery；
+- conversation generation precondition；
+- deterministic mutation fault injection 与 retry coverage；
 - compression manifest；
 - restore / recovery / recompress；
+- staging/archive-aware dry-run planning；
 - filesystem behavior tests；
 - Archive Protocol v1 共享 conformance corpus 与 producer/restore/read-only consumer 验证。
 
@@ -79,7 +104,7 @@ Restore 在修改文件前校验 manifest、duplicate idx/file 与目标冲突�
 
 - 真正保留 goals / facts / constraints / decisions / unresolved work 的 semantic summary；
 - 精确 context-budget tokenizer；
-- lifecycle mutation 的并发协调。
+- orchestrator 与不遵守 lifecycle lock 的 active writer 之间的 exclusive-phase integration。
 
 ## 6. 明确非目标
 

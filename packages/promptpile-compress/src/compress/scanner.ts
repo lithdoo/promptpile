@@ -1,5 +1,12 @@
+import { createHash } from 'node:crypto';
+import fs from 'node:fs/promises';
 import path from 'node:path';
-import { isMessageFileName, listMessageFiles } from '../restore/scanner';
+import {
+  findArchiveDirs,
+  findStagingDir,
+  isMessageFileName,
+  listMessageFiles,
+} from '../restore/scanner';
 import { estimateTurnTokens as estimateFileTokens } from './tokenizer';
 import type {
   MessageExtension,
@@ -106,4 +113,76 @@ export const scanTurns = async (directory: string): Promise<Turn[]> => {
   }
 
   return turns.sort((a, b) => a.idx - b.idx);
+};
+
+export const captureConversationGeneration = async (
+  directory: string
+): Promise<string> => {
+  const hash = createHash('sha256');
+  const hashTree = async (root: string, label: string): Promise<void> => {
+    hash.update(label);
+    hash.update('\0root\0');
+    const walk = async (current: string, prefix = ''): Promise<void> => {
+      const entries = await fs.readdir(current, { withFileTypes: true });
+      entries.sort((a, b) => a.name.localeCompare(b.name));
+      for (const entry of entries) {
+        const relative = path.join(prefix, entry.name);
+        const absolute = path.join(current, entry.name);
+        hash.update(label);
+        hash.update('\0');
+        hash.update(relative);
+        hash.update('\0');
+        if (entry.isDirectory()) {
+          hash.update('directory\0');
+          await walk(absolute, relative);
+        } else if (entry.isFile()) {
+          const content = await fs.readFile(absolute);
+          hash.update('file\0');
+          hash.update(String(content.length));
+          hash.update('\0');
+          hash.update(content);
+          hash.update('\0');
+        } else {
+          hash.update('other\0');
+        }
+      }
+    };
+    await walk(root);
+  };
+
+  const messageFiles = await listMessageFiles(directory);
+
+  for (const fileName of messageFiles) {
+    const content = await fs.readFile(path.join(directory, fileName));
+    hash.update('message\0');
+    hash.update(fileName);
+    hash.update('\0');
+    hash.update(String(content.length));
+    hash.update('\0');
+    hash.update(content);
+    hash.update('\0');
+  }
+
+  const archives = await findArchiveDirs(directory);
+  for (const archive of archives) {
+    await hashTree(archive.path, `archive:${archive.name}`);
+  }
+  const staging = await findStagingDir(directory);
+  if (staging) {
+    await hashTree(staging, 'staging');
+  }
+
+  return hash.digest('hex');
+};
+
+export const assertConversationGeneration = async (
+  directory: string,
+  expectedGeneration: string
+): Promise<void> => {
+  const actualGeneration = await captureConversationGeneration(directory);
+  if (actualGeneration !== expectedGeneration) {
+    throw new Error(
+      'conversation 在 compression 规划期间发生变化，拒绝提交；请在 exclusive lifecycle phase 重试'
+    );
+  }
 };

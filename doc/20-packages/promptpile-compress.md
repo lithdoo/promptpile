@@ -14,7 +14,10 @@
 - staging → archive commit；
 - `compression.json`；
 - restore / recovery / recompress；
-- filesystem behavior regression tests。
+- cooperating-writer directory lock、same-host stale-lock recovery 与 conversation generation precondition；
+- staging/archive-aware dry-run planning；
+- mutation fault-injection 与 retry regression tests；
+- 对应 filesystem regression tests。
 
 当前尚未完成真正的 semantic summary；默认 sliding-window summary 仍只是 archive pointer。下一阶段按严格顺序推进：
 
