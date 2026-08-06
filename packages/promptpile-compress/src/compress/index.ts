@@ -37,10 +37,15 @@ import {
 import { createBudgetReport, resolveContextBudget } from './budget';
 import type {
   CompressionManifest,
+  CompressionLifecycleOptions,
+  CompressionLifecycleResult,
+  CompressionOperationReport,
   CompressOptions,
   CompressResult,
   CompressStrategyKind,
   ContextBudgetReport,
+  LifecycleErrorCode,
+  OperationPhaseReport,
   SummaryKind,
   TokenizerAdapter,
   Turn,
@@ -49,6 +54,96 @@ import type {
 const DEFAULT_KEEP_RECENT = 4;
 const DEFAULT_STRATEGY: CompressStrategyKind = 'sliding-window';
 const SUMMARY_TEMP_FILE = '.summary.md';
+const orchestratorQueues = new Map<string, Promise<void>>();
+
+const serializeOrchestratorPhase = async <T>(
+  directory: string,
+  callback: () => Promise<T>
+): Promise<T> => {
+  const previous = orchestratorQueues.get(directory) ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const tail = previous.catch(() => undefined).then(() => gate);
+  orchestratorQueues.set(directory, tail);
+  await previous.catch(() => undefined);
+  try {
+    return await callback();
+  } finally {
+    release();
+    if (orchestratorQueues.get(directory) === tail) {
+      orchestratorQueues.delete(directory);
+    }
+  }
+};
+
+const classifyLifecycleError = (
+  error: unknown,
+  completionPhase = false
+): CompressionOperationReport['error'] => {
+  if (completionPhase) {
+    return {
+      code: 'COMPLETION_FAILED',
+      message: 'Completion failed after the lifecycle phase was released.',
+      retryable: false,
+    };
+  }
+  const raw = error instanceof Error ? error.message : String(error);
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  const taggedCode = (
+    error as { lifecycleErrorCode?: LifecycleErrorCode } | undefined
+  )?.lifecycleErrorCode;
+  let classified: LifecycleErrorCode = 'UNKNOWN';
+  let retryable = false;
+  if (taggedCode) {
+    classified = taggedCode;
+    retryable = taggedCode === 'SUMMARY_PROVIDER_FAILED';
+  } else if (/lifecycle.*lock|生命周期.*锁|已被锁定/i.test(raw)) {
+    classified = 'LIFECYCLE_LOCKED';
+    retryable = true;
+  } else if (/规划期间发生变化|conversation.*changed/i.test(raw)) {
+    classified = 'CONVERSATION_CHANGED';
+    retryable = true;
+  } else if (/semantic summary|provider/i.test(raw)) {
+    classified = 'SUMMARY_PROVIDER_FAILED';
+    retryable = true;
+  } else if (/budget|token count|tokenizer|context capacity/i.test(raw)) {
+    classified = 'BUDGET_INVALID_OR_EXCEEDED';
+  } else if (/archive|归档|staging|compression\.json/i.test(raw)) {
+    classified = 'ARCHIVE_STATE_INVALID';
+  } else if (/must be|不能与|不支持|invalid|非负整数/i.test(raw)) {
+    classified = 'INVALID_OPTIONS';
+  } else if (typeof code === 'string') {
+    classified = 'IO_ERROR';
+    retryable = ['EBUSY', 'EAGAIN', 'EMFILE', 'ENFILE'].includes(code);
+  }
+  const safeMessages: Record<LifecycleErrorCode, string> = {
+    LIFECYCLE_LOCKED: 'The conversation lifecycle is busy; retry later.',
+    CONVERSATION_CHANGED: 'The conversation changed during planning; retry.',
+    SUMMARY_PROVIDER_FAILED: 'The semantic summary provider failed.',
+    BUDGET_INVALID_OR_EXCEEDED: 'The context budget is invalid or exceeded.',
+    ARCHIVE_STATE_INVALID: 'The archive lifecycle state requires attention.',
+    INVALID_OPTIONS: 'The lifecycle options are invalid.',
+    IO_ERROR: 'A filesystem operation failed.',
+    COMPLETION_FAILED: 'Completion failed after lifecycle release.',
+    UNKNOWN: 'The lifecycle operation failed.',
+  };
+  return { code: classified, message: safeMessages[classified], retryable };
+};
+
+const planOutcome = (
+  result: CompressResult
+): NonNullable<CompressionOperationReport['plan']>['outcome'] => {
+  if (result.dryRunPlan) return result.dryRunPlan.outcome;
+  if (
+    result.skipReason === 'below_threshold' ||
+    result.skipReason === 'no_turns_to_compress'
+  ) {
+    return result.skipReason;
+  }
+  return 'compressed';
+};
 
 const pathExists = async (targetPath: string): Promise<boolean> => {
   try {
@@ -291,6 +386,9 @@ const simulateLifecycleDryRun = async (
       compressibleTokens: simulated.compressibleTokens,
       summaryIdx: simulated.summaryIdx,
       budget: simulated.budget,
+      recoveryActions: recoveryActions.map((action) => action.detail),
+      archivesRestored: archivesToRestore,
+      selection: simulated.selection,
       dryRunPlan: {
         recoveryActions: recoveryActions.map((action) => action.detail),
         archivesToRestore,
@@ -340,6 +438,10 @@ const compressDirectoryWithLockHeld = async (
       directory
     );
   }
+  const lifecycleDetails = {
+    recoveryActions: recoveryActions.map((action) => action.detail),
+    archivesRestored: archives.length,
+  };
 
   const generation = await captureConversationGeneration(directory);
   const turns = await scanTurns(directory, tokenizer);
@@ -354,6 +456,8 @@ const compressDirectoryWithLockHeld = async (
       tokensAfter: 0,
       compressibleTokens: 0,
       budget: createBudgetReport(contextBudget, tokenizer, 0, 0, 0),
+      ...lifecycleDetails,
+      selection: { archivedTurnIndices: [], keptTurnIndices: [] },
     };
   }
 
@@ -378,6 +482,11 @@ const compressDirectoryWithLockHeld = async (
         tokensBefore,
         0
       ),
+      ...lifecycleDetails,
+      selection: {
+        archivedTurnIndices: [],
+        keptTurnIndices: turns.map((turn) => turn.idx),
+      },
     };
   }
 
@@ -397,6 +506,11 @@ const compressDirectoryWithLockHeld = async (
         tokensBefore,
         0
       ),
+      ...lifecycleDetails,
+      selection: {
+        archivedTurnIndices: [],
+        keptTurnIndices: turns.map((turn) => turn.idx),
+      },
     };
   }
 
@@ -421,6 +535,11 @@ const compressDirectoryWithLockHeld = async (
         tokensBefore,
         0
       ),
+      ...lifecycleDetails,
+      selection: {
+        archivedTurnIndices: [],
+        keptTurnIndices: keep.map((turn) => turn.idx),
+      },
     };
   }
 
@@ -459,6 +578,11 @@ const compressDirectoryWithLockHeld = async (
       compressibleTokens,
       summaryIdx,
       budget: budgetReport,
+      ...lifecycleDetails,
+      selection: {
+        archivedTurnIndices: archive.map((turn) => turn.idx),
+        keptTurnIndices: keep.map((turn) => turn.idx),
+      },
       dryRunPlan: {
         recoveryActions: [],
         archivesToRestore: 0,
@@ -499,6 +623,11 @@ const compressDirectoryWithLockHeld = async (
     summaryIdx,
     archivePath,
     budget: budgetReport,
+    ...lifecycleDetails,
+    selection: {
+      archivedTurnIndices: archive.map((turn) => turn.idx),
+      keptTurnIndices: keep.map((turn) => turn.idx),
+    },
   };
 };
 
@@ -511,13 +640,211 @@ export async function compressDirectory(
   );
 }
 
+/**
+ * Orchestrator boundary: plan, compress under the filesystem lock, release it,
+ * then start completion. Calls through this API are serialized per directory.
+ */
+export async function runCompressionBeforeCompletion<T>(
+  options: CompressionLifecycleOptions<T>
+): Promise<CompressionLifecycleResult<T>> {
+  let directory: string;
+  try {
+    directory = await assertDirectory(options.compression.directory);
+  } catch {
+    return {
+      ok: false,
+      report: {
+        version: 1,
+        operation: 'compress-before-completion',
+        status: 'failed',
+        phases: [
+          { phase: 'estimate_plan', status: 'failed', durationMs: 0 },
+        ],
+        recoveryActions: [],
+        selection: { archivedTurnIndices: [], keptTurnIndices: [] },
+        commit: { state: 'not_started' },
+        error: {
+          code: 'IO_ERROR',
+          message: 'The conversation directory is unavailable.',
+          retryable: false,
+        },
+      },
+    };
+  }
+  return serializeOrchestratorPhase(directory, async () => {
+    const phases: OperationPhaseReport[] = [];
+    const report: CompressionOperationReport = {
+      version: 1,
+      operation: 'compress-before-completion',
+      status: 'failed',
+      phases,
+      recoveryActions: [],
+      selection: { archivedTurnIndices: [], keptTurnIndices: [] },
+      commit: { state: 'not_started' },
+    };
+
+    const planStarted = Date.now();
+    try {
+      const planned = await compressDirectory({
+        ...options.compression,
+        directory,
+        dryRun: true,
+        mutationHook: undefined,
+      });
+      phases.push({
+        phase: 'estimate_plan',
+        status: 'completed',
+        durationMs: Date.now() - planStarted,
+      });
+      report.plan = {
+        outcome: planOutcome(planned),
+        selection: planned.selection,
+        budget: planned.budget,
+      };
+      report.recoveryActions = planned.recoveryActions;
+      report.selection = planned.selection;
+      report.budget = planned.budget;
+    } catch (error) {
+      phases.push({
+        phase: 'estimate_plan',
+        status: 'failed',
+        durationMs: Date.now() - planStarted,
+      });
+      report.error = classifyLifecycleError(error);
+      return { ok: false, report };
+    }
+
+    let acquired = false;
+    let compressionCompleted = false;
+    let compression: CompressResult | undefined;
+    const acquireStarted = Date.now();
+    try {
+      compression = await withDirectoryLifecycleLock(
+        directory,
+        'compress',
+        async () => {
+          acquired = true;
+          phases.push({
+            phase: 'acquire_exclusive',
+            status: 'completed',
+            durationMs: Date.now() - acquireStarted,
+          });
+          const compressStarted = Date.now();
+          try {
+            const result = await compressDirectoryWithLockHeld(
+              {
+                ...options.compression,
+                directory,
+                dryRun: false,
+              },
+              directory
+            );
+            compression = result;
+            compressionCompleted = true;
+            phases.push({
+              phase: 'compress',
+              status: 'completed',
+              durationMs: Date.now() - compressStarted,
+            });
+            return result;
+          } catch (error) {
+            phases.push({
+              phase: 'compress',
+              status: 'failed',
+              durationMs: Date.now() - compressStarted,
+            });
+            throw error;
+          }
+        }
+      );
+      phases.push({
+        phase: 'release_exclusive',
+        status: 'completed',
+        durationMs: 0,
+      });
+    } catch (error) {
+      if (!acquired) {
+        phases.push({
+          phase: 'acquire_exclusive',
+          status: 'failed',
+          durationMs: Date.now() - acquireStarted,
+        });
+      } else if (compressionCompleted) {
+        phases.push({
+          phase: 'release_exclusive',
+          status: 'failed',
+          durationMs: 0,
+        });
+      } else {
+        phases.push({
+          phase: 'release_exclusive',
+          status: 'completed',
+          durationMs: 0,
+        });
+      }
+      report.error = classifyLifecycleError(error);
+      if (compression) {
+        report.recoveryActions = compression.recoveryActions;
+        report.selection = compression.selection;
+        report.budget = compression.budget;
+        report.commit = compression.compressed
+          ? {
+              state: 'committed',
+              ...(compression.summaryIdx !== undefined
+                ? { summaryIdx: compression.summaryIdx }
+                : {}),
+            }
+          : { state: 'skipped' };
+      }
+      return { ok: false, report };
+    }
+
+    report.recoveryActions = compression.recoveryActions;
+    report.selection = compression.selection;
+    report.budget = compression.budget;
+    report.commit = compression.compressed
+      ? {
+          state: 'committed',
+          ...(compression.summaryIdx !== undefined
+            ? { summaryIdx: compression.summaryIdx }
+            : {}),
+        }
+      : { state: 'skipped' };
+
+    const completionStarted = Date.now();
+    try {
+      const completion = await options.completion(compression);
+      phases.push({
+        phase: 'completion',
+        status: 'completed',
+        durationMs: Date.now() - completionStarted,
+      });
+      report.status = 'completed';
+      return { ok: true, compression, completion, report };
+    } catch (error) {
+      phases.push({
+        phase: 'completion',
+        status: 'failed',
+        durationMs: Date.now() - completionStarted,
+      });
+      report.error = classifyLifecycleError(error, true);
+      return { ok: false, report };
+    }
+  });
+}
+
 export type {
   CompressDryRunPlan,
+  CompressionLifecycleOptions,
+  CompressionLifecycleResult,
+  CompressionOperationReport,
   CompressOptions,
   CompressResult,
   CompressSkipReason,
   ContextBudgetOptions,
   ContextBudgetReport,
+  LifecycleErrorCode,
+  OperationPhaseReport,
   SemanticSummaryArtifact,
   SemanticSummaryDocument,
   SemanticSummaryItem,

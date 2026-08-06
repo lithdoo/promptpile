@@ -7,6 +7,7 @@ import type {
   SummaryGenerator,
   SummaryOptions,
   Turn,
+  LifecycleErrorCode,
 } from './types';
 
 const DEFAULT_TIMEOUT_MS = 60_000;
@@ -229,10 +230,20 @@ const createSemanticGenerator = (
         maxInputTokens,
         maxOutputTokens
       );
-      const raw = await withTimeout(
-        (signal) => options.provider.summarize(request, signal),
-        timeoutMs
-      );
+      let raw: unknown;
+      try {
+        raw = await withTimeout(
+          (signal) => options.provider.summarize(request, signal),
+          timeoutMs
+        );
+      } catch (error) {
+        if (error && typeof error === 'object') {
+          (
+            error as Error & { lifecycleErrorCode?: LifecycleErrorCode }
+          ).lifecycleErrorCode = 'SUMMARY_PROVIDER_FAILED';
+        }
+        throw error;
+      }
       const document = validateSemanticSummary(
         raw,
         archive.map((turn) => turn.idx)

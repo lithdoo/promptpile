@@ -96,6 +96,12 @@ Atomic file write 使用同目录唯一临时文件，写入后先 sync file 再
 
 Live artifacts 在 scan 中并行读取一次并缓存，tokenizer 与 semantic provider 共享内容；generation hash 仍在 mutation 前独立复核，但同一轮的 live-file 读取改为并行且保持确定性 hash 顺序。可用 `npm run benchmark -w promptpile-compress` 复现 1,000 turns / 3,000 artifacts 基准，`PPC_BENCHMARK_TURNS` 可调整规模。2026-08-06 的 Windows 样本中，当前单次缓存路径 median 244.17 ms，旧式 tokenize + provider reread 两遍路径 median 967.53 ms（3.96×）；数值只作本机趋势记录，不作为跨机器 pass/fail 门槛。
 
+### 4.5 Orchestrator boundary 与 operation report
+
+自动化调用使用 `runCompressionBeforeCompletion()`：同一 resolved directory 的调用先进入进程内队列，执行 read-only estimate/plan，再获取 filesystem lifecycle lock、重新校验并压缩，释放 lock 后才调用 completion callback。队列覆盖 callback 完成，因此通过该入口的下一次 lifecycle phase 不会与 active completion 重叠。跨进程 filesystem mutation 仍由 lock 与 generation precondition 防护；不采用此 API 的外部 writer 仍不在进程内队列保证范围内。
+
+`CompressionOperationReport` 固定记录 phase status/duration、recovery actions、archived/kept idx、budget、commit state、summary idx 与稳定错误码。报告不包含 message/tool result、semantic summary 正文或 provider 原始错误文本。`compressDirectory` / `restoreArchivedTurns` 保留为手动 lifecycle API，不应被 orchestrator 与 active completion 并发调用。
+
 ## 5. 当前能力边界
 
 已实现：
@@ -113,12 +119,12 @@ Live artifacts 在 scan 中并行读取一次并缓存，tokenizer 与 semantic 
 - compression manifest；
 - restore / recovery / recompress；
 - staging/archive-aware dry-run planning；
+- orchestrator lifecycle queue 与脱敏 structured operation report；
 - filesystem behavior tests；
-- Archive Protocol v1 共享 conformance corpus 与 producer/restore/read-only consumer 验证。
+- Node 18/22 × Windows/Linux filesystem matrix；
+- Archive Protocol v1 共享 conformance corpus 与独立 consumer 跨包验证。
 
-尚未完成：
-
-- orchestrator 与不遵守 lifecycle lock 的 active writer 之间的 exclusive-phase integration。
+继续保持 experimental 的事项：真实上层应用接线、跨进程非 cooperating writer，以及长期版本迁移演练。
 
 ## 6. 明确非目标
 
@@ -130,7 +136,7 @@ Live artifacts 在 scan 中并行读取一次并缓存，tokenizer 与 semantic 
 - retrieval ranking；
 - archive-search MCP server。
 
-第一个独立 consumer scaffold 是 `../promptpile-compress-grep-search/`。
+第一个独立 consumer 是 `../promptpile-compress-grep-search/`；当前已实现 archive discovery/read-turn，grep query surface 仍由该包单独推进。
 
 ## 7. Retrieval 边界
 

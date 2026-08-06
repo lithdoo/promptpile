@@ -22,7 +22,7 @@ Promptpile is a **file-native, CLI-first lightweight agent runtime ecosystem**. 
                            │
                            └─ Archive Protocol
                                 └─ promptpile-compress-grep-search
-                                   read-only retrieval scaffold
+                                   read-only archive reader
 ```
 
 ## Packages and projects
@@ -33,7 +33,7 @@ Promptpile is a **file-native, CLI-first lightweight agent runtime ecosystem**. 
 | [`promptpile-react`](./packages/promptpile-react/) | ReAct orchestration over the public CLI | Beta / active |
 | [`promptpile-mcp`](./packages/promptpile-mcp/) | MCP gateway, tool export and call execution | Beta / active |
 | [`promptpile-compress`](./packages/promptpile-compress/) | Conversation compression / restore; Archive Protocol producer/restore implementation | Experimental / private |
-| [`promptpile-compress-grep-search`](./packages/promptpile-compress-grep-search/) | Read-only grep retrieval over Archive Protocol | Scaffold |
+| [`promptpile-compress-grep-search`](./packages/promptpile-compress-grep-search/) | Read-only Archive Protocol reader; grep query surface pending | Foundation / private |
 | [`promptpile-plan`](./packages/promptpile-plan/) | Plan-and-execute orchestration | Scaffold |
 | [`agent-lite-tools`](./agent-lite-tools/) | Supporting file/search/shell/web tool packages | Supporting |
 

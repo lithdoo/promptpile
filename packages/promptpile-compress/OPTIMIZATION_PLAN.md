@@ -1,12 +1,12 @@
 # promptpile-compress 优化计划
 
-> 状态：Active
+> 状态：Complete
 >
 > 适用范围：`packages/promptpile-compress` 当前实现
 >
 > 基线版本：`0.1.0` / private / experimental
 >
-> 当前阶段：P0、P1、P2、P3 已完成，下一阶段 P4
+> 当前阶段：P0-P4 已完成
 >
 > 最近复核：2026-08-06
 
@@ -36,11 +36,9 @@
 - cooperating-writer directory lock、same-host stale-lock recovery 与 conversation generation precondition；
 - 可注入 mutation boundary、atomic temp cleanup 与 retry regression tests；
 - staging/archive-aware dry-run simulation 与可信统计；
-- 77 个 filesystem、protocol、CLI、semantic summary、budget/tokenizer 与 lifecycle behavior tests，当前全部通过。
+- 83 个 producer/lifecycle tests 与 4 个独立 consumer tests，覆盖 filesystem、protocol、CLI、semantic summary、budget/tokenizer、orchestrator 和跨包行为。
 
-主要缺口：
-
-- orchestrator 尚未为不遵守 lifecycle lock 的 active completion 提供 exclusive phase。
+本轮计划缺口已关闭；真实上层应用接线、grep query surface 和长期版本迁移演练作为后续独立工作推进。
 
 ## 3. 约束与非目标
 
@@ -100,22 +98,16 @@
 - scanner 并行读取并缓存 live artifacts，tokenizer 与 semantic provider 不再重复读取；generation precondition 继续独立复核；
 - `npm run benchmark -w promptpile-compress` 提供可调规模的 current/legacy two-pass 对比；1,000 turns / 3,000 artifacts Windows 样本为 244.17 ms 对 967.53 ms（3.96×）。
 
-### P4 · 集成与成熟度
+### P4 · 集成与成熟度（已完成：2026-08-06）
 
-工作项：
+完成结果：
 
-1. 为 orchestrator 定义显式 lifecycle API：estimate/plan → acquire exclusive phase → compress → release → completion。
-2. 增加结构化 operation report，包含 recovery actions、selection、预算、commit 状态和可操作错误码；日志不得包含完整敏感 conversation 内容。
-3. 建立跨 package integration tests，验证 producer archive 可由独立 consumer 读取，consumer 不依赖本包私有源码或 `dist`。
-4. 补齐 Node 支持矩阵与 Windows/POSIX filesystem CI；检查 lock、rename、fsync 和中断恢复差异。
-5. 仅在协议 fixtures、semantic quality gate、并发模型和 integration tests 稳定后评估取消 `private` / `experimental`。
-
-验收标准：
-
-- orchestrator 集成不存在 active completion 与 compress/restore 的未协调并发；
-- operation report 足以诊断一次失败而无需解析自由文本日志；
-- producer/consumer cross-package tests 在 CI 中运行；
-- 发布前质量门槛有明确测试命令、支持平台和兼容策略。
+- `runCompressionBeforeCompletion` 按 resolved directory 串行 plan → acquire → compress → release → completion；测试验证下一次 lifecycle phase 不与 active completion 重叠；
+- `CompressionOperationReport` 覆盖 phase、recovery actions、selection、budget、commit state 与稳定 error code，并验证不泄露 conversation/provider 原始内容；
+- `promptpile-compress-grep-search` 成为 active workspace，production reader 仅依据公开协议实现 discovery/read-turn，architecture guard 禁止 implementation dependency；
+- producer 公共 API → 独立 consumer 的 integration test 验证 message/calls/result mapping 以及读取前后 byte-for-byte 不变；
+- 新增 Node 18/22 × Ubuntu/Windows filesystem matrix，Pages/root gates 同步包含 consumer；发布质量门记录命令、平台和兼容策略；
+- 完成成熟度评估：暂不取消 `private` / `experimental`，等待真实上层接线、grep query surface 与版本迁移演练。
 
 ## 5. 优先级与依赖
 
@@ -128,7 +120,7 @@ P2 semantic summary（已完成）
     ↓
 P3 context budget / performance（已完成）
     ↓
-P4 orchestrator integration / maturity（下一阶段）
+P4 orchestrator integration / maturity（已完成）
 ```
 
 P0 是低成本正确性修复；P1 先保护 authoritative conversation state；P2 提供压缩的核心语义价值；P3 在 summary 输入输出模型稳定后统一预算；P4 最后扩大自动化和发布面。

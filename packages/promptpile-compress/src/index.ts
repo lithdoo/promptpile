@@ -247,15 +247,20 @@ if (require.main === module) {
 
 export { recover, restoreArchivedTurns } from './restore';
 export type { RecoveryOptions, RestoreOptions, RestoreResult } from './restore';
-export { compressDirectory } from './compress';
+export { compressDirectory, runCompressionBeforeCompletion } from './compress';
 export { createTiktokenTokenizer, heuristicTokenizer } from './compress';
 export type {
   CompressDryRunPlan,
   CompressOptions,
   CompressResult,
   CompressSkipReason,
+  CompressionLifecycleOptions,
+  CompressionLifecycleResult,
+  CompressionOperationReport,
   ContextBudgetOptions,
   ContextBudgetReport,
+  LifecycleErrorCode,
+  OperationPhaseReport,
   SemanticSummaryArtifact,
   SemanticSummaryDocument,
   SemanticSummaryItem,

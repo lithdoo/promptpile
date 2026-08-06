@@ -21,6 +21,9 @@
 - staging/archive-aware dry-run planning；
 - mutation fault-injection 与 retry regression tests；
 - 对应 filesystem regression tests。
+- `runCompressionBeforeCompletion` orchestrator queue 与脱敏 operation report；
+- Node 18/22 × Windows/Linux filesystem CI；
+- 独立 Archive Protocol reader 的跨 package integration test。
 
 默认模式仍生成不联网的 archive pointer。程序化 API 可显式注入 semantic provider，生成带 archived idx 来源的目标、事实、约束、决策、工具发现、进展和后续动作；CLI 不隐式读取 API key 或访问外部服务。历史 grep / vector retrieval **不属于本 package 的目标职责**。
 
@@ -50,6 +53,8 @@ await compressDirectory({
 `summarize(request, signal)` 必须返回公开 `SemanticSummaryDocument` 结构；调用方负责模型选择、凭据和网络行为。
 
 默认 tokenizer 是明确标记为 fallback 的 `heuristicTokenizer`。需要按模型精确计数时使用 `await createTiktokenTokenizer(model)`，并在完成后调用 `dispose()`。`CompressResult.budget` 解释 trigger、压缩前 tokens、kept history、summary、固定开销、completion 预留、safety margin、总计划占用与剩余 context。旧 `threshold` 仍可单独使用，但不能和 `budget` 组合。
+
+Orchestrator 应调用 `runCompressionBeforeCompletion({ compression, completion })`。它按目录串行 plan → acquire → compress → release → completion，并返回包含 phase、recovery、selection、budget、commit 与稳定错误码的 `CompressionOperationReport`；报告不会记录 conversation 正文或 provider 原始错误。
 
 `promptpile-compress` 不实现或拥有：
 

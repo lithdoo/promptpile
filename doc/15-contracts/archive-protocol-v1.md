@@ -141,6 +141,12 @@ Retrieval consumer 应：
 Archive Protocol v1 从 Experimental 提升前至少需要：
 
 - [x] `promptpile-compress` producer/restore conformance fixtures；
-- [ ] 一个不 import compress 私有实现的独立 runtime consumer；
-- [ ] archive discovery / manifest / archived-turn 读取的 cross-package tests；
-- [ ] 明确 v1 breaking-change 与迁移策略。
+- [x] 一个不 import compress 私有实现的独立 runtime consumer；
+- [x] archive discovery / manifest / archived-turn 读取的 cross-package tests；
+- [x] 明确 v1 breaking-change 与迁移策略。
+
+## 9. Breaking change 与迁移
+
+向 `compression.json` 增加 producer metadata 属于 additive change，v1 consumer 必须忽略。改变最小必需字段、目录发现规则、authoritative artifact 语义或 idx 约束属于 breaking change，必须使用新的 manifest `version`，旧 consumer 对未知 version fail closed。
+
+当前不做 archive 原地升级。迁移由 lifecycle owner 使用对应旧版 restore 将 authoritative message artifacts 恢复到 Conversation Protocol 顶层，再由新版 producer 重新压缩；迁移前后必须通过 byte-for-byte artifact 校验。多版本 reader 只能在明确实现每个版本的独立 validator 后接受对应 version，不得猜测兼容。

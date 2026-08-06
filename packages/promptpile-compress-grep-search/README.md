@@ -1,33 +1,32 @@
 # promptpile-compress-grep-search
 
-> 状态：Scaffold  
+> 状态：Archive reader foundation / private
 > 类型：Archive Protocol read-only consumer  
-> 最近复核：2026-08-05
+> 最近复核：2026-08-06
 
-这是一个**空项目 scaffold**，目标是基于 Promptpile Archive Protocol 实现历史 conversation 的 grep 检索。
-
-当前目录故意只有文档，没有 `package.json`、源码或构建脚本，因此尚未成为 npm workspace package。开始实现时再同一变更中加入 package metadata、root lockfile 与 CI gate。
-
-## 设计目标
-
-```text
-promptpile-compress
-      │ writes
-      ▼
-Archive Protocol
-      │ reads only
-      ▼
-promptpile-compress-grep-search
-      │
-      └── generic grep mechanism → @agent-tool-lite/search
-```
+这是一个独立、只读、协议驱动的 Archive Protocol consumer。当前已经成为 npm
+workspace package，实现 archive discovery、v1 manifest 校验和 deterministic
+`readArchivedTurn()`；grep query 与 Agent tool surface 仍在后续 TODO 中。
 
 核心原则：
 
-- **协议驱动**：只依据 `doc/15-contracts/archive-protocol-v1.md`，不 import compress 私有实现。
-- **只读**：不修改 archive、manifest、summary 或 archived message files。
-- **领域与 mechanism 分离**：Promptpile turn/role/archive mapping 在本项目；ripgrep execution 优先复用 `@agent-tool-lite/search`。
-- **索引可再生**：第一版不创建持久索引；未来任何 cache/index 也不能成为 archive authoritative state。
-- **Vector 独立**：如 keyword grep 不足，再新建独立 vector consumer，不把 embedding/vector stack 塞入本项目。
+- production code 只依据 Archive Protocol，不依赖 `promptpile-compress` 源码、
+  `dist` 或私有类型；
+- reader 不修改 archive、manifest、summary 或 archived artifacts；
+- integration test 通过 producer 的公开 package API 创建 archive，再由本包读取，
+  并验证读取前后 byte-for-byte 不变；
+- grep mechanism 后续优先复用 `@agent-tool-lite/search`；vector 能力保持独立。
+
+```ts
+import {
+  discoverArchives,
+  readArchivedTurn,
+} from 'promptpile-compress-grep-search';
+
+const archives = await discoverArchives(directory);
+const turn = await readArchivedTurn(directory, 12, {
+  includeToolResults: true,
+});
+```
 
 当前工作见 [`TODO.md`](./TODO.md)。

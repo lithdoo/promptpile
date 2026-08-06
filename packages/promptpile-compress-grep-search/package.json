@@ -1,0 +1,19 @@
+{
+  "name": "promptpile-compress-grep-search",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Read-only Archive Protocol reader for Promptpile history",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "npm run build -w promptpile-compress && npm run build && node --test dist/index.test.js dist/integration.test.js dist/architecture.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "promptpile-compress": "0.1.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

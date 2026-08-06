@@ -14,6 +14,6 @@ Package 文档描述 **ownership 与实现入口**；跨 package 协议仍以 [1
 | [promptpile-react](./promptpile-react.md) | ReAct orchestration | Beta / active |
 | [promptpile-mcp](./promptpile-mcp.md) | MCP tool bridge | Beta / active |
 | [promptpile-compress](./promptpile-compress.md) | Context lifecycle mutation / Archive producer | Experimental / private |
-| [promptpile-compress-grep-search](./promptpile-compress-grep-search.md) | Archive Protocol grep retrieval | Scaffold |
+| [promptpile-compress-grep-search](./promptpile-compress-grep-search.md) | Archive Protocol read-only consumer | Foundation / private |
 | [promptpile-plan](./promptpile-plan.md) | Plan/Exec orchestration | Scaffold |
 | [agent-lite-tools](./agent-lite-tools.md) | Tool implementations | Supporting |

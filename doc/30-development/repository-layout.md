@@ -4,7 +4,7 @@
 > 状态：Reference  
 > 稳定程度：Evolving  
 > 主要定义：当前 monorepo 的工程组织方式  
-> 最近复核：2026-08-05
+> 最近复核：2026-08-06
 
 ```text
 promptpile/
@@ -13,7 +13,7 @@ promptpile/
 │   ├── promptpile-react/
 │   ├── promptpile-mcp/
 │   ├── promptpile-compress/
-│   ├── promptpile-compress-grep-search/   # scaffold；暂无 package.json
+│   ├── promptpile-compress-grep-search/   # active read-only archive reader
 │   └── promptpile-plan/
 ├── agent-lite-tools/
 ├── examples/
@@ -21,7 +21,7 @@ promptpile/
 └── .github/workflows/
 ```
 
-根 `package.json` 使用 npm workspaces：`packages/*` 与 `agent-lite-tools/*`。npm 只把包含 package metadata 的目录作为 workspace package；当前 grep-search scaffold 故意不加入 workspace，等实现开始时再同步 `package.json`、lockfile 与 CI gate。
+根 `package.json` 使用 npm workspaces：`packages/*` 与 `agent-lite-tools/*`。Compress producer 与 grep-search reader 都是 active workspace packages，并进入 root build/test 与 CI gate。
 
 ## 开发命令
 

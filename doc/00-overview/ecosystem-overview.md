@@ -30,7 +30,7 @@
           ▼                              │   compress / restore
    MCP servers /                        │
    agent-lite-tools                     └─ Archive Protocol
-                                             ├─ grep search scaffold
+                                             ├─ read-only archive reader
                                              └─ future vector consumer
 ```
 
@@ -42,7 +42,7 @@
 | Orchestration | `promptpile-react` | Thought → Observe → Check → Final 的 ReAct 编排 |
 | Tool bridge | `promptpile-mcp` | MCP 会话、工具导出、calls 执行、result 写回 |
 | Context lifecycle mutation | `promptpile-compress` | conversation 压缩、archive commit、restore/recovery |
-| Archive retrieval | `promptpile-compress-grep-search` | 基于 Archive Protocol 的只读 grep 检索；当前仅 scaffold |
+| Archive retrieval | `promptpile-compress-grep-search` | Archive Protocol 的只读 reader foundation；grep query surface 尚未实现 |
 | Plan orchestration | `promptpile-plan` | 当前仍是 scaffold |
 | Tool implementations | `agent-lite-tools/*` | file/search/shell/web 等通用工具能力 |
 

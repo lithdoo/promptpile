@@ -41,6 +41,7 @@ jobs:
           --workspace=promptpile-react
           --workspace=promptpile-plan
           --workspace=promptpile-compress
+          --workspace=promptpile-compress-grep-search
 
       - name: Build active packages
         run: npm run build

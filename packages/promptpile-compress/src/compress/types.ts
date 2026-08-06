@@ -164,6 +164,72 @@ export interface CompressResult {
   skipReason?: CompressSkipReason;
   dryRunPlan?: CompressDryRunPlan;
   budget: ContextBudgetReport;
+  recoveryActions: string[];
+  archivesRestored: number;
+  selection: {
+    archivedTurnIndices: number[];
+    keptTurnIndices: number[];
+  };
+}
+
+export type LifecycleErrorCode =
+  | 'LIFECYCLE_LOCKED'
+  | 'CONVERSATION_CHANGED'
+  | 'SUMMARY_PROVIDER_FAILED'
+  | 'BUDGET_INVALID_OR_EXCEEDED'
+  | 'ARCHIVE_STATE_INVALID'
+  | 'INVALID_OPTIONS'
+  | 'IO_ERROR'
+  | 'COMPLETION_FAILED'
+  | 'UNKNOWN';
+
+export interface OperationPhaseReport {
+  phase:
+    | 'estimate_plan'
+    | 'acquire_exclusive'
+    | 'compress'
+    | 'release_exclusive'
+    | 'completion';
+  status: 'completed' | 'failed' | 'skipped';
+  durationMs: number;
+}
+
+export interface CompressionOperationReport {
+  version: 1;
+  operation: 'compress-before-completion';
+  status: 'completed' | 'failed';
+  phases: OperationPhaseReport[];
+  plan?: {
+    outcome: 'compressed' | 'below_threshold' | 'no_turns_to_compress';
+    selection: CompressResult['selection'];
+    budget: ContextBudgetReport;
+  };
+  recoveryActions: string[];
+  selection: CompressResult['selection'];
+  budget?: ContextBudgetReport;
+  commit: {
+    state: 'not_started' | 'committed' | 'skipped';
+    summaryIdx?: number;
+  };
+  error?: {
+    code: LifecycleErrorCode;
+    message: string;
+    retryable: boolean;
+  };
+}
+
+export type CompressionLifecycleResult<T> =
+  | {
+      ok: true;
+      compression: CompressResult;
+      completion: T;
+      report: CompressionOperationReport;
+    }
+  | { ok: false; report: CompressionOperationReport };
+
+export interface CompressionLifecycleOptions<T> {
+  compression: Omit<CompressOptions, 'dryRun'>;
+  completion: (compression: CompressResult) => Promise<T>;
 }
 
 export interface CompressionManifest {
