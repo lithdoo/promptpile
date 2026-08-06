@@ -43,7 +43,7 @@ it('reads a producer archive through public package boundaries without mutation'
     const turn = await readArchivedTurn(root, 2);
     assert.deepEqual(
       turn?.artifacts.map(({ fileKind }) => fileKind),
-      ['calls', 'message', 'result']
+      ['message', 'calls', 'result']
     );
     assert.deepEqual(snapshot(root), beforeRead);
   } finally {

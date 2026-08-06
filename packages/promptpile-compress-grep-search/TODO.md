@@ -28,14 +28,22 @@
 - [x] 支持显式是否包含 tool results。
 - [x] 对不存在、未归档或损坏 turn 返回明确错误/空结果语义。
 
-## P3 · Grep lookup + CLI
+## P3 · Literal archive search + CLI
+
+### P3.0 Contract closure
+
+- [x] 将 domain failure 改为稳定 error code，不要求调用方解析自然语言。
+- [x] 固定 read 默认包含、search 默认排除 tool results，并提供拒绝 CLI 冲突参数的共享 resolver。
+- [x] 修正 `readArchivedTurn()` artifact 顺序，使其遵循 Conversation Protocol。
+- [x] 在 machine contract 中固定 `truncated` 为成功状态、timeout 为 `SEARCH_TIMEOUT`；具体 search response 在 P3.1 实现。
+- [x] 冻结 CLI JSON envelope 与 exit code mapping，并增加 contract tests。
 
 ### P3.1 Search domain
 
 - [ ] 定义 `ArchiveSearchMatch` / `ArchiveSearchResult` / `ArchiveSearchResponse`。
-- [ ] `search` 对外按 turn 聚合结果，不直接暴露 raw filesystem grep hit。
+- [ ] `search` 对外按 turn 聚合结果，不直接暴露 raw filesystem hit。
 - [ ] `limit` 以 turn 为单位；结果 deterministic，默认按 `turnIdx` 从新到旧。
-- [ ] v1 query 默认 literal text，不先暴露 raw ripgrep 参数或虚假 relevance score。
+- [ ] v1 query 默认 literal text，不暴露通用文件搜索参数或虚假 relevance score。
 
 ### P3.2 Searchable artifact enumeration
 
@@ -44,12 +52,14 @@
 - [ ] 默认忽略 `compression.json`、`.summary.md`、`.promptpile-compress.*` 与其他 metadata/private/derived files。
 - [ ] 支持 `includeToolResults` 控制 `assistant.result.jsonl` 搜索范围。
 
-### P3.3 Ripgrep adapter
+### P3.3 Node.js streaming scanner
 
-- [ ] 复用 `@agent-tool-lite/search` 的 `runRipgrep` / `buildGrepArgs` / `getRgPath`，不重复实现 timeout/truncation/process management。
-- [ ] 将 filepath 命中映射为 `archiveIdx / turnIdx / role / fileKind / sourceFile / snippet / line`。
+- [ ] 使用 `fs.createReadStream()` / `readline` 实现逐行 literal search，不依赖 `@agent-tool-lite/search` 或外部二进制。
+- [ ] scanner 只接收已验证并明确枚举的 `SearchableArtifact[]`，不自行递归发现文件。
+- [ ] 支持取消、timeout、有限并发、match/snippet/line 安全上限。
+- [ ] 将行命中直接映射为 `archiveIdx / turnIdx / role / fileKind / sourceFile / snippet / line`。
 - [ ] 同一 turn 的多个文件/多次命中稳定聚合。
-- [ ] 固定 limit、truncation、timeout 和 invalid query 的 domain error semantics。
+- [ ] `truncated` 只表示成功结果受 turn limit 或安全上限截断；timeout 返回 `SEARCH_TIMEOUT`。
 
 ### P3.4 Fixtures
 
@@ -69,6 +79,14 @@
 - [ ] `search` 支持 `--limit`、`--role`、tool-result include/exclude、`--case-sensitive`。
 - [ ] `list` / `search` / `read` 支持稳定 `--json` machine output。
 - [ ] human-readable CLI 与 JSON/API 使用相同 domain semantics，不重新实现查询逻辑。
+- [ ] 增加 package `bin` entry、Node-compatible shebang 与安装后 CLI smoke test。
+
+### P3.6 Performance / release gate
+
+- [ ] 建立小型、1,000 turns 与大 JSONL archive benchmark。
+- [ ] 记录首次查询延迟、吞吐、峰值内存与提前终止行为。
+- [ ] Node scanner 未达到明确性能目标前，不引入第二 backend；只有基准证明需要时才评估可选高吞吐 backend。
+- [ ] 验证 Node 18/22 × Windows/Linux，无外部搜索二进制依赖。
 
 P3 完成定义：普通用户无需编写 TypeScript，即可通过 CLI 完成 `search → read` 的历史检索闭环。
 
@@ -88,7 +106,7 @@ P3 完成定义：普通用户无需编写 TypeScript，即可通过 CLI 完成 
 - semantic reranker / relevance score；
 - archive mutation / restore；
 - compression summary generation；
-- raw ripgrep compatibility surface；
+- raw filesystem search / ripgrep compatibility surface；
 - interactive TUI。
 
 Vector search 如有真实需求，应作为另一个 Archive Protocol consumer 单独立项。

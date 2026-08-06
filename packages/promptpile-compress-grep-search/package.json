@@ -6,7 +6,7 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "test": "npm run build -w promptpile-compress && npm run build && node --test dist/index.test.js dist/integration.test.js dist/architecture.test.js"
+    "test": "npm run build -w promptpile-compress && npm run build && node --test dist/index.test.js dist/contracts.test.js dist/integration.test.js dist/architecture.test.js"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

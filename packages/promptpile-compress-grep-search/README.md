@@ -13,7 +13,7 @@ workspace package，实现 archive discovery、v1 manifest 校验和 determinist
 - 核心实现保留可复用 TypeScript domain API；
 - 主要用户入口采用 `promptpile-archive` CLI，使使用者无需编码即可完成历史检索；
 - CLI 第一版围绕 `list` / `search` / `read` 三个动作；
-- `search` 返回 turn 级领域结果，raw ripgrep hit 只作为内部实现细节；
+- `search` 返回 turn 级领域结果，不暴露 raw filesystem hit；
 - MCP 在 search/CLI 稳定后作为 Agent 无编码集成面，并复用同一 domain API；
 - 不优先维护独立 generic tool surface。
 
@@ -24,7 +24,7 @@ workspace package，实现 archive discovery、v1 manifest 校验和 determinist
 - reader 不修改 archive、manifest、summary 或 archived artifacts；
 - integration test 通过 producer 的公开 package API 创建 archive，再由本包读取，
   并验证读取前后 byte-for-byte 不变；
-- grep mechanism 优先复用 `@agent-tool-lite/search`；vector 能力保持独立。
+- v1 使用内置 Node.js 流式 literal scanner，不依赖外部搜索二进制；vector 能力保持独立。
 
 ```ts
 import {
