@@ -56,6 +56,7 @@ describe('search domain', () => {
     for (const options of [
       { query: '' },
       { query: '   ' },
+      { query: 'two\nlines' },
       { query: 'ok', limit: 0 },
       { query: 'ok', limit: 101 },
       { query: 'ok', limit: 1.5 },

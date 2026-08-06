@@ -1,12 +1,13 @@
 # promptpile-compress-grep-search
 
-> 状态：Search domain and artifact enumeration / private
+> 状态：Literal search domain / private
 > 类型：Archive Protocol read-only consumer  
 > 最近复核：2026-08-06
 
 这是一个独立、只读、协议驱动的 Archive Protocol consumer。当前已经成为 npm
 workspace package，实现 archive discovery、v1 manifest 校验、deterministic
-`readArchivedTurn()`、search domain options 和 authoritative artifact enumeration；下一阶段落地 Node.js 流式 literal scanner。
+`readArchivedTurn()`、authoritative artifact enumeration 和 Node.js 流式
+`searchArchive()`；下一阶段落地 `promptpile-archive` CLI。
 
 产品方向：
 
@@ -31,11 +32,16 @@ import {
   discoverArchives,
   enumerateSearchableArtifacts,
   readArchivedTurn,
+  searchArchive,
 } from 'promptpile-compress-grep-search';
 
 const archives = await discoverArchives(directory);
 const searchable = await enumerateSearchableArtifacts(directory, {
   roles: ['assistant'],
+});
+const matches = await searchArchive(directory, {
+  query: 'postgres migration',
+  limit: 20,
 });
 const turn = await readArchivedTurn(directory, 12, {
   includeToolResults: true,

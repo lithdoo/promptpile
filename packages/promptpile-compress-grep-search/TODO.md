@@ -49,13 +49,13 @@
 
 ### P3.2 Node.js streaming scanner
 
-- [ ] 使用 `fs.createReadStream()` / `readline` 实现逐行 literal search，不依赖 `@agent-tool-lite/search` 或外部二进制。
-- [ ] scanner 只接收已验证并明确枚举的 `SearchableArtifact[]`，不自行递归发现文件。
-- [ ] 支持取消、timeout、有限并发、match/snippet/line 安全上限。
-- [ ] 将行命中直接映射为 `archiveIdx / turnIdx / role / fileKind / sourceFile / snippet / line`。
-- [ ] 同一 turn 的多个文件/多次命中稳定聚合。
-- [ ] `truncated` 只表示成功结果受 turn limit 或安全上限截断；timeout 返回 `SEARCH_TIMEOUT`。
-- [ ] 覆盖中文 Markdown、JSON/JSONL、tool-heavy、长行、大文件、多 archive 与只读 byte snapshot tests。
+- [x] 使用 `fs.createReadStream()` 与有界 line splitter 实现逐块 literal search，不依赖 `@agent-tool-lite/search` 或外部二进制。
+- [x] scanner 只接收已验证并明确枚举的 `SearchableArtifact[]`，不自行递归发现文件。
+- [x] 支持取消、timeout、有限并发、match/snippet/line 安全上限。
+- [x] 将行命中直接映射为 `archiveIdx / turnIdx / role / fileKind / sourceFile / snippet / line`。
+- [x] 同一 turn 的多个文件/多次命中稳定聚合。
+- [x] `truncated` 只表示成功结果受 turn limit 或安全上限截断；timeout 返回 `SEARCH_TIMEOUT`。
+- [x] 覆盖中文 Markdown、JSON/JSONL、tool-heavy、跨 chunk/长行、大文件、多 archive 与只读 byte snapshot tests。
 
 ### P3.3 `promptpile-archive` CLI
 

@@ -65,6 +65,7 @@ export interface SearchableArtifactOptions {
 
 export interface ArchiveSearchSafetyLimits {
   timeoutMs: number;
+  maxConcurrentFiles: number;
   maxMatchesPerTurn: number;
   maxTotalMatches: number;
   maxSnippetCharacters: number;
@@ -78,11 +79,25 @@ export interface BackendSearchOptions {
   signal?: AbortSignal;
 }
 
+export type ArchiveSearchTruncationReason =
+  | 'match_limit'
+  | 'line_limit';
+
+export type ArchiveSearchBackendEvent =
+  | {
+      type: 'match';
+      match: ArchiveArtifactMatch;
+    }
+  | {
+      type: 'truncated';
+      reason: ArchiveSearchTruncationReason;
+    };
+
 export interface ArchiveSearchBackend {
   search(
     artifacts: SearchableArtifact[],
     options: BackendSearchOptions
-  ): AsyncIterable<ArchiveArtifactMatch>;
+  ): AsyncIterable<ArchiveSearchBackendEvent>;
 }
 
 const validateRoles = (roles: string[] | undefined): string[] => {
@@ -103,6 +118,12 @@ export const resolveArchiveSearchOptions = (
     throw new ArchiveDomainError(
       'INVALID_QUERY',
       'query must contain non-whitespace literal text'
+    );
+  }
+  if (options.query.includes('\n') || options.query.includes('\r')) {
+    throw new ArchiveDomainError(
+      'INVALID_QUERY',
+      'query must be a single line of literal text'
     );
   }
   const limit = options.limit ?? ARCHIVE_SEARCH_DEFAULTS.limit;

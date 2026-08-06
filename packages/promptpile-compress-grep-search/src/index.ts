@@ -2,7 +2,15 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { ARCHIVE_READ_DEFAULTS, ArchiveDomainError } from './contracts';
 import {
+  DEFAULT_ARCHIVE_SEARCH_SAFETY_LIMITS,
+  NodeLiteralSearchBackend,
+} from './node-literal-search';
+import {
+  resolveArchiveSearchOptions,
   resolveSearchableArtifactOptions,
+  type ArchiveSearchMatch,
+  type ArchiveSearchOptions,
+  type ArchiveSearchResponse,
   type ArchiveArtifactFileKind,
   type SearchableArtifact,
   type SearchableArtifactOptions,
@@ -336,4 +344,98 @@ export const enumerateSearchableArtifacts = async (
     );
   }
   return searchable.sort(compareSearchableArtifacts);
+};
+
+export const searchArchive = async (
+  directory: string,
+  options: ArchiveSearchOptions
+): Promise<ArchiveSearchResponse> => {
+  const resolved = resolveArchiveSearchOptions(options);
+  const startedAt = Date.now();
+  const artifacts = await enumerateSearchableArtifacts(directory, {
+    roles: resolved.roles,
+    includeToolResults: resolved.includeToolResults,
+  });
+  const remainingMs =
+    DEFAULT_ARCHIVE_SEARCH_SAFETY_LIMITS.timeoutMs -
+    (Date.now() - startedAt);
+  if (remainingMs <= 0) {
+    throw new ArchiveDomainError('SEARCH_TIMEOUT', 'archive search timed out');
+  }
+
+  const groups: Array<{
+    archiveIdx: number;
+    turnIdx: number;
+    artifacts: SearchableArtifact[];
+  }> = [];
+  for (const artifact of artifacts) {
+    const current = groups[groups.length - 1];
+    if (
+      current &&
+      current.archiveIdx === artifact.archiveIdx &&
+      current.turnIdx === artifact.turnIdx
+    ) {
+      current.artifacts.push(artifact);
+    } else {
+      groups.push({
+        archiveIdx: artifact.archiveIdx,
+        turnIdx: artifact.turnIdx,
+        artifacts: [artifact],
+      });
+    }
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), remainingMs);
+  const backend = new NodeLiteralSearchBackend();
+  const results: ArchiveSearchResponse['results'] = [];
+  let truncated = false;
+  let totalMatches = 0;
+  let safetyStop = false;
+
+  try {
+    for (const group of groups) {
+      const matches: ArchiveSearchMatch[] = [];
+      for await (const event of backend.search(group.artifacts, {
+        query: resolved.query,
+        caseSensitive: resolved.caseSensitive,
+        safetyLimits: DEFAULT_ARCHIVE_SEARCH_SAFETY_LIMITS,
+        signal: controller.signal,
+      })) {
+        if (event.type === 'truncated') {
+          truncated = true;
+          continue;
+        }
+        if (
+          totalMatches >=
+          DEFAULT_ARCHIVE_SEARCH_SAFETY_LIMITS.maxTotalMatches
+        ) {
+          truncated = true;
+          safetyStop = true;
+          break;
+        }
+        const { archiveIdx: _archiveIdx, turnIdx: _turnIdx, ...match } =
+          event.match;
+        matches.push(match);
+        totalMatches += 1;
+      }
+
+      if (matches.length > 0) {
+        if (results.length >= resolved.limit) {
+          truncated = true;
+          break;
+        }
+        results.push({
+          turnIdx: group.turnIdx,
+          archiveIdx: group.archiveIdx,
+          matches,
+        });
+      }
+      if (safetyStop) break;
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  return { results, truncated };
 };

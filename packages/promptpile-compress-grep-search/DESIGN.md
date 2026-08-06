@@ -178,7 +178,7 @@ function searchArchive(
 语义约束：
 
 - `query` v1 按 literal text 搜索；
-- 空字符串或纯空白 query 返回 `INVALID_QUERY`；
+- 空字符串、纯空白或包含 CR/LF 的多行 query 返回 `INVALID_QUERY`；v1 query 是单行 literal text；
 - `limit` 限制返回的 turn 数，而不是 raw filesystem hit 数；
 - `limit` 默认 20，必须是 1 到 100 的整数；
 - 同一 turn 的多个文件命中聚合到一个 `ArchiveSearchResult`；
@@ -243,6 +243,18 @@ interface SearchableArtifact {
   path: string;
 }
 
+interface ArchiveArtifactMatch extends ArchiveSearchMatch {
+  archiveIdx: number;
+  turnIdx: number;
+}
+
+type ArchiveSearchBackendEvent =
+  | { type: 'match'; match: ArchiveArtifactMatch }
+  | {
+      type: 'truncated';
+      reason: 'match_limit' | 'line_limit';
+    };
+
 interface ArchiveSearchBackend {
   search(
     artifacts: SearchableArtifact[],
@@ -253,13 +265,14 @@ interface ArchiveSearchBackend {
 
 `ArchiveArtifactMatch` 在 `ArchiveSearchMatch` 基础上携带 `archiveIdx / turnIdx`，只用于 backend 到 turn aggregation 的内部边界；对外结果仍按 `ArchiveSearchResult` 聚合，不暴露 raw filesystem hit。
 
-默认 backend 使用 `fs.createReadStream()` 与 `readline` 逐行扫描，以 `String.includes()` 实现 literal match。大小写不敏感搜索使用稳定的 `toLowerCase()` 规范化，不使用 locale-dependent 转换。
+默认 backend 使用 `fs.createReadStream()` 与有界 line splitter 逐块扫描，以 `String.includes()` 等价的 literal match 实现查询。不得使用会为无换行超长行持续累积内存的无界 line reader。大小写不敏感搜索使用稳定的 `toLowerCase()` 规范化，不使用 locale-dependent 转换。
 
 内部安全限制必须与用户侧 turn `limit` 分离，至少包括：
 
 ```ts
 interface ArchiveSearchSafetyLimits {
   timeoutMs: number;
+  maxConcurrentFiles: number;
   maxMatchesPerTurn: number;
   maxTotalMatches: number;
   maxSnippetCharacters: number;
@@ -267,7 +280,7 @@ interface ArchiveSearchSafetyLimits {
 }
 ```
 
-安全上限使用 package 内部保守默认值，不作为 v1 CLI 参数暴露。达到 match/snippet/line 上限时返回已有完整 match 并设置 `truncated: true`；timeout 抛出 `SEARCH_TIMEOUT`。实现不得使用无界 `Promise.all(readFile(...))`。
+v1 固定内部默认值：10 秒 timeout、4 个并发文件、每 turn 100 个 matches、全局 1,000 个 matches、500 字符 snippet、100,000 字符单行扫描上限。这些上限不作为 v1 CLI 参数暴露。达到 match/line 上限时返回已有完整 match 并设置 `truncated: true`；snippet 只裁剪展示文本，不单独触发 truncated；timeout 抛出 `SEARCH_TIMEOUT`。实现不得使用无界 `Promise.all(readFile(...))`。
 
 增加其他 backend 的条件是可复现 benchmark 证明 Node backend 在目标规模下不能满足性能目标。替换 backend 不得改变 literal、排序、limit、truncation 或错误语义。
 
