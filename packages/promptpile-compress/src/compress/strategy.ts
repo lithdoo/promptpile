@@ -37,7 +37,8 @@ const slidingWindowStrategy: CompressStrategy = {
     const { minIdx, maxIdx, turnCount, estimatedTokens } =
       summarizeArchiveRange(archive);
     return [
-      `对话第 ${minIdx}-${maxIdx} 轮已被归档，可通过 lookup_archive 工具检索原文。`,
+      `对话第 ${minIdx}-${maxIdx} 轮已按 Archive Protocol 归档。`,
+      '原文检索能力取决于上层是否配置了兼容的只读 consumer。',
       `归档范围共 ${turnCount} 轮，原始 token 数约 ${estimatedTokens}。`,
     ].join('\n');
   },

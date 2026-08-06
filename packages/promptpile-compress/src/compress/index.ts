@@ -85,8 +85,9 @@ const prepareStaging = async (
   summary: string,
   summaryIdx: number,
   strategy: CompressStrategyKind,
-  originalTokenCount: number,
-  compressedTokenCount: number
+  liveTokenCountBefore: number,
+  summaryTokenCount: number,
+  liveTokenCountAfter: number
 ): Promise<string> => {
   const existingStaging = await findStagingDir(directory);
   if (existingStaging) {
@@ -107,8 +108,9 @@ const prepareStaging = async (
     version: 1,
     compressedAt: new Date().toISOString(),
     strategy,
-    originalTokenCount,
-    compressedTokenCount,
+    liveTokenCountBefore,
+    summaryTokenCount,
+    liveTokenCountAfter,
     archivedTurnIndices: archiveTurns.map((turn) => turn.idx).sort((a, b) => a - b),
   };
   await writeJson(path.join(staging, 'compression.json'), manifest);
@@ -253,7 +255,8 @@ export const compressDirectory = async (
     summaryIdx,
     strategyKind,
     tokensBefore,
-    summaryTokens
+    summaryTokens,
+    tokensAfter
   );
   const archivePath = await commitStaging(directory, summaryIdx);
 

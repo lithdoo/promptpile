@@ -6,7 +6,7 @@
 > 主要定义：Promptpile 压缩归档的跨 package 发现、读取与兼容语义  
 > 当前 producer/restore implementation：`promptpile-compress`  
 > 计划 consumer：`promptpile-compress-grep-search`  
-> 最近复核：2026-08-05
+> 最近复核：2026-08-06
 
 Archive Protocol 把“压缩实现如何保存历史”从 `promptpile-compress` 私有代码提升为可被独立 consumer 读取的文件契约。当前是 v1 draft：描述现有实现，并约束下一步 grep consumer，但尚未承诺长期稳定兼容。
 
@@ -63,12 +63,21 @@ Consumer 不能依赖 conversation scanner 递归 archive；archive 必须由 co
 {
   "compressedAt": "ISO-8601 timestamp",
   "strategy": "sliding-window",
-  "originalTokenCount": 12345,
-  "compressedTokenCount": 42
+  "liveTokenCountBefore": 12345,
+  "summaryTokenCount": 42,
+  "liveTokenCountAfter": 4096
 }
 ```
 
-这些字段当前属于 producer metadata。Consumer **必须忽略未知字段**，不得因为新增 metadata 字段而失败。
+这些字段当前属于 producer metadata：
+
+- `liveTokenCountBefore` 是压缩前全部 live turns 的估算 token 数；
+- `summaryTokenCount` 是新 summary message 的估算 token 数；
+- `liveTokenCountAfter` 是 kept turns 加新 summary 的估算 token 数。
+
+它们不是 v1 consumer contract。Consumer **必须忽略未知字段**，不得因为新增、删除或重命名 producer metadata 字段而失败。2026-08-06 之前的 archive 可能包含 `originalTokenCount` 与 `compressedTokenCount`；v1 consumer 同样应将它们视为未知字段。
+
+协议 conformance corpus 位于 `../../fixtures/archive-protocol-v1/`。Producer、restore 与独立 consumer 应复用该 corpus，而不是各自复制协议样本。
 
 ## 4. Authoritative 与 private artifacts
 
@@ -122,7 +131,7 @@ Retrieval consumer 应：
 
 Archive Protocol v1 从 Experimental 提升前至少需要：
 
-1. `promptpile-compress` producer/restore conformance fixtures；
-2. 一个不 import compress 私有实现的独立 consumer；
-3. archive discovery / manifest / archived-turn 读取的 cross-package tests；
-4. 明确 v1 breaking-change 与迁移策略。
+- [x] `promptpile-compress` producer/restore conformance fixtures；
+- [ ] 一个不 import compress 私有实现的独立 runtime consumer；
+- [ ] archive discovery / manifest / archived-turn 读取的 cross-package tests；
+- [ ] 明确 v1 breaking-change 与迁移策略。

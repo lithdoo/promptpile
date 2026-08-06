@@ -1,0 +1,42 @@
+[
+  {
+    "name": "valid-minimal",
+    "consumer": { "valid": true, "archiveCount": 1 },
+    "restore": { "valid": true, "turnCount": 2 }
+  },
+  {
+    "name": "valid-unknown-fields",
+    "consumer": { "valid": true, "archiveCount": 1 },
+    "restore": { "valid": true, "turnCount": 2 }
+  },
+  {
+    "name": "valid-staging-ignored",
+    "consumer": { "valid": true, "archiveCount": 1 },
+    "restore": { "valid": false, "error": "staging 与 archive 同时存在" }
+  },
+  {
+    "name": "invalid-version",
+    "consumer": { "valid": false, "error": "unsupported version" },
+    "restore": { "valid": false, "error": "不支持的 compression.json version" }
+  },
+  {
+    "name": "invalid-duplicate-indices",
+    "consumer": { "valid": false, "error": "unique non-negative integers" },
+    "restore": { "valid": false, "error": "不能包含重复 idx" }
+  },
+  {
+    "name": "invalid-negative-index",
+    "consumer": { "valid": false, "error": "unique non-negative integers" },
+    "restore": { "valid": false, "error": "只包含非负整数" }
+  },
+  {
+    "name": "invalid-directory-index",
+    "consumer": { "valid": false, "error": "does not match manifest" },
+    "restore": { "valid": false, "error": "归档目录 idx 与 archivedTurnIndices 不一致" }
+  },
+  {
+    "name": "invalid-missing-manifest",
+    "consumer": { "valid": false, "error": "compression.json" },
+    "restore": { "valid": false, "error": "缺少 compression.json" }
+  }
+]

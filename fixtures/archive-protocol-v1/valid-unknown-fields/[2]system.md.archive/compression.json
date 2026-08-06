@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "archivedTurnIndices": [1, 2],
+  "originalTokenCount": 100,
+  "compressedTokenCount": 12,
+  "futureMetadata": {
+    "producer": "fixture",
+    "revision": 99
+  }
+}

@@ -71,10 +71,23 @@ describe('compressDirectory', () => {
       assert.equal(fs.existsSync(path.join(archive, '.summary.md')), true);
       const manifest = JSON.parse(
         fs.readFileSync(path.join(archive, 'compression.json'), 'utf8')
-      ) as { archivedTurnIndices: number[]; summary?: string };
+      ) as {
+        archivedTurnIndices: number[];
+        liveTokenCountBefore: number;
+        summaryTokenCount: number;
+        liveTokenCountAfter: number;
+        summary?: string;
+      };
       assert.deepEqual(manifest.archivedTurnIndices, [1, 2]);
+      assert.equal(manifest.liveTokenCountBefore, result.tokensBefore);
+      assert.equal(manifest.liveTokenCountAfter, result.tokensAfter);
+      assert.ok(manifest.summaryTokenCount > 0);
+      assert.ok(manifest.summaryTokenCount < manifest.liveTokenCountAfter);
       assert.equal('summary' in manifest, false);
-      assert.match(fs.readFileSync(path.join(root, '[2]system.md'), 'utf8'), /1-2/);
+      const liveSummary = fs.readFileSync(path.join(root, '[2]system.md'), 'utf8');
+      assert.match(liveSummary, /1-2/);
+      assert.match(liveSummary, /Archive Protocol/);
+      assert.doesNotMatch(liveSummary, /lookup_archive/);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

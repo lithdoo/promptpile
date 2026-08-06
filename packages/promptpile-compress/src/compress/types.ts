@@ -32,15 +32,17 @@ export interface CompressOptions {
 export type CompressSkipReason =
   | 'below_threshold'
   | 'no_turns_to_compress'
-  | 'dry_run'
-  | 'rolled_back_staging';
+  | 'dry_run';
 
 export interface CompressResult {
   compressed: boolean;
   turnsArchived: number;
   turnsKept: number;
+  /** Estimated tokens across all live turns before compression. */
   tokensBefore: number;
+  /** Estimated tokens across kept live turns plus the new summary. */
   tokensAfter: number;
+  /** Estimated tokens across non-system turns eligible for selection. */
   compressibleTokens?: number;
   summaryIdx?: number;
   archivePath?: string;
@@ -51,8 +53,12 @@ export interface CompressionManifest {
   version: 1;
   compressedAt: string;
   strategy: CompressStrategyKind;
-  originalTokenCount: number;
-  compressedTokenCount: number;
+  /** Estimated tokens across all live turns before compression. */
+  liveTokenCountBefore: number;
+  /** Estimated tokens for the generated summary message only. */
+  summaryTokenCount: number;
+  /** Estimated tokens across kept live turns plus the new summary. */
+  liveTokenCountAfter: number;
   archivedTurnIndices: number[];
 }
 

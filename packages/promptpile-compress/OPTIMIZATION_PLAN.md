@@ -1,8 +1,13 @@
 # promptpile-compress 优化计划
 
-> 状态：Active  
-> 适用范围：`packages/promptpile-compress` 当前实现  
-> 基线版本：`0.1.0` / private / experimental  
+> 状态：Active
+>
+> 适用范围：`packages/promptpile-compress` 当前实现
+>
+> 基线版本：`0.1.0` / private / experimental
+>
+> 当前阶段：P0 已完成，下一阶段 P1
+>
 > 最近复核：2026-08-06
 
 ## 1. 目标
@@ -25,18 +30,18 @@
 - system turn 保留、threshold、keepRecent 与 dry-run；
 - staging → archive commit、`compression.json`、restore、recovery 与 recompress；
 - restore destructive preflight、部分恢复重试与冲突检测；
-- 22 个 filesystem behavior tests，当前全部通过。
+- 协议中性的 archive summary 与准确的 CLI capability 描述；
+- 含 8 类状态的 Archive Protocol v1 共享 conformance corpus；
+- 明确区分 live-before、summary 与 live-after 的 producer token metadata；
+- 40 个 filesystem、protocol 与 CLI behavior tests，当前全部通过。
 
 主要缺口：
 
 - `sliding-window` 只生成 archive pointer，不做 semantic distillation；
-- summary 和 CLI 仍暗示 package 具备 retrieval 能力，实际不存在；
-- Archive Protocol 尚无 producer/restore/consumer 共用的 conformance corpus；
 - 字符估算仅适合作为粗略 trigger，`tiktoken` optional dependency 尚未使用；
 - mutation 依赖 exclusive-writer 前提，但代码未锁定、未检测长耗时步骤期间的目录变化；
 - fault-injection 覆盖不足，atomic write 临时文件和各 commit 边界的恢复语义尚未系统验证；
-- 已有 archive 或 staging 时，dry-run 返回的信息不足以描述实际后续动作；
-- `compressedTokenCount` 当前只记录 summary 估算值，名称容易被理解为压缩后的 live 总量。
+- 已有 archive 或 staging 时，dry-run 返回的信息不足以描述实际后续动作。
 
 ## 3. 约束与非目标
 
@@ -50,30 +55,23 @@
 
 阶段必须按顺序推进；每个阶段满足验收标准后再开始下一阶段。
 
-### P0 · 契约与对外语义收敛
+### P0 · 契约与对外语义收敛（已完成：2026-08-06）
 
-工作项：
+完成结果：
 
-1. 将 summary 改为协议中性的 archive 提示，不引用某个必然存在的 retrieval tool。
-2. 修正 CLI/package 文案中的“检索”描述，明确本包只负责 compress/archive/restore/recovery。
-3. 建立 Archive Protocol v1 conformance corpus，由 producer、restore 和独立 consumer 共用；至少覆盖合法最小 manifest、未知字段、错误 version、重复/负数 idx、目录 idx 不匹配、summary 缺失和 staging 忽略。
-4. 明确 invalid/incomplete archive 的行为矩阵：producer/restore fail closed，read-only consumer 报错但不修复。
-5. 定义 producer token metadata 的准确含义。优先增加语义清楚的字段（例如 summary 与 live-after 分开），避免继续扩大 `compressedTokenCount` 的歧义。
-6. 清理未使用或不可达的公开类型状态，例如当前不会由 compress 返回的 `rolled_back_staging` skip reason。
-
-验收标准：
-
-- 仓库搜索不到 compress 对 `lookup_archive` 可用性的硬编码承诺；
-- producer 生成物通过 conformance corpus，restore 接受未知 metadata 字段；
-- 所有无效 fixture 在文件变更前失败，consumer fixture 测试保持只读；
-- CLI help、TypeScript result 和 manifest 指标可由文档逐项解释。
+- summary 与 CLI 已改为协议中性描述，不再承诺 `lookup_archive` 等具体工具；
+- `fixtures/archive-protocol-v1/` 覆盖合法最小 manifest、未知字段、错误 version、重复/负数 idx、目录 idx 不匹配、summary 缺失与 staging 忽略；
+- producer、restore preflight 与不 import compress 私有 parser 的只读验证器共用 corpus；
+- token metadata 使用 `liveTokenCountBefore`、`summaryTokenCount`、`liveTokenCountAfter`；历史字段继续按未知 producer metadata 兼容；
+- compress 中不可达的 `rolled_back_staging` skip reason 已移除；
+- conformance paths 均验证 fixture 在执行前后 byte-for-byte 不变。
 
 ### P1 · Mutation safety 与可恢复性
 
 工作项：
 
 1. 为 cooperating lifecycle writers 增加 directory-level lock；记录 owner、创建时间与恢复策略，使用原子创建避免双写者同时获得锁。
-2. 在 scan/summary 与 commit 之间校验 conversation generation 或内容指纹；检测到 non-cooperating writer 的变化时放弃提交并保留原文件。
+2. 在 scan/summary 与 commit 之间校验 conversation generation 或内容指纹；检测到非 cooperating writer 的变化时放弃提交并保留原文件。
 3. 明确锁只协调遵守协议的 writer；orchestrator 仍必须保证 active completion 与 lifecycle mutation 不并行。
 4. 抽出可注入的 filesystem mutation boundary，增加 fault-injection tests：移动到 staging、写 manifest、写临时 summary、rename archive、写 live summary、restore summary 删除、逐文件恢复、archive cleanup。
 5. 为 atomic write 增加失败后的临时文件清理与重试测试；评估需要的 file/directory sync 边界并记录跨平台保证。
@@ -141,9 +139,9 @@
 ## 5. 优先级与依赖
 
 ```text
-P0 契约准确性
+P0 契约准确性（已完成）
     ↓
-P1 mutation safety
+P1 mutation safety（下一阶段）
     ↓
 P2 semantic summary
     ↓

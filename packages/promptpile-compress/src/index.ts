@@ -3,6 +3,8 @@ import { Command } from 'commander';
 import { compressDirectory } from './compress';
 import { restoreArchivedTurns } from './restore';
 
+export const CLI_DESCRIPTION = '独立的会话目录压缩、归档与恢复工具';
+
 const isCommanderHelpExit = (error: unknown): boolean => {
   if (!error || typeof error !== 'object' || !('code' in error)) {
     return false;
@@ -15,7 +17,7 @@ export const parseCli = async (argv = process.argv): Promise<number> => {
   let exitCode = 0;
   const program = new Command()
     .name('promptpile-compress')
-    .description('独立的会话目录压缩与检索工具')
+    .description(CLI_DESCRIPTION)
     .version('0.1.0')
     .helpOption('-h, --help', '显示帮助')
     .exitOverride();
