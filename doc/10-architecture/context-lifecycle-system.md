@@ -39,7 +39,7 @@ Archive Protocol
 
 ### Archive retrieval
 
-历史检索是 Archive Protocol 的 consumer，而不是 compress 的内部模块。`promptpile-compress-grep-search` 已实现独立的只读 archive discovery/read-turn foundation，并通过跨包测试消费 producer 输出；零外部索引的 grep query surface 仍待实现。未来如确有需要，再新增独立 vector consumer，而不是把 vector stack 塞回 compress。
+历史检索是 Archive Protocol 的 consumer，而不是 compress 的内部模块。`promptpile-compress-grep-search` 已实现独立的只读 archive discovery/read-turn、零外部索引 literal search、CLI 与 MCP adapter，并通过跨包测试消费 producer 输出。未来如确有需要，再新增独立 vector consumer，而不是把 vector stack 塞回 compress。
 
 ## 为什么拆开
 

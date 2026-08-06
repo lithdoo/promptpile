@@ -2,7 +2,7 @@
 
 > 类型：Package Design  
 > 状态：Active Design  
-> 稳定程度：Experimental  
+> 稳定程度：Beta
 > 主要职责：conversation compression / archive commit / restore / recovery  
 > 上层契约：`../../doc/15-contracts/conversation-protocol-v1.md`、`../../doc/15-contracts/archive-protocol-v1.md`  
 > 最近复核：2026-08-06
@@ -136,7 +136,7 @@ Live artifacts 在 scan 中并行读取一次并缓存，tokenizer 与 semantic 
 - retrieval ranking；
 - archive-search MCP server。
 
-第一个独立 consumer 是 `../promptpile-compress-grep-search/`；当前已实现 archive discovery/read-turn，grep query surface 仍由该包单独推进。
+第一个独立 consumer 是 `../promptpile-compress-grep-search/`；当前已实现 archive discovery/read-turn、literal search、CLI 与只读 MCP adapter，并继续与 producer 保持公开协议边界。
 
 ## 7. Retrieval 边界
 

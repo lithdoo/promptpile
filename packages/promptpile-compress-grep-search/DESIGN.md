@@ -1,7 +1,7 @@
 # promptpile-compress-grep-search 设计
 
 > 状态：Active Design  
-> 稳定性：Experimental  
+> 稳定性：Beta
 > 类型：Archive Protocol read-only consumer  
 > 最近复核：2026-08-06
 
@@ -9,7 +9,7 @@
 
 `promptpile-compress-grep-search` 为 Promptpile 已归档历史提供只读检索能力。
 
-它不是一个要求使用者编写 TypeScript 的 library-first 产品。核心实现保留可复用的 domain API，但主要用户入口应是 CLI，使普通用户、shell、CI 和 CLI agent 在不写集成代码的情况下即可搜索与读取历史；MCP 作为后续 Agent 无编码集成面，复用同一套 domain semantics。
+它不是一个要求使用者编写 TypeScript 的 library-first 产品。核心实现保留可复用的 domain API，但主要用户入口是 CLI，使普通用户、shell、CI 和 CLI agent 在不写集成代码的情况下即可搜索与读取历史；MCP 是 Agent 无编码集成面，复用同一套 domain semantics。
 
 推荐的用户侧命令名为：
 
@@ -30,7 +30,7 @@ archive search domain
         │
         ├── promptpile-archive CLI   ← 主产品面
         ├── TypeScript API           ← 实现复用面
-        └── MCP adapter              ← 后续 Agent 集成面
+        └── MCP adapter              ← Agent 集成面
 ```
 
 v1 使用 package 内置的 Node.js 流式 literal scanner。对外接口只表达 Promptpile 的 archive / turn / artifact 领域语义，不暴露底层文件扫描参数。若真实基准证明超大 archive 需要更高吞吐，可以在保持 domain API 不变的前提下增加可替换 backend。
@@ -396,11 +396,12 @@ exit code mapping：成功 `0`；`IO_ERROR` 为 `1`；`INVALID_QUERY` 为 `2`；
 
 ## 7. MCP
 
-MCP 在 CLI/search domain 稳定后增加，不阻塞第一版 literal lookup。
+MCP 已在 P4 作为 stdio 薄 adapter 落地，直接复用稳定的 CLI/search domain，不维护第二套 discovery、filtering 或 result mapping。
 
-建议只提供两个主要 tool：
+只提供三个 tool：
 
 ```text
+list_archives
 search_archive
 read_archived_turn
 ```
@@ -420,9 +421,11 @@ promptpile-archive mcp -d ./messages
 }
 ```
 
-`search_archive` 与 `read_archived_turn` 只是 domain API 的薄 adapter。工具名属于 retrieval product surface，不属于 Archive Protocol。
+`list_archives` 无参数，返回 archive descriptor 与其 archived turn indices，空目录与 CLI `list` 一样返回 `NO_ARCHIVE`；`search_archive` 输入为 `query`、可选 `limit` / `roles` / `include_tool_results` / `case_sensitive`；`read_archived_turn` 输入为 `turn_idx` 和可选 `include_tool_results`。三个工具都声明 read-only、non-destructive、idempotent、closed-world annotations，并返回稳定 JSON success/failure envelope。domain error 以 `isError: true` 返回，不终止 MCP session。
 
-第一版不要求单独维护 generic Agent Tool surface；如果未来某个 runtime 有明确需求，再基于同一 domain API 增加薄 adapter。
+`list_archives`、`search_archive` 与 `read_archived_turn` 只是 domain API 的薄 adapter。工具 input schema 不含 directory，server 不接受调用方切换 filesystem scope；工具名属于 retrieval product surface，不属于 Archive Protocol。
+
+第一版不单独维护 generic Agent Tool surface；如果未来某个 runtime 有明确需求，再基于同一 domain API 增加薄 adapter。协议级 tests 同时覆盖 in-memory transport 与真实 CLI stdio transport，packed smoke 再验证隔离安装后的 MCP tools/list 和 tools/call。
 
 ## 8. 非目标
 
@@ -486,11 +489,13 @@ Vector search 如有真实需求，应作为另一个独立 Archive Protocol con
 
 完成标准：确定性能基线和回归阈值，确认是否具备解除 `private` 的发布条件。
 
-### P4 · Optional MCP adapter
+### P4 · MCP adapter（已完成）
 
-- CLI/search domain 经真实使用稳定后再实现；
-- 只提供 `search_archive` / `read_archived_turn` 薄 adapter；
-- server 启动时固定 conversation directory，不向 tool 暴露任意 filesystem path。
+- 冻结 beta 阶段的 `searchArchive()` v1 domain surface；
+- 只提供 `list_archives` / `search_archive` / `read_archived_turn` 薄 adapter；
+- server 启动时固定 conversation directory，不向 tool 暴露任意 filesystem path；
+- MCP success/failure 复用 domain envelope，domain failure 不终止 session；
+- in-memory、CLI stdio 和 packed-install smoke 覆盖 tools/list、tools/call 与只读性。
 
 P3 总完成定义：API 与 CLI 使用相同 domain semantics；全部路径保持 Archive Protocol read-only；无 `@agent-tool-lite/search`、`ripgrep` 或平台二进制依赖；普通用户可以完成稳定的 `search → read` 历史检索闭环。
 
@@ -517,6 +522,6 @@ npm run package:smoke -w promptpile-compress-grep-search
 | 4 MiB JSONL median | 44.42 ms |
 | max observed RSS delta | 40.95 MiB |
 
-`package:smoke` 构建 tarball、拒绝 `src/` / tests、安装到隔离临时 consumer，并验证 license、`promptpile-archive` shim、真实 search 命令与 `searchArchive` export。当前参考 tarball 为 15 files、约 43 KiB unpacked，不包含外部搜索二进制或 runtime dependency。
+`package:smoke` 构建 tarball、拒绝 `src/` / tests、安装到隔离临时 consumer，并验证 license、`promptpile-archive` shim、真实 search 命令、`searchArchive` export，以及 MCP tools/list 和 tools/call。当前参考 tarball 为 17 files、约 49 KiB unpacked；literal search 不包含外部搜索二进制，MCP runtime dependency 仅为官方 SDK 与其 schema dependency。
 
-技术发布门槛已经满足，但 package 保持 `private: true`：Archive Protocol 仍为 Experimental，且尚缺真实上层长期使用和版本迁移演练。解除 private 必须先完成这些成熟度条件；不因本机 benchmark 通过而自动公开发布。
+技术发布门槛已经满足，package 以 `0.1.0-beta.0` 公开预发布。Archive Protocol 仍处于演进期，beta 阶段继续通过真实上层使用和版本迁移演练验证兼容性；发布时必须使用 npm 的 `beta` dist-tag，避免成为默认 `latest`。

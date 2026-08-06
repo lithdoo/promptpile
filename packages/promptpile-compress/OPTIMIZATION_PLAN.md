@@ -4,7 +4,7 @@
 >
 > 适用范围：`packages/promptpile-compress` 当前实现
 >
-> 基线版本：`0.1.0` / private / experimental
+> 基线版本：`0.1.0` / private / experimental；当前发布版本为 `0.1.0-beta.0`
 >
 > 当前阶段：P0-P4 已完成
 >
@@ -108,7 +108,7 @@
 - `promptpile-compress-grep-search` 成为 active workspace，production reader 仅依据公开协议实现 discovery/read-turn，architecture guard 禁止 implementation dependency；
 - producer 公共 API → 独立 consumer 的 integration test 验证 message/calls/result mapping 以及读取前后 byte-for-byte 不变；
 - 新增 Node 18/22 × Ubuntu/Windows filesystem matrix，Pages/root gates 同步包含 consumer；发布质量门记录命令、平台和兼容策略；
-- 完成成熟度评估：暂不取消 `private` / `experimental`，等待真实上层接线、grep query surface 与版本迁移演练。
+- 完成成熟度评估：producer 与独立 retrieval consumer 均以 `0.1.0-beta.0` 公开预发布；继续通过真实上层接线与版本迁移演练验证兼容性。
 
 ## 5. 优先级与依赖
 

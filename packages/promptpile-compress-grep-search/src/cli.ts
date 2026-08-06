@@ -19,7 +19,7 @@ export interface ArchiveCliIo {
   stderr: { write(content: string): unknown };
 }
 
-type ArchiveCommand = 'list' | 'search' | 'read';
+type ArchiveCommand = 'list' | 'search' | 'read' | 'mcp';
 
 interface ParsedArchiveCli {
   command: ArchiveCommand;
@@ -37,6 +37,7 @@ const HELP = `Usage:
   promptpile-archive list -d <directory> [--json]
   promptpile-archive search -d <directory> <query> [options]
   promptpile-archive read -d <directory> <turnIdx> [options]
+  promptpile-archive mcp -d <directory>
 
 Options:
   -d, --directory <dir>     Conversation directory
@@ -115,11 +116,16 @@ const parseArchiveCli = (argv: string[]): ParsedArchiveCli | null => {
 
   if (parsed.values.help) return null;
   const [rawCommand, ...positionals] = parsed.positionals;
-  if (rawCommand !== 'list' && rawCommand !== 'search' && rawCommand !== 'read') {
+  if (
+    rawCommand !== 'list' &&
+    rawCommand !== 'search' &&
+    rawCommand !== 'read' &&
+    rawCommand !== 'mcp'
+  ) {
     throw invalidQuery(
       rawCommand
         ? `unknown command: ${rawCommand}`
-        : 'command is required: list, search, or read'
+        : 'command is required: list, search, read, or mcp'
     );
   }
   const command = rawCommand;
@@ -140,6 +146,24 @@ const parseArchiveCli = (argv: string[]): ParsedArchiveCli | null => {
     includeToolResults: parsed.values['include-tool-results'],
     noToolResults: parsed.values['no-tool-results'],
   };
+
+  if (command === 'mcp') {
+    ensureOnly(command, values, []);
+    if (parsed.values.json) {
+      throw invalidQuery('mcp does not support --json because stdout is reserved for MCP');
+    }
+    if (positionals.length !== 0) {
+      throw invalidQuery('mcp does not accept positional arguments');
+    }
+    return {
+      command,
+      directory,
+      json: false,
+      roles: [],
+      includeToolResults: false,
+      caseSensitive: false,
+    };
+  }
 
   if (command === 'list') {
     ensureOnly(command, values, []);
@@ -247,6 +271,12 @@ export const runArchiveCli = async (
     const parsed = parseArchiveCli(argv);
     if (parsed === null) {
       io.stdout.write(HELP);
+      return 0;
+    }
+
+    if (parsed.command === 'mcp') {
+      const { startArchiveMcpServer } = await import('./mcp');
+      await startArchiveMcpServer(parsed.directory);
       return 0;
     }
 

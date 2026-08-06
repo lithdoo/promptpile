@@ -11,8 +11,8 @@
 | `promptpile` | Beta / active | 公开 CLI、conversation artifacts、LLM profile、tool call 持久化已有回归测试 |
 | `promptpile-react` | Beta / active | 已完成 CLI-first 边界重构，production code 不依赖 `promptpile/dist/*` |
 | `promptpile-mcp` | Beta / active | gateway、export-tools、exec-calls、check 已形成清晰边界 |
-| `promptpile-compress` | Experimental / private | lifecycle、semantic summary、context budget、orchestrator boundary 与平台 CI 已实现；继续积累真实集成后再评估发布 |
-| `promptpile-compress-grep-search` | Foundation / private | archive discovery 与 read-turn 已实现并有跨包测试；grep query surface 尚未实现 |
+| `promptpile-compress` | Beta | lifecycle、semantic summary、context budget、orchestrator boundary 与平台 CI 已实现，以预发布版本积累真实集成 |
+| `promptpile-compress-grep-search` | Beta | archive discovery、read、literal search、CLI 与只读 MCP adapter 已实现并通过跨包和打包安装测试 |
 | `promptpile-plan` | Scaffold | 只有 CLI/包骨架，尚未接线完整 runtime |
 | `agent-lite-tools` | Supporting | MCP/tool 实现集合，不定义 Promptpile 核心协议 |
 

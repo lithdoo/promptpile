@@ -63,7 +63,20 @@ describe('promptpile-archive CLI', () => {
     const result = runCli(['--help']);
     assert.equal(result.status, 0);
     assert.match(result.stdout, /promptpile-archive search/);
+    assert.match(result.stdout, /promptpile-archive mcp/);
     assert.equal(result.stderr, '');
+  });
+
+  it('protects MCP stdout from incompatible CLI output flags', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ppcg-cli-mcp-'));
+    try {
+      const result = runCli(['mcp', '-d', root, '--json']);
+      assert.equal(result.status, 2);
+      assert.equal(result.stdout, '');
+      assert.match(result.stderr, /stdout is reserved for MCP/);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('executes list, search, and read without mutating the archive', () => {

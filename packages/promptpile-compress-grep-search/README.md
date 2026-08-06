@@ -1,21 +1,21 @@
 # promptpile-compress-grep-search
 
-> 状态：P3 complete / release-gated private
+> 状态：P4 complete / beta
 > 类型：Archive Protocol read-only consumer  
 > 最近复核：2026-08-06
 
 这是一个独立、只读、协议驱动的 Archive Protocol consumer。当前已经成为 npm
 workspace package，实现 archive discovery、v1 manifest 校验、deterministic
 `readArchivedTurn()`、authoritative artifact enumeration 和 Node.js 流式
-`searchArchive()`，并已通过 `promptpile-archive` CLI 提供 `list / search / read` 闭环。后续 MCP adapter 属于可选 P4，不阻塞当前 CLI 产品面。
+`searchArchive()`，并已通过 `promptpile-archive` CLI 提供 `list / search / read` 闭环，以及固定 conversation directory 的 stdio MCP server。
 
 产品方向：
 
 - 核心实现保留可复用 TypeScript domain API；
 - 主要用户入口采用 `promptpile-archive` CLI，使使用者无需编码即可完成历史检索；
-- CLI 第一版围绕 `list` / `search` / `read` 三个动作；
+- CLI 提供 `list` / `search` / `read`，并以 `mcp` 启动 Agent 集成面；
 - `search` 返回 turn 级领域结果，不暴露 raw filesystem hit；
-- MCP 在 search/CLI 稳定后作为 Agent 无编码集成面，并复用同一 domain API；
+- MCP 作为 Agent 无编码集成面，提供 `list_archives` / `search_archive` / `read_archived_turn` 并复用同一 domain API；
 - 不优先维护独立 generic tool surface。
 
 核心原则：
@@ -58,6 +58,14 @@ promptpile-archive read -d ./messages 12
 
 三个命令均支持 `--json` machine envelope；search 还支持 `--limit`、可重复 `--role`、`--case-sensitive` 和 tool-result include/exclude flags。
 
+MCP：
+
+```bash
+promptpile-archive mcp -d ./messages
+```
+
+stdio server 只暴露三个 read-only tool：无参数的 `list_archives`、`search_archive` 和 `read_archived_turn`。conversation directory 在 server 启动时固定，不属于 tool input；tool 结果使用与 CLI 相同的 JSON success/failure envelope。MCP stdout 专用于协议帧，诊断信息只能写 stderr。
+
 质量门：
 
 ```bash
@@ -66,6 +74,6 @@ npm run benchmark:check -w promptpile-compress-grep-search
 npm run package:smoke -w promptpile-compress-grep-search
 ```
 
-当前保持 private：实现、性能和隔离安装门已通过，但 Archive Protocol 仍为 Experimental，解除 private 等待真实使用与版本迁移演练。
+当前以 `0.1.0-beta.0` 公开预发布：实现、性能和隔离安装门已通过；Archive Protocol 仍处于演进期，继续通过真实使用与版本迁移演练验证兼容性。发布时使用 npm 的 `beta` dist-tag。
 
 接口与 CLI 设计见 [`DESIGN.md`](./DESIGN.md)，实施进度见 [`TODO.md`](./TODO.md)。

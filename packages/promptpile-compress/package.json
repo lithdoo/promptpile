@@ -1,12 +1,22 @@
 {
   "name": "promptpile-compress",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.1.0-beta.0",
   "description": "独立的 Promptpile conversation 压缩、归档、恢复与 recovery implementation",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "bin": {
     "promptpile-compress": "dist/index.js"
   },
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "!dist/**/*.test.js",
+    "!dist/**/*.test.d.ts",
+    "!dist/lifecycle/lock-child.js",
+    "!dist/lifecycle/lock-child.d.ts",
+    "LICENSE"
+  ],
+  "license": "ISC",
   "scripts": {
     "build": "tsc",
     "test": "npm run build && node --test dist/index.test.js dist/lifecycle/lock.test.js dist/lifecycle/safety.test.js dist/lifecycle/orchestrator.test.js dist/restore/scanner.test.js dist/restore/index.test.js dist/compress/scanner.test.js dist/compress/index.test.js dist/compress/summary.test.js dist/compress/tokenizer.test.js dist/compress/budget.test.js dist/contracts/archive-protocol.test.js",

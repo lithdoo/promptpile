@@ -1,11 +1,11 @@
 # promptpile-compress
 
 > 类型：package  
-> 状态：experimental / private  
+> 状态：Beta
 > 主要职责：conversation compression / archive commit / restore / recovery / semantic compaction  
 > 最近复核：2026-08-06
 
-`promptpile-compress` 独立处理 Promptpile conversation directory，当前 package 标记 `private: true`。它是 [Context Lifecycle System](../10-architecture/context-lifecycle-system.md) 中负责**有副作用 lifecycle mutation** 的实现，也是 [Archive Protocol v1](../15-contracts/archive-protocol-v1.md) 当前 producer/restore implementation。
+`promptpile-compress` 独立处理 Promptpile conversation directory，当前以 `0.1.0-beta.0` 公开预发布。它是 [Context Lifecycle System](../10-architecture/context-lifecycle-system.md) 中负责**有副作用 lifecycle mutation** 的实现，也是 [Archive Protocol v1](../15-contracts/archive-protocol-v1.md) 当前 producer/restore implementation。
 
 当前已经实现：
 

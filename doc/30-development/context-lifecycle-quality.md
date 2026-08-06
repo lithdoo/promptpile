@@ -37,5 +37,5 @@ npm run benchmark -w promptpile-compress
   每次最多调用一次。规划预算用 `upper-bound`、提交预算用 `actual` 标识 summary token 依据。
 - operation report 只包含 idx、计数、阶段、预算、commit state 与稳定错误码，
   不记录 message、tool result 或 provider 原始错误正文。
-- package 继续保持 `private` / `experimental`，直到 grep query surface、迁移策略
-  与更多真实集成稳定。
+- producer 与 retrieval consumer 当前以 beta 公开预发布；继续通过迁移策略演练
+  与更多真实集成验证稳定性。

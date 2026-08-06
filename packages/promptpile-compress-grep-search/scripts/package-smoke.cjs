@@ -40,6 +40,8 @@ try {
     'dist/cli.js',
     'dist/index.js',
     'dist/index.d.ts',
+    'dist/mcp.js',
+    'dist/mcp.d.ts',
     'LICENSE',
     'README.md',
     'package.json',
@@ -86,6 +88,9 @@ try {
   if (!help.stdout.includes('promptpile-archive search')) {
     throw new Error('installed CLI help is invalid');
   }
+  if (!help.stdout.includes('promptpile-archive mcp')) {
+    throw new Error('installed CLI help does not expose MCP');
+  }
   const messages = path.join(consumer, 'messages');
   const archive = path.join(messages, '[1]system.md.archive');
   fs.mkdirSync(archive, { recursive: true });
@@ -103,6 +108,18 @@ try {
   if (!searchResult.ok || searchResult.data.results[0]?.turnIdx !== 1) {
     throw new Error('installed CLI search result is invalid');
   }
+  const installedCliEntry = path.join(
+    consumer,
+    'node_modules',
+    'promptpile-compress-grep-search',
+    'dist',
+    'cli-entry.js'
+  );
+  run(process.execPath, [
+    path.join(packageRoot, 'scripts', 'package-mcp-smoke.cjs'),
+    installedCliEntry,
+    messages,
+  ]);
   const api = require(path.join(
     consumer,
     'node_modules',
@@ -117,6 +134,7 @@ try {
       packedFiles: paths.length,
       unpackedSize: metadata.unpackedSize,
       externalSearchBinaries: 0,
+      mcpStdio: 'passed',
     })
   );
 } finally {
