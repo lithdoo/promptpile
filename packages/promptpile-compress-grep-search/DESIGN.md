@@ -179,7 +179,7 @@ function searchArchive(
 
 - `query` v1 按 literal text 搜索；
 - 空字符串或纯空白 query 返回 `INVALID_QUERY`；
-- `limit` 限制返回的 turn 数，而不是 raw grep hit 数；
+- `limit` 限制返回的 turn 数，而不是 raw filesystem hit 数；
 - `limit` 默认 20，必须是 1 到 100 的整数；
 - 同一 turn 的多个文件命中聚合到一个 `ArchiveSearchResult`；
 - `role` 属于具体 match，而不是强行放到 turn 顶层，因为同 idx 可以包含不同 artifact/role；
@@ -190,7 +190,7 @@ function searchArchive(
 - `truncated` 是成功响应状态，表示还有命中因 turn limit 或内部安全上限没有返回；它不是错误；
 - timeout 不返回不完整成功结果，而是失败并返回 `SEARCH_TIMEOUT`。
 
-第一版不定义 score。grep 没有稳定的 semantic relevance score，不应制造虚假的 ranking 语义。
+第一版不定义 score。literal matching 没有稳定的 semantic relevance score，不应制造虚假的 ranking 语义。
 
 ## 4. Searchable artifacts
 
@@ -247,9 +247,11 @@ interface ArchiveSearchBackend {
   search(
     artifacts: SearchableArtifact[],
     options: BackendSearchOptions
-  ): AsyncIterable<ArchiveSearchMatch>;
+  ): AsyncIterable<ArchiveArtifactMatch>;
 }
 ```
+
+`ArchiveArtifactMatch` 在 `ArchiveSearchMatch` 基础上携带 `archiveIdx / turnIdx`，只用于 backend 到 turn aggregation 的内部边界；对外结果仍按 `ArchiveSearchResult` 聚合，不暴露 raw filesystem hit。
 
 默认 backend 使用 `fs.createReadStream()` 与 `readline` 逐行扫描，以 `String.includes()` 实现 literal match。大小写不敏感搜索使用稳定的 `toLowerCase()` 规范化，不使用 locale-dependent 转换。
 
@@ -414,7 +416,7 @@ promptpile-archive mcp -d ./messages
 - interactive TUI；
 - 多种重复实现的 CLI / MCP / tool search engine。
 
-Vector search 如有真实需求，应作为另一个独立 Archive Protocol consumer，而不是把 grep consumer 逐步演化成通用 retrieval framework。
+Vector search 如有真实需求，应作为另一个独立 Archive Protocol consumer，而不是把 literal-search consumer 逐步演化成通用 retrieval framework。
 
 ## 9. 阶段落地计划
 
@@ -440,7 +442,7 @@ Vector search 如有真实需求，应作为另一个独立 Archive Protocol con
 
 - 使用 file stream + readline 实现 UTF-8 literal search；
 - 支持大小写选项、取消、timeout、有限并发与内部安全上限；
-- 将行命中直接映射为 domain match，不产生 raw grep 中间协议；
+- 将行命中直接映射为 domain match，不产生 raw filesystem-hit 中间协议；
 - 聚合为 turn result，并正确计算 limit 与 `truncated`。
 
 完成标准：中文 Markdown、JSON/JSONL、长行、大文件、多 archive 均有 deterministic tests；搜索前后 archive byte-for-byte 不变。

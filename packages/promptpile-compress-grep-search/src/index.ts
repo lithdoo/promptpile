@@ -1,6 +1,12 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { ARCHIVE_READ_DEFAULTS, ArchiveDomainError } from './contracts';
+import {
+  resolveSearchableArtifactOptions,
+  type ArchiveArtifactFileKind,
+  type SearchableArtifact,
+  type SearchableArtifactOptions,
+} from './search-domain';
 
 export {
   ARCHIVE_READ_DEFAULTS,
@@ -17,6 +23,22 @@ export {
   type ArchiveJsonSuccess,
   type ToolResultFlags,
 } from './contracts';
+export {
+  resolveArchiveSearchOptions,
+  resolveSearchableArtifactOptions,
+  type ArchiveArtifactMatch,
+  type ArchiveArtifactFileKind,
+  type ArchiveSearchBackend,
+  type ArchiveSearchMatch,
+  type ArchiveSearchOptions,
+  type ArchiveSearchResponse,
+  type ArchiveSearchResult,
+  type ArchiveSearchSafetyLimits,
+  type BackendSearchOptions,
+  type ResolvedArchiveSearchOptions,
+  type SearchableArtifact,
+  type SearchableArtifactOptions,
+} from './search-domain';
 
 const ARCHIVE_PATTERN = /^\[(\d+)\]system\.md\.archive$/;
 const MESSAGE_PATTERN = /^\[(\d+)\](.+?)\.(md|json)$/;
@@ -36,7 +58,7 @@ export interface ArchivedArtifact {
   path: string;
   turnIdx: number;
   role: string;
-  fileKind: 'message' | 'calls' | 'result' | 'extra';
+  fileKind: ArchiveArtifactFileKind;
   content: string;
 }
 
@@ -151,6 +173,14 @@ const compareArtifacts = (
   a.role.localeCompare(b.role) ||
   a.name.localeCompare(b.name);
 
+const compareSearchableArtifacts = (
+  a: SearchableArtifact,
+  b: SearchableArtifact
+): number =>
+  b.turnIdx - a.turnIdx ||
+  b.archiveIdx - a.archiveIdx ||
+  compareArtifacts(a, b);
+
 const parseArtifact = (
   archivePath: string,
   name: string
@@ -249,4 +279,61 @@ export const readArchivedTurn = async (
     throw ioError(`cannot read archived turn: ${turnIdx}`, error);
   }
   return { idx: turnIdx, archiveIdx: archive.idx, artifacts };
+};
+
+export const enumerateSearchableArtifacts = async (
+  directory: string,
+  options: SearchableArtifactOptions = {}
+): Promise<SearchableArtifact[]> => {
+  const resolvedOptions = resolveSearchableArtifactOptions(options);
+  const roleFilter = new Set(resolvedOptions.roles);
+  const archives = await discoverArchives(directory);
+  if (archives.length === 0) {
+    throw new ArchiveDomainError(
+      'NO_ARCHIVE',
+      `no Archive Protocol archive found in: ${path.resolve(directory)}`
+    );
+  }
+
+  const searchable: SearchableArtifact[] = [];
+  for (const archive of archives) {
+    let entries;
+    try {
+      entries = await fs.readdir(archive.path, { withFileTypes: true });
+    } catch (error) {
+      throw ioError(`cannot read archive directory: ${archive.path}`, error);
+    }
+    const declared = new Set(archive.archivedTurnIndices);
+    const artifacts = entries
+      .filter((entry) => entry.isFile())
+      .map((entry) => parseArtifact(archive.path, entry.name))
+      .filter(
+        (artifact): artifact is Omit<ArchivedArtifact, 'content'> =>
+          artifact !== null && declared.has(artifact.turnIdx)
+      );
+
+    const turnsWithArtifacts = new Set(
+      artifacts.map((artifact) => artifact.turnIdx)
+    );
+    const missingTurn = archive.archivedTurnIndices.find(
+      (turnIdx) => !turnsWithArtifacts.has(turnIdx)
+    );
+    if (missingTurn !== undefined) {
+      throw invalidArchive(
+        `archive declares turn ${missingTurn} but contains no artifacts`
+      );
+    }
+
+    searchable.push(
+      ...artifacts
+        .filter(
+          (artifact) =>
+            (resolvedOptions.includeToolResults ||
+              artifact.fileKind !== 'result') &&
+            (roleFilter.size === 0 || roleFilter.has(artifact.role))
+        )
+        .map((artifact) => ({ ...artifact, archiveIdx: archive.idx }))
+    );
+  }
+  return searchable.sort(compareSearchableArtifacts);
 };
