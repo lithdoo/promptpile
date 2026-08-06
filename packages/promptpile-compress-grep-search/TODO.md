@@ -69,12 +69,14 @@
 
 ### P3.4 Performance / release gate
 
-- [ ] 建立小型、1,000 turns 与大 JSONL archive benchmark。
-- [ ] 记录首次查询延迟、吞吐、峰值内存与提前终止行为。
-- [ ] Node scanner 未达到明确性能目标前，不引入第二 backend；只有基准证明需要时才评估可选高吞吐 backend。
-- [ ] 验证 Node 18/22 × Windows/Linux，无外部搜索二进制依赖。
+- [x] 建立小型、1,000 turns 与 4 MiB JSONL archive benchmark 和 CI regression gate。
+- [x] 记录首次查询延迟、吞吐、峰值 RSS 与 `limit=1` 提前终止行为。
+- [x] Node scanner 通过当前性能目标，不引入第二 backend；未来仍只接受 benchmark 驱动的可选 backend。
+- [x] Node 18/22 × Windows/Linux filesystem tests 已在 CI matrix；Node 22 Windows/Linux 额外执行 packed CLI smoke，Node 22 Linux 执行 benchmark gate。
+- [x] tarball 隔离安装验证 CLI/API 且无外部搜索二进制；发布内容排除 source/tests。
+- [x] 完成发布判断：技术门槛通过，但 Archive Protocol 仍 Experimental，继续保持 `private` 等待真实使用和迁移演练。
 
-P3 完成定义：普通用户无需编写 TypeScript，即可通过 CLI 完成 `search → read` 的历史检索闭环。
+P3 完成定义：普通用户无需编写 TypeScript，即可通过 CLI 完成 `search → read` 的历史检索闭环；性能、资源、跨平台与安装回归门均有可复现 gate。
 
 ## P4 · MCP / Public surface
 

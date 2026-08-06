@@ -461,7 +461,7 @@ Vector search 如有真实需求，应作为另一个独立 Archive Protocol con
 
 ### P3.2 · Node.js 流式 literal scanner
 
-- 使用 file stream + readline 实现 UTF-8 literal search；
+- 使用 file stream + 有界 line splitter 实现 UTF-8 literal search；
 - 支持大小写选项、取消、timeout、有限并发与内部安全上限；
 - 将行命中直接映射为 domain match，不产生 raw filesystem-hit 中间协议；
 - 聚合为 turn result，并正确计算 limit 与 `truncated`。
@@ -493,3 +493,30 @@ Vector search 如有真实需求，应作为另一个独立 Archive Protocol con
 - server 启动时固定 conversation directory，不向 tool 暴露任意 filesystem path。
 
 P3 总完成定义：API 与 CLI 使用相同 domain semantics；全部路径保持 Archive Protocol read-only；无 `@agent-tool-lite/search`、`ripgrep` 或平台二进制依赖；普通用户可以完成稳定的 `search → read` 历史检索闭环。
+
+## 10. 性能基线与发布判断
+
+可复现命令：
+
+```bash
+npm run benchmark -w promptpile-compress-grep-search
+npm run benchmark:check -w promptpile-compress-grep-search
+npm run package:smoke -w promptpile-compress-grep-search
+```
+
+`benchmark:check` 固定覆盖小型 archive、1,000 turns / 3,000 artifacts、limit=1 提前终止和 4 MiB JSONL。gate 使用以下保守上限：small first query 2 秒、1,000-turn full scan 15 秒、large JSONL full scan 15 秒、峰值 RSS 增量 256 MiB；early-limit 中位数不得高于对应 full scan 的 1.5 倍。绝对数值是 regression guard，不是对所有硬件的性能承诺。
+
+2026-08-06 的 Node 22.12 / Windows x64 参考样本（3 iterations）：
+
+| Scenario | Result |
+| --- | ---: |
+| small first query | 30.19 ms |
+| small warm median | 16.93 ms |
+| 1,000-turn full scan median | 443.69 ms |
+| 1,000-turn early `limit=1` median | 9.59 ms |
+| 4 MiB JSONL median | 44.42 ms |
+| max observed RSS delta | 40.95 MiB |
+
+`package:smoke` 构建 tarball、拒绝 `src/` / tests、安装到隔离临时 consumer，并验证 license、`promptpile-archive` shim、真实 search 命令与 `searchArchive` export。当前参考 tarball 为 15 files、约 43 KiB unpacked，不包含外部搜索二进制或 runtime dependency。
+
+技术发布门槛已经满足，但 package 保持 `private: true`：Archive Protocol 仍为 Experimental，且尚缺真实上层长期使用和版本迁移演练。解除 private 必须先完成这些成熟度条件；不因本机 benchmark 通过而自动公开发布。

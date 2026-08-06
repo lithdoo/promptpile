@@ -36,3 +36,11 @@ jobs:
 
       - name: Test independent Archive Protocol consumer
         run: npm run test -w promptpile-compress-grep-search
+
+      - name: Smoke test packed archive CLI
+        if: matrix.node == 22
+        run: npm run package:smoke -w promptpile-compress-grep-search
+
+      - name: Check archive-search performance budget
+        if: matrix.node == 22 && matrix.os == 'ubuntu-latest'
+        run: npm run benchmark:check -w promptpile-compress-grep-search

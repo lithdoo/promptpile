@@ -1,13 +1,13 @@
 # promptpile-compress-grep-search
 
-> 状态：CLI search/read closed loop / private
+> 状态：P3 complete / release-gated private
 > 类型：Archive Protocol read-only consumer  
 > 最近复核：2026-08-06
 
 这是一个独立、只读、协议驱动的 Archive Protocol consumer。当前已经成为 npm
 workspace package，实现 archive discovery、v1 manifest 校验、deterministic
 `readArchivedTurn()`、authoritative artifact enumeration 和 Node.js 流式
-`searchArchive()`；下一阶段落地 `promptpile-archive` CLI。
+`searchArchive()`，并已通过 `promptpile-archive` CLI 提供 `list / search / read` 闭环。后续 MCP adapter 属于可选 P4，不阻塞当前 CLI 产品面。
 
 产品方向：
 
@@ -57,5 +57,15 @@ promptpile-archive read -d ./messages 12
 ```
 
 三个命令均支持 `--json` machine envelope；search 还支持 `--limit`、可重复 `--role`、`--case-sensitive` 和 tool-result include/exclude flags。
+
+质量门：
+
+```bash
+npm test -w promptpile-compress-grep-search
+npm run benchmark:check -w promptpile-compress-grep-search
+npm run package:smoke -w promptpile-compress-grep-search
+```
+
+当前保持 private：实现、性能和隔离安装门已通过，但 Archive Protocol 仍为 Experimental，解除 private 等待真实使用与版本迁移演练。
 
 接口与 CLI 设计见 [`DESIGN.md`](./DESIGN.md)，实施进度见 [`TODO.md`](./TODO.md)。
