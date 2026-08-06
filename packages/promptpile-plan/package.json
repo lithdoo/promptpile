@@ -2,6 +2,20 @@
   "name": "promptpile-plan",
   "version": "0.1.0-beta.0",
   "description": "在 promptpile CLI 之上的 plan-and-exec 编排（子进程调用，非 npm 依赖 promptpile 本体）",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lithdoo/promptpile.git",
+    "directory": "packages/promptpile-plan"
+  },
+  "homepage": "https://github.com/lithdoo/promptpile#readme",
+  "bugs": {
+    "url": "https://github.com/lithdoo/promptpile/issues"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public",
+    "tag": "beta"
+  },
   "main": "dist/index.js",
   "bin": {
     "promptpile-plan": "dist/index.js"

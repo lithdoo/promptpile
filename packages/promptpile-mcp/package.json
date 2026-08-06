@@ -2,6 +2,20 @@
   "name": "promptpile-mcp",
   "version": "0.1.0-beta.0",
   "description": "Promptpile 与 MCP：stdio 会话 + 本机 HTTP 网关（launch / export-tools / exec-calls / check）",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lithdoo/promptpile.git",
+    "directory": "packages/promptpile-mcp"
+  },
+  "homepage": "https://github.com/lithdoo/promptpile#readme",
+  "bugs": {
+    "url": "https://github.com/lithdoo/promptpile/issues"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public",
+    "tag": "beta"
+  },
   "main": "dist/src/index.js",
   "bin": {
     "promptpile-mcp": "dist/src/index.js"
@@ -25,7 +39,7 @@
   "author": "",
   "license": "ISC",
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "type": "commonjs",
   "files": [
@@ -38,7 +52,7 @@
   "dependencies": {
     "@iarna/toml": "^2.2.5",
     "@koa/router": "^12.0.2",
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@types/node": "^25.5.2",
     "commander": "^14.0.3",
     "koa": "^2.16.4",

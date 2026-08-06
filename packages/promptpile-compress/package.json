@@ -2,6 +2,20 @@
   "name": "promptpile-compress",
   "version": "0.1.0-beta.0",
   "description": "独立的 Promptpile conversation 压缩、归档、恢复与 recovery implementation",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lithdoo/promptpile.git",
+    "directory": "packages/promptpile-compress"
+  },
+  "homepage": "https://github.com/lithdoo/promptpile#readme",
+  "bugs": {
+    "url": "https://github.com/lithdoo/promptpile/issues"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public",
+    "tag": "beta"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
@@ -19,6 +33,7 @@
   "license": "ISC",
   "scripts": {
     "build": "tsc",
+    "prepack": "npm run build",
     "test": "npm run build && node --test dist/index.test.js dist/cli-boundaries.test.js dist/lifecycle/lock.test.js dist/lifecycle/safety.test.js dist/lifecycle/orchestrator.test.js dist/restore/scanner.test.js dist/restore/index.test.js dist/compress/scanner.test.js dist/compress/strategy.test.js dist/compress/index.test.js dist/compress/summary.test.js dist/compress/tokenizer.test.js dist/compress/budget.test.js dist/contracts/archive-protocol.test.js",
     "benchmark": "npm run build && node scripts/benchmark-scanner.cjs"
   },

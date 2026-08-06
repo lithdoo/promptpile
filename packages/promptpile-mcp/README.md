@@ -4,7 +4,7 @@
 
 **完整技术设计（CLI、`mcp.toml`、HTTP API、工作流）见 [DESIGN.md](./DESIGN.md)。**
 
-**当前状态**：**`launch`** 在本机 **`127.0.0.1`** 提供 **Koa** HTTP 网关；**`export-tools`** 已实现（`GET /v1/tools/export` → 扁平 `.tools.toml`）；**`exec-calls`** 已实现：**目录模式**仅扫描 **`--dir`** 第一层的 **`*.calls.jsonl`** 并写 **`stem.result.jsonl`**；**单文件模式**用 **`--input`** 指定一个 **`.calls.jsonl`**，**`--output`** 可省略（默认同目录 **`stem.result.jsonl`**）。**`--input` 与 `--dir` 互斥**；未指定 `--dir` 时目录模式仍默认扫描当前工作目录。**默认**跳过已有配对 result；**`--overwrite-results`** 覆盖。result 文件通过同目录临时文件 + `fsync` + `rename` 原子提交，失败时不会留下半截正式文件；每行额外保存工具级 `execution` 元数据。详见 [DESIGN.md §6](./DESIGN.md#6-callsjsonl-与结果文件)。当 **`mcp.toml` 含 `[servers.*]`** 时，**`launch`** 使用 **`createMcpGatewayBackend`**（stdio **`initialize` / `tools/list` / `tools/call`**）；**无 `[servers]`** 时仍为 **stub** 后端（与 [test-fixtures/minimal.toml](./test-fixtures/minimal.toml) 兼容）。另有 **`npm run mcp:smoke`** 做独立 stdio 冒烟（见 [开发与构建](#开发与构建)）。网关按 `[execution]` 并发执行 calls，支持单调用超时、客户端断开取消、`continue | fail_fast` 失败策略，以及仅对显式安全工具启用的瞬时故障重试。需要 **Node.js 18+**（内置 `fetch` / `AbortController`）。
+**当前状态**：**`launch`** 在本机 **`127.0.0.1`** 提供 **Koa** HTTP 网关；**`export-tools`** 已实现（`GET /v1/tools/export` → 扁平 `.tools.toml`）；**`exec-calls`** 已实现：**目录模式**仅扫描 **`--dir`** 第一层的 **`*.calls.jsonl`** 并写 **`stem.result.jsonl`**；**单文件模式**用 **`--input`** 指定一个 **`.calls.jsonl`**，**`--output`** 可省略（默认同目录 **`stem.result.jsonl`**）。**`--input` 与 `--dir` 互斥**；未指定 `--dir` 时目录模式仍默认扫描当前工作目录。**默认**跳过已有配对 result；**`--overwrite-results`** 覆盖。result 文件通过同目录临时文件 + `fsync` + `rename` 原子提交，失败时不会留下半截正式文件；每行额外保存工具级 `execution` 元数据。详见 [DESIGN.md §6](./DESIGN.md#6-callsjsonl-与结果文件)。当 **`mcp.toml` 含 `[servers.*]`** 时，**`launch`** 使用 **`createMcpGatewayBackend`**（stdio **`initialize` / `tools/list` / `tools/call`**）；**无 `[servers]`** 时仍为 **stub** 后端（与 [test-fixtures/minimal.toml](./test-fixtures/minimal.toml) 兼容）。另有 **`npm run mcp:smoke`** 做独立 stdio 冒烟（见 [开发与构建](#开发与构建)）。网关按 `[execution]` 并发执行 calls，支持单调用超时、客户端断开取消、`continue | fail_fast` 失败策略，以及仅对显式安全工具启用的瞬时故障重试。需要 **Node.js 20+**。
 
 ---
 
@@ -275,7 +275,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "C:\\temp\\mcp-allowed"
 
 然后 **`npm run build`**，终端 A：**`promptpile-mcp launch --config <路径>`**（可加 **`--port`** 覆盖）；终端 B：**`promptpile-mcp export-tools --base-url http://127.0.0.1:8765`** 应得到非空 **`.tools.toml`**。失败策略、超时、**`flat_names`** 见 [DESIGN.md §4](./DESIGN.md#4-mcptoml-配置)。
 
-运行 **`export-tools`** / **`exec-calls`** 需要 **Node.js 18+**（内置 `fetch` / `AbortController`）。
+运行 **`export-tools`** / **`exec-calls`** 需要 **Node.js 20+**。
 
 本地 CLI：
 

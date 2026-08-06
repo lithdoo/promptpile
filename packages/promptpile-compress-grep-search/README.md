@@ -9,6 +9,8 @@ workspace package，实现 archive discovery、v1 manifest 校验、deterministi
 `readArchivedTurn()`、authoritative artifact enumeration 和 Node.js 流式
 `searchArchive()`，并已通过 `promptpile-archive` CLI 提供 `list / search / read` 闭环，以及固定 conversation directory 的 stdio MCP server。
 
+运行时要求 Node.js 20 或更高版本。
+
 产品方向：
 
 - 核心实现保留可复用 TypeScript domain API；

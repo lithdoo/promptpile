@@ -2,6 +2,20 @@
   "name": "promptpile-react",
   "version": "0.1.0-beta.1",
   "description": "在 promptpile 公共 CLI 之上的 ReAct agent 编排",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lithdoo/promptpile.git",
+    "directory": "packages/promptpile-react"
+  },
+  "homepage": "https://github.com/lithdoo/promptpile#readme",
+  "bugs": {
+    "url": "https://github.com/lithdoo/promptpile/issues"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public",
+    "tag": "beta"
+  },
   "main": "dist/index.js",
   "bin": {
     "promptpile-react": "dist/index.js"

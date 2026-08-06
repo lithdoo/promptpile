@@ -2,6 +2,20 @@
   "name": "promptpile-compress-grep-search",
   "version": "0.1.0-beta.0",
   "description": "Read-only Promptpile archive search domain and CLI",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lithdoo/promptpile.git",
+    "directory": "packages/promptpile-compress-grep-search"
+  },
+  "homepage": "https://github.com/lithdoo/promptpile#readme",
+  "bugs": {
+    "url": "https://github.com/lithdoo/promptpile/issues"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public",
+    "tag": "beta"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
@@ -18,13 +32,14 @@
   "license": "ISC",
   "scripts": {
     "build": "tsc",
+    "prepack": "npm run build",
     "test": "npm run build -w promptpile-compress && npm run build && node --test dist/index.test.js dist/contracts.test.js dist/search-domain.test.js dist/node-literal-search.test.js dist/search.test.js dist/cli.test.js dist/cli-boundaries.test.js dist/mcp.test.js dist/mcp-boundaries.test.js dist/integration.test.js dist/architecture.test.js",
     "benchmark": "npm run build && node --expose-gc scripts/benchmark-search.cjs",
     "benchmark:check": "npm run build && node --expose-gc scripts/benchmark-search.cjs --check",
     "package:smoke": "npm run build && node scripts/package-smoke.cjs"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -33,6 +48,6 @@
     "typescript": "^5.0.0"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   }
 }
