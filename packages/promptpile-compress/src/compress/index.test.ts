@@ -78,6 +78,8 @@ describe('compressDirectory', () => {
         liveTokenCountAfter: number;
         summaryKind: string;
         summaryProvider?: string;
+        tokenizer: { id: string; model: string; kind: string };
+        budget: { mode: string; tokensBefore: number; summaryTokens: number };
         summary?: string;
       };
       assert.deepEqual(manifest.archivedTurnIndices, [1, 2]);
@@ -87,6 +89,14 @@ describe('compressDirectory', () => {
       assert.ok(manifest.summaryTokenCount < manifest.liveTokenCountAfter);
       assert.equal(manifest.summaryKind, 'archive-pointer');
       assert.equal(manifest.summaryProvider, undefined);
+      assert.deepEqual(manifest.tokenizer, {
+        id: 'promptpile-unicode-heuristic-v1',
+        model: 'model-agnostic',
+        kind: 'heuristic-fallback',
+      });
+      assert.equal(manifest.budget.mode, 'legacy-threshold');
+      assert.equal(manifest.budget.tokensBefore, result.tokensBefore);
+      assert.equal(manifest.budget.summaryTokens, manifest.summaryTokenCount);
       assert.equal('summary' in manifest, false);
       const liveSummary = fs.readFileSync(path.join(root, '[2]system.md'), 'utf8');
       assert.match(liveSummary, /1-2/);

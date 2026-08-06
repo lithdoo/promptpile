@@ -7,13 +7,17 @@ import {
   isMessageFileName,
   listMessageFiles,
 } from '../restore/scanner';
-import { estimateTurnTokens as estimateFileTokens } from './tokenizer';
+import {
+  estimateTurnTokens as estimateCachedTurnTokens,
+  heuristicTokenizer,
+} from './tokenizer';
 import type {
   MessageExtension,
   MessageFileKind,
   MessageRole,
   ScannedFile,
   Turn,
+  TokenizerAdapter,
 } from './types';
 
 const MESSAGE_PATTERN = /^\[(\d+)\](.+?)\.(md|json)$/i;
@@ -64,28 +68,30 @@ export const parseMessageFileName = (
   return null;
 };
 
-export const estimateTurnTokens = async (
-  directory: string,
-  turn: Pick<Turn, 'idx' | 'files'>
-): Promise<number> =>
-  estimateFileTokens(
-    directory,
-    turn.idx,
-    turn.files.map((file) => file.name)
-  );
+export const estimateTurnTokens = (
+  turn: Pick<Turn, 'files'>,
+  tokenizer: TokenizerAdapter = heuristicTokenizer
+): number => estimateCachedTurnTokens(turn, tokenizer);
 
-export const scanTurns = async (directory: string): Promise<Turn[]> => {
+export const scanTurns = async (
+  directory: string,
+  tokenizer: TokenizerAdapter = heuristicTokenizer
+): Promise<Turn[]> => {
   const names = await listMessageFiles(directory);
   const byIdx = new Map<number, ScannedFile[]>();
 
-  for (const name of names) {
-    if (!isMessageFileName(name)) {
-      continue;
-    }
-    const file = parseMessageFileName(directory, name);
-    if (!file) {
-      continue;
-    }
+  const parsedFiles = (
+    await Promise.all(
+      names.map(async (name) => {
+        if (!isMessageFileName(name)) return null;
+        const file = parseMessageFileName(directory, name);
+        if (!file) return null;
+        return { ...file, content: await fs.readFile(file.path, 'utf8') };
+      })
+    )
+  ).filter((file): file is ScannedFile & { content: string } => file !== null);
+
+  for (const file of parsedFiles) {
     const files = byIdx.get(file.idx) ?? [];
     files.push(file);
     byIdx.set(file.idx, files);
@@ -108,7 +114,7 @@ export const scanTurns = async (directory: string): Promise<Turn[]> => {
     };
     turns.push({
       ...turn,
-      estimatedTokens: await estimateTurnTokens(directory, turn),
+      estimatedTokens: estimateTurnTokens(turn, tokenizer),
     });
   }
 
@@ -151,9 +157,13 @@ export const captureConversationGeneration = async (
   };
 
   const messageFiles = await listMessageFiles(directory);
+  const messageContents = await Promise.all(
+    messageFiles.map((fileName) => fs.readFile(path.join(directory, fileName)))
+  );
 
-  for (const fileName of messageFiles) {
-    const content = await fs.readFile(path.join(directory, fileName));
+  for (let index = 0; index < messageFiles.length; index += 1) {
+    const fileName = messageFiles[index];
+    const content = messageContents[index];
     hash.update('message\0');
     hash.update(fileName);
     hash.update('\0');

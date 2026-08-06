@@ -1,0 +1,33 @@
+{
+  "reference": {
+    "adapter": "tiktoken@1.0.22",
+    "model": "gpt-4o-mini"
+  },
+  "samples": [
+    {
+      "name": "english-markdown",
+      "content": "# Cache plan\n\nUse a five-minute TTL cache keyed by account ID.",
+      "expectedTokens": 15
+    },
+    {
+      "name": "chinese-markdown",
+      "content": "# 缓存计划\n\n使用五分钟 TTL 缓存，并以账户 ID 作为键。",
+      "expectedTokens": 21
+    },
+    {
+      "name": "json",
+      "content": "{\"status\":\"ok\",\"items\":[1,2,3],\"cached\":true}",
+      "expectedTokens": 17
+    },
+    {
+      "name": "jsonl",
+      "content": "{\"name\":\"read_file\",\"path\":\"src/report.ts\"}\n{\"status\":\"ok\",\"lines\":240}\n",
+      "expectedTokens": 21
+    },
+    {
+      "name": "tool-heavy",
+      "content": "assistant to=read_file code\n{\"path\":\"src/report.ts\",\"line_start\":1,\"line_end\":200}\nresult\n{\"status\":\"ok\",\"content\":\"export async function buildReport(accountId: string) { return db.query(accountId); }\"}",
+      "expectedTokens": 52
+    }
+  ]
+}

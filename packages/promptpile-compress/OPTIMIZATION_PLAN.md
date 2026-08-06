@@ -6,7 +6,7 @@
 >
 > 基线版本：`0.1.0` / private / experimental
 >
-> 当前阶段：P0、P1、P2 已完成，下一阶段 P3
+> 当前阶段：P0、P1、P2、P3 已完成，下一阶段 P4
 >
 > 最近复核：2026-08-06
 
@@ -36,11 +36,10 @@
 - cooperating-writer directory lock、same-host stale-lock recovery 与 conversation generation precondition；
 - 可注入 mutation boundary、atomic temp cleanup 与 retry regression tests；
 - staging/archive-aware dry-run simulation 与可信统计；
-- 68 个 filesystem、protocol、CLI、semantic summary 与 lifecycle behavior tests，当前全部通过。
+- 77 个 filesystem、protocol、CLI、semantic summary、budget/tokenizer 与 lifecycle behavior tests，当前全部通过。
 
 主要缺口：
 
-- 字符估算仅适合作为粗略 trigger，`tiktoken` optional dependency 尚未使用；
 - orchestrator 尚未为不遵守 lifecycle lock 的 active completion 提供 exclusive phase。
 
 ## 3. 约束与非目标
@@ -90,21 +89,16 @@
 - `fixtures/semantic-summary-v1/` 提供 deterministic provider output 与人工可复核质量样本；
 - regression 覆盖成功 compact context、异常/超时/无效/超预算零 mutation，以及 semantic compress → restore byte-for-byte 精确还原。
 
-### P3 · Context budget 与性能
+### P3 · Context budget 与性能（已完成：2026-08-06）
 
-工作项：
+完成结果：
 
-1. 引入 tokenizer adapter，保留显式标记的 heuristic fallback；先用中英文 Markdown、JSON/JSONL 和 tool-heavy fixtures 测量误差，再决定保留或移除未使用的 `tiktoken` dependency。
-2. 将单一 threshold 拆成可解释预算：model context、reserved output、system/tool fixed overhead、目标 live history 与 safety margin。
-3. 让 trigger、selection、summary output limit 和结果报告使用同一 budget model，避免各自重复估算。
-4. 对大目录减少重复读文件和串行 I/O；用基准确认优化收益，不以牺牲一致性校验为代价。
-
-验收标准：
-
-- 每种 tokenizer adapter 都有版本/模型标识、误差基准和 fallback 行为；
-- 给定同一目录与 budget 配置，dry-run 和真实执行得到相同 selection；
-- 结果报告能解释 `tokensBefore`、固定预留、summary、kept history 与 safety margin；
-- 性能改动附带可复现基准，且协议/恢复测试无回归。
+- 引入 `TokenizerAdapter`，默认明确使用 `promptpile-unicode-heuristic-v1` fallback，并提供按 model 创建和释放的 `tiktoken@1.0.22` exact adapter；
+- `fixtures/tokenizer-benchmark-v1/` 固定中英文 Markdown、JSON/JSONL 与 tool-heavy reference counts，并校验 exact 稳定性和 heuristic 误差边界；
+- context budget 统一 model context、reserved output、system/tool overhead、target live history、summary limit 与 safety margin；旧 `threshold` 保留为互斥兼容模式；
+- trigger、连续 recent suffix selection、summary output validation、dry-run 与 `ContextBudgetReport` 使用同一 resolved budget；
+- scanner 并行读取并缓存 live artifacts，tokenizer 与 semantic provider 不再重复读取；generation precondition 继续独立复核；
+- `npm run benchmark -w promptpile-compress` 提供可调规模的 current/legacy two-pass 对比；1,000 turns / 3,000 artifacts Windows 样本为 244.17 ms 对 967.53 ms（3.96×）。
 
 ### P4 · 集成与成熟度
 
@@ -132,9 +126,9 @@ P1 mutation safety（已完成）
     ↓
 P2 semantic summary（已完成）
     ↓
-P3 context budget / performance（下一阶段）
+P3 context budget / performance（已完成）
     ↓
-P4 orchestrator integration / maturity
+P4 orchestrator integration / maturity（下一阶段）
 ```
 
 P0 是低成本正确性修复；P1 先保护 authoritative conversation state；P2 提供压缩的核心语义价值；P3 在 summary 输入输出模型稳定后统一预算；P4 最后扩大自动化和发布面。

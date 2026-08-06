@@ -9,9 +9,7 @@ import type {
   Turn,
 } from './types';
 
-const DEFAULT_MAX_OUTPUT_TOKENS = 2_048;
 const DEFAULT_TIMEOUT_MS = 60_000;
-const SUMMARY_TOKEN_OVERHEAD = 30;
 
 const semanticSections: Array<{
   key: keyof Omit<SemanticSummaryDocument, 'version'>;
@@ -83,7 +81,7 @@ const normalizeArchive = async (
                 role: file.role,
                 extension: file.extension,
                 fileKind: file.fileKind,
-                content: await fs.readFile(file.path, 'utf8'),
+                content: file.content ?? (await fs.readFile(file.path, 'utf8')),
               }))
           ),
         }))
@@ -199,9 +197,7 @@ const withTimeout = async <T>(
 const createSemanticGenerator = (
   options: Extract<SummaryOptions, { kind: 'semantic' }>
 ): SummaryGenerator => {
-  const maxOutputTokens = options.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  assertPositiveInteger('summary.maxOutputTokens', maxOutputTokens);
   assertPositiveInteger('summary.timeoutMs', timeoutMs);
   if (!options.provider || typeof options.provider.summarize !== 'function') {
     throw new Error('semantic summary requires a provider');
@@ -216,7 +212,12 @@ const createSemanticGenerator = (
   return {
     kind: 'semantic',
     providerId: options.provider.id,
-    async generateSummary(archive) {
+    async generateSummary(archive, generationOptions) {
+      const maxOutputTokens = Math.min(
+        options.maxOutputTokens ?? generationOptions.maxOutputTokens,
+        generationOptions.maxOutputTokens
+      );
+      assertPositiveInteger('summary.maxOutputTokens', maxOutputTokens);
       const estimatedInputTokens = archive.reduce(
         (sum, turn) => sum + turn.estimatedTokens,
         0
@@ -237,7 +238,9 @@ const createSemanticGenerator = (
         archive.map((turn) => turn.idx)
       );
       const summary = renderSemanticSummary(document);
-      const outputTokens = estimateTextTokens(summary) + SUMMARY_TOKEN_OVERHEAD;
+      const outputTokens =
+        estimateTextTokens(summary, generationOptions.tokenizer) +
+        generationOptions.tokenizer.messageOverheadTokens;
       if (outputTokens > maxOutputTokens) {
         throw new Error(
           `semantic summary output exceeds budget: ${outputTokens} > ${maxOutputTokens}`

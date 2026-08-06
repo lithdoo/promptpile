@@ -28,17 +28,24 @@ import type {
 } from '../lifecycle/mutation';
 import { createTurnSelector } from './strategy';
 import { createSummaryGenerator } from './summary';
-import { estimateTextTokens, estimateTotalTokens } from './tokenizer';
+import {
+  estimateTextTokens,
+  estimateTotalTokens,
+  heuristicTokenizer,
+  assertTokenizerAdapter,
+} from './tokenizer';
+import { createBudgetReport, resolveContextBudget } from './budget';
 import type {
   CompressionManifest,
   CompressOptions,
   CompressResult,
   CompressStrategyKind,
+  ContextBudgetReport,
   SummaryKind,
+  TokenizerAdapter,
   Turn,
 } from './types';
 
-const DEFAULT_THRESHOLD = 32_000;
 const DEFAULT_KEEP_RECENT = 4;
 const DEFAULT_STRATEGY: CompressStrategyKind = 'sliding-window';
 const SUMMARY_TEMP_FILE = '.summary.md';
@@ -145,6 +152,8 @@ const prepareStaging = async (
   strategy: CompressStrategyKind,
   summaryKind: SummaryKind,
   summaryProvider: string | undefined,
+  tokenizer: TokenizerAdapter,
+  budget: ContextBudgetReport,
   liveTokenCountBefore: number,
   summaryTokenCount: number,
   liveTokenCountAfter: number,
@@ -185,6 +194,12 @@ const prepareStaging = async (
     strategy,
     summaryKind,
     ...(summaryProvider ? { summaryProvider } : {}),
+    tokenizer: {
+      id: tokenizer.id,
+      model: tokenizer.model,
+      kind: tokenizer.kind,
+    },
+    budget,
     liveTokenCountBefore,
     summaryTokenCount,
     liveTokenCountAfter,
@@ -275,6 +290,7 @@ const simulateLifecycleDryRun = async (
       tokensAfter: simulated.tokensAfter,
       compressibleTokens: simulated.compressibleTokens,
       summaryIdx: simulated.summaryIdx,
+      budget: simulated.budget,
       dryRunPlan: {
         recoveryActions: recoveryActions.map((action) => action.detail),
         archivesToRestore,
@@ -290,14 +306,13 @@ const compressDirectoryWithLockHeld = async (
   options: CompressOptions,
   directory: string
 ): Promise<CompressResult> => {
-  const threshold = options.threshold ?? DEFAULT_THRESHOLD;
   const keepRecent = options.keepRecent ?? DEFAULT_KEEP_RECENT;
   const strategyKind = options.strategy ?? DEFAULT_STRATEGY;
   const dryRun = options.dryRun === true;
+  const tokenizer = options.tokenizer ?? heuristicTokenizer;
+  assertTokenizerAdapter(tokenizer);
+  const contextBudget = resolveContextBudget(options);
 
-  if (!Number.isInteger(threshold) || threshold < 0) {
-    throw new Error(`threshold 必须是非负整数: ${threshold}`);
-  }
   if (!Number.isInteger(keepRecent) || keepRecent < 0) {
     throw new Error(`keepRecent 必须是非负整数: ${keepRecent}`);
   }
@@ -327,7 +342,7 @@ const compressDirectoryWithLockHeld = async (
   }
 
   const generation = await captureConversationGeneration(directory);
-  const turns = await scanTurns(directory);
+  const turns = await scanTurns(directory, tokenizer);
   await assertConversationGeneration(directory, generation);
   if (turns.length === 0) {
     return {
@@ -338,6 +353,7 @@ const compressDirectoryWithLockHeld = async (
       tokensBefore: 0,
       tokensAfter: 0,
       compressibleTokens: 0,
+      budget: createBudgetReport(contextBudget, tokenizer, 0, 0, 0),
     };
   }
 
@@ -346,7 +362,7 @@ const compressDirectoryWithLockHeld = async (
     turns.filter((turn) => !turn.isSystemTurn)
   );
 
-  if (tokensBefore < threshold) {
+  if (tokensBefore < contextBudget.triggerTokens) {
     return {
       compressed: false,
       skipReason: 'below_threshold',
@@ -355,6 +371,13 @@ const compressDirectoryWithLockHeld = async (
       tokensBefore,
       tokensAfter: tokensBefore,
       compressibleTokens,
+      budget: createBudgetReport(
+        contextBudget,
+        tokenizer,
+        tokensBefore,
+        tokensBefore,
+        0
+      ),
     };
   }
 
@@ -367,11 +390,21 @@ const compressDirectoryWithLockHeld = async (
       tokensBefore,
       tokensAfter: tokensBefore,
       compressibleTokens,
+      budget: createBudgetReport(
+        contextBudget,
+        tokenizer,
+        tokensBefore,
+        tokensBefore,
+        0
+      ),
     };
   }
 
   const selector = createTurnSelector(strategyKind);
-  const { keep, archive } = selector.selectTurns(turns, { keepRecent });
+  const { keep, archive } = selector.selectTurns(turns, {
+    keepRecent,
+    maxKeptTokens: contextBudget.maxKeptTokens,
+  });
   if (archive.length === 0) {
     return {
       compressed: false,
@@ -381,15 +414,39 @@ const compressDirectoryWithLockHeld = async (
       tokensBefore,
       tokensAfter: tokensBefore,
       compressibleTokens,
+      budget: createBudgetReport(
+        contextBudget,
+        tokenizer,
+        tokensBefore,
+        tokensBefore,
+        0
+      ),
     };
   }
 
   const summaryGenerator = createSummaryGenerator(options.summary);
-  const summary = await summaryGenerator.generateSummary(archive);
+  const summary = await summaryGenerator.generateSummary(archive, {
+    tokenizer,
+    maxOutputTokens: contextBudget.summaryOutputLimitTokens,
+  });
   await assertConversationGeneration(directory, generation);
   const summaryIdx = Math.max(...archive.map((turn) => turn.idx));
-  const summaryTokens = estimateTextTokens(summary) + 30;
-  const tokensAfter = estimateTotalTokens(keep) + summaryTokens;
+  const summaryTokens =
+    estimateTextTokens(summary, tokenizer) + tokenizer.messageOverheadTokens;
+  if (summaryTokens > contextBudget.summaryOutputLimitTokens) {
+    throw new Error(
+      `summary output exceeds context budget: ${summaryTokens} > ${contextBudget.summaryOutputLimitTokens}`
+    );
+  }
+  const keptHistoryTokens = estimateTotalTokens(keep);
+  const tokensAfter = keptHistoryTokens + summaryTokens;
+  const budgetReport = createBudgetReport(
+    contextBudget,
+    tokenizer,
+    tokensBefore,
+    keptHistoryTokens,
+    summaryTokens
+  );
 
   if (dryRun) {
     return {
@@ -401,6 +458,7 @@ const compressDirectoryWithLockHeld = async (
       tokensAfter,
       compressibleTokens,
       summaryIdx,
+      budget: budgetReport,
       dryRunPlan: {
         recoveryActions: [],
         archivesToRestore: 0,
@@ -417,6 +475,8 @@ const compressDirectoryWithLockHeld = async (
     strategyKind,
     summaryGenerator.kind,
     summaryGenerator.providerId,
+    tokenizer,
+    budgetReport,
     tokensBefore,
     summaryTokens,
     tokensAfter,
@@ -438,6 +498,7 @@ const compressDirectoryWithLockHeld = async (
     compressibleTokens,
     summaryIdx,
     archivePath,
+    budget: budgetReport,
   };
 };
 
@@ -455,6 +516,8 @@ export type {
   CompressOptions,
   CompressResult,
   CompressSkipReason,
+  ContextBudgetOptions,
+  ContextBudgetReport,
   SemanticSummaryArtifact,
   SemanticSummaryDocument,
   SemanticSummaryItem,
@@ -463,4 +526,6 @@ export type {
   SemanticSummaryTurn,
   SummaryKind,
   SummaryOptions,
+  TokenizerAdapter,
 } from './types';
+export { createTiktokenTokenizer, heuristicTokenizer } from './tokenizer';

@@ -33,6 +33,7 @@ src/
 │   └── mutation.ts
 ├── compress/
 │   ├── index.ts
+│   ├── budget.ts
 │   ├── scanner.ts
 │   ├── strategy.ts
 │   ├── summary.ts
@@ -47,7 +48,7 @@ src/
 当前 CLI：
 
 ```bash
-promptpile-compress compress -d <directory> [--threshold N] [--keep-recent N] [--dry-run]
+promptpile-compress compress -d <directory> [budget options] [--keep-recent N] [--dry-run]
 promptpile-compress restore -d <directory> [--dry-run]
 ```
 
@@ -56,6 +57,10 @@ promptpile-compress restore -d <directory> [--dry-run]
 Turn selection 与 summary generation 是独立接口。默认 `archive-pointer` generator 是纯本地、确定性的协议指针，不读取 API key，也不访问网络。程序化调用可显式注入 `semantic` provider；CLI 当前仍使用默认 generator，避免隐式外部副作用。
 
 Semantic provider 输入按 idx 与文件名排序，保留 role、idx、message/calls/result/extra 的内容和输入/输出 token 预算。返回的 v1 document 必须完整包含 goal、stable facts、constraints、decisions、important tool findings、completed work、unresolved work、failed approaches 与 next actions 数组；每个非空条目必须引用真实 archived idx。结构、来源、空输出、超时和预算在创建 staging 前校验。
+
+默认 context budget 由 128k model context、8k completion 预留、2k system/tool 固定开销、32k 目标 live history、2,048 summary 上限和 4k safety margin 组成。Trigger、连续 recent suffix selection、summary limit 与 `ContextBudgetReport` 使用同一 resolved budget。`threshold` 仅作为显式兼容模式保留，不能与 `budget` 同时使用。
+
+默认 tokenizer 是带版本标识的 `promptpile-unicode-heuristic-v1` fallback；需要模型精确计数时，调用方可显式创建 `tiktoken@1.0.22` adapter 并指定 model。误差 corpus 位于 `fixtures/tokenizer-benchmark-v1/`，不会把 heuristic 结果描述为精确 token 数。
 
 ## 3. Archive commit
 
@@ -87,13 +92,18 @@ Atomic file write 使用同目录唯一临时文件，写入后先 sync file 再
 
 普通 dry-run 直接计算 selection。存在 staging 或 archive 时，在 OS 临时目录中的隔离副本执行真实 recover → restore → recompress 模拟，并在 `finally` 清理；目标 conversation 前后 byte-for-byte 不变。结果包含 recovery actions、待恢复 archive 数、planned outcome 以及与随后真实执行一致的 turn/token 统计。
 
+### 4.4 I/O 与性能基准
+
+Live artifacts 在 scan 中并行读取一次并缓存，tokenizer 与 semantic provider 共享内容；generation hash 仍在 mutation 前独立复核，但同一轮的 live-file 读取改为并行且保持确定性 hash 顺序。可用 `npm run benchmark -w promptpile-compress` 复现 1,000 turns / 3,000 artifacts 基准，`PPC_BENCHMARK_TURNS` 可调整规模。2026-08-06 的 Windows 样本中，当前单次缓存路径 median 244.17 ms，旧式 tokenize + provider reread 两遍路径 median 967.53 ms（3.96×）；数值只作本机趋势记录，不作为跨机器 pass/fail 门槛。
+
 ## 5. 当前能力边界
 
 已实现：
 
 - turn-aware scanning；
 - system preservation；
-- threshold / dry-run；
+- context budget、兼容 threshold 与可解释 budget report；
+- heuristic/tiktoken tokenizer adapters 与误差 corpus；
 - sliding-window archive selection；
 - 可注入的 semantic summary provider、稳定 schema、来源 idx 与预算/超时校验；
 - staging / atomic single-file writes；
@@ -108,7 +118,6 @@ Atomic file write 使用同目录唯一临时文件，写入后先 sync file 再
 
 尚未完成：
 
-- 精确 context-budget tokenizer；
 - orchestrator 与不遵守 lifecycle lock 的 active writer 之间的 exclusive-phase integration。
 
 ## 6. 明确非目标

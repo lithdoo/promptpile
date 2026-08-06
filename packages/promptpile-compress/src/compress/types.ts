@@ -11,6 +11,8 @@ export interface ScannedFile {
   role: MessageRole;
   extension: MessageExtension;
   fileKind: MessageFileKind;
+  /** Cached during scanning to avoid rereading artifacts for tokenization/providers. */
+  content?: string;
 }
 
 export interface Turn {
@@ -23,6 +25,41 @@ export interface Turn {
 
 export type CompressStrategyKind = 'sliding-window';
 export type SummaryKind = 'archive-pointer' | 'semantic';
+
+export interface TokenizerAdapter {
+  readonly id: string;
+  readonly model: string;
+  readonly kind: 'exact' | 'heuristic-fallback';
+  readonly messageOverheadTokens: number;
+  countText(content: string): number;
+  dispose?(): void;
+}
+
+export interface ContextBudgetOptions {
+  modelContextTokens?: number;
+  reservedOutputTokens?: number;
+  systemToolOverheadTokens?: number;
+  targetLiveHistoryTokens?: number;
+  summaryOutputTokens?: number;
+  safetyMarginTokens?: number;
+}
+
+export interface ContextBudgetReport {
+  mode: 'context-budget' | 'legacy-threshold';
+  tokenizer: Pick<TokenizerAdapter, 'id' | 'model' | 'kind'>;
+  modelContextTokens?: number;
+  reservedOutputTokens: number;
+  systemToolOverheadTokens: number;
+  targetLiveHistoryTokens: number;
+  summaryOutputLimitTokens: number;
+  safetyMarginTokens: number;
+  triggerTokens: number;
+  tokensBefore: number;
+  keptHistoryTokens: number;
+  summaryTokens: number;
+  totalPlannedTokens: number;
+  remainingContextTokens?: number;
+}
 
 export interface SemanticSummaryItem {
   text: string;
@@ -88,6 +125,10 @@ export type SummaryOptions =
 export interface CompressOptions {
   directory: string;
   threshold?: number;
+  /** Context-aware replacement for threshold. Cannot be combined with threshold. */
+  budget?: ContextBudgetOptions;
+  /** Defaults to the explicit heuristic fallback adapter. */
+  tokenizer?: TokenizerAdapter;
   keepRecent?: number;
   strategy?: CompressStrategyKind;
   /** Defaults to a deterministic archive pointer and never performs I/O. */
@@ -122,6 +163,7 @@ export interface CompressResult {
   archivePath?: string;
   skipReason?: CompressSkipReason;
   dryRunPlan?: CompressDryRunPlan;
+  budget: ContextBudgetReport;
 }
 
 export interface CompressionManifest {
@@ -130,6 +172,8 @@ export interface CompressionManifest {
   strategy: CompressStrategyKind;
   summaryKind: SummaryKind;
   summaryProvider?: string;
+  tokenizer: Pick<TokenizerAdapter, 'id' | 'model' | 'kind'>;
+  budget: ContextBudgetReport;
   /** Estimated tokens across all live turns before compression. */
   liveTokenCountBefore: number;
   /** Estimated tokens for the generated summary message only. */
@@ -144,12 +188,15 @@ export interface TurnSelector {
 
   selectTurns(
     turns: Turn[],
-    options: { keepRecent: number }
+    options: { keepRecent: number; maxKeptTokens?: number }
   ): { keep: Turn[]; archive: Turn[] };
 }
 
 export interface SummaryGenerator {
   readonly kind: SummaryKind;
   readonly providerId?: string;
-  generateSummary(archive: Turn[]): Promise<string>;
+  generateSummary(
+    archive: Turn[],
+    options: { tokenizer: TokenizerAdapter; maxOutputTokens: number }
+  ): Promise<string>;
 }

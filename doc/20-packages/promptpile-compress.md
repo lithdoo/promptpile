@@ -12,7 +12,8 @@
 - turn-level scan 与 sliding-window selection；
 - 默认 archive pointer 与显式注入的 semantic summary provider；
 - semantic summary v1 schema、来源 idx、输入/输出预算及 timeout/error 校验；
-- threshold / keepRecent / dry-run；
+- context budget、兼容 threshold、keepRecent、dry-run 与结构化预算报告；
+- 显式 heuristic fallback 与可选 tiktoken adapter；
 - staging → archive commit；
 - `compression.json`；
 - restore / recovery / recompress；
@@ -28,6 +29,14 @@
 ```ts
 await compressDirectory({
   directory,
+  budget: {
+    modelContextTokens: 128_000,
+    reservedOutputTokens: 8_000,
+    systemToolOverheadTokens: 2_000,
+    targetLiveHistoryTokens: 32_000,
+    summaryOutputTokens: 2_048,
+    safetyMarginTokens: 4_000,
+  },
   summary: {
     kind: 'semantic',
     provider: { id: 'my-provider', summarize },
@@ -40,19 +49,7 @@ await compressDirectory({
 
 `summarize(request, signal)` 必须返回公开 `SemanticSummaryDocument` 结构；调用方负责模型选择、凭据和网络行为。
 
-```text
-P0 contract / public semantics
-    ↓
-P1 mutation safety / recoverability
-    ↓
-P2 semantic summary
-    ↓
-P3 context budget / performance
-    ↓
-P4 orchestrator integration / maturity
-```
-
-其中 P1 明确先于 semantic summary：先保护 authoritative conversation state，再扩大 provider/LLM 参与的 mutation surface。
+默认 tokenizer 是明确标记为 fallback 的 `heuristicTokenizer`。需要按模型精确计数时使用 `await createTiktokenTokenizer(model)`，并在完成后调用 `dispose()`。`CompressResult.budget` 解释 trigger、压缩前 tokens、kept history、summary、固定开销、completion 预留、safety margin、总计划占用与剩余 context。旧 `threshold` 仍可单独使用，但不能和 `budget` 组合。
 
 `promptpile-compress` 不实现或拥有：
 
