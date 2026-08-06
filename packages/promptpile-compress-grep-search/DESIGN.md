@@ -288,6 +288,8 @@ v1 固定内部默认值：10 秒 timeout、4 个并发文件、每 turn 100 个
 
 CLI 是 v1 的主要产品接口。
 
+三个命令都要求显式传入 `-d, --directory <dir>`；v1 不隐式搜索当前工作目录。`-h, --help` 不要求 command 或 directory。
+
 ### 5.1 list
 
 ```bash
@@ -297,7 +299,7 @@ promptpile-archive list -d ./messages --json
 
 用途：查看当前 conversation 下有哪些 archive 与 archived turn。
 
-默认 human-readable 输出；`--json` 输出稳定机器结构。
+默认 human-readable 输出；`--json` 的 envelope `data` 是 `ArchiveDescriptor[]`。
 
 ### 5.2 search
 
@@ -332,6 +334,8 @@ CLI 不暴露底层 scanner 参数。
 
 `--include-tool-results` 与 `--no-tool-results` 互斥；search 默认等价于 `--no-tool-results`。`--limit` 采用 domain API 的相同范围校验。
 
+`--json` 的 envelope `data` 是 `ArchiveSearchResponse`。
+
 ### 5.3 read
 
 ```bash
@@ -344,6 +348,8 @@ promptpile-archive read -d ./messages 31 --json
 human-readable 输出可以按 message / calls / extra / results 分段；`--json` 保留 artifact 边界与原始 content。
 
 read 默认包含 tool results；`--no-tool-results` 可显式排除。输出 artifact 顺序必须与 domain API 一致。
+
+`--json` 的 envelope `data` 是 `ArchivedTurn`。
 
 ### 5.4 核心用户流程
 
@@ -384,7 +390,9 @@ human CLI 显示可读错误；machine surface 返回稳定 code，不要求调�
 
 无 archive 是 `NO_ARCHIVE`；search 无命中是成功空结果；read 未找到 turn 是 `TURN_NOT_FOUND`；非法 manifest/冲突 archive 是 `INVALID_ARCHIVE`。
 
-`truncated` 只作为 `ArchiveSearchResponse` 的成功状态，不定义 `SEARCH_TRUNCATED` 错误码。CLI `--json` 成功与失败都输出稳定 envelope；成功写 stdout，失败写 stderr 并以非零状态退出。具体 JSON schema 与 exit code mapping 在 CLI 阶段冻结并加入 contract tests。
+`truncated` 只作为 `ArchiveSearchResponse` 的成功状态，不定义 `SEARCH_TRUNCATED` 错误码。CLI `--json` 成功与失败都输出稳定 envelope：成功为 `{ "ok": true, "data": ... }` 并写 stdout；失败为 `{ "ok": false, "error": { "code", "message" } }` 并写 stderr。human failure 使用 `Error [CODE]: message` 写 stderr。
+
+exit code mapping：成功 `0`；`IO_ERROR` 为 `1`；`INVALID_QUERY` 为 `2`；`NO_ARCHIVE` / `TURN_NOT_FOUND` 为 `3`；`INVALID_ARCHIVE` 为 `4`；`SEARCH_TIMEOUT` 为 `124`。machine caller 只能依赖 `code`，不能依赖可能随诊断上下文变化的 `message`。
 
 ## 7. MCP
 

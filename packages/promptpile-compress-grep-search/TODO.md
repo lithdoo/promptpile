@@ -59,13 +59,13 @@
 
 ### P3.3 `promptpile-archive` CLI
 
-- [ ] `promptpile-archive list -d <dir>`：列出 archive / archived turns。
-- [ ] `promptpile-archive search -d <dir> <query>`：按 turn 返回 literal search 结果。
-- [ ] `promptpile-archive read -d <dir> <turnIdx>`：读取完整 authoritative artifacts。
-- [ ] `search` 支持 `--limit`、`--role`、tool-result include/exclude、`--case-sensitive`。
-- [ ] `list` / `search` / `read` 支持稳定 `--json` machine output。
-- [ ] human-readable CLI 与 JSON/API 使用相同 domain semantics，不重新实现查询逻辑。
-- [ ] 增加 package `bin` entry、Node-compatible shebang 与安装后 CLI smoke test。
+- [x] `promptpile-archive list -d <dir>`：列出 archive / archived turns。
+- [x] `promptpile-archive search -d <dir> <query>`：按 turn 返回 literal search 结果。
+- [x] `promptpile-archive read -d <dir> <turnIdx>`：读取完整 authoritative artifacts。
+- [x] `search` 支持 `--limit`、可重复 `--role`、tool-result include/exclude、`--case-sensitive`。
+- [x] `list` / `search` / `read` 支持稳定 `--json` machine envelope、stderr 与 exit code。
+- [x] human-readable CLI 与 JSON/API 使用相同 domain semantics，不重新实现查询逻辑。
+- [x] 增加 package `bin` entry、Node-compatible shebang 与构建产物 CLI smoke test。
 
 ### P3.4 Performance / release gate
 

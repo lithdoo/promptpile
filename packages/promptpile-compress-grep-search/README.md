@@ -1,6 +1,6 @@
 # promptpile-compress-grep-search
 
-> 状态：Literal search domain / private
+> 状态：CLI search/read closed loop / private
 > 类型：Archive Protocol read-only consumer  
 > 最近复核：2026-08-06
 
@@ -47,5 +47,15 @@ const turn = await readArchivedTurn(directory, 12, {
   includeToolResults: true,
 });
 ```
+
+CLI：
+
+```bash
+promptpile-archive list -d ./messages
+promptpile-archive search -d ./messages "postgres migration"
+promptpile-archive read -d ./messages 12
+```
+
+三个命令均支持 `--json` machine envelope；search 还支持 `--limit`、可重复 `--role`、`--case-sensitive` 和 tool-result include/exclude flags。
 
 接口与 CLI 设计见 [`DESIGN.md`](./DESIGN.md)，实施进度见 [`TODO.md`](./TODO.md)。
