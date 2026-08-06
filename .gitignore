@@ -3,6 +3,8 @@ packages/*/node_modules/
 packages/*/dist/
 agent-lite-tools/*/node_modules/
 agent-lite-tools/*/dist/
+doc/.vitepress/.temp/
+doc/.vitepress/dist/
 *.tgz
 .env
 .env.*

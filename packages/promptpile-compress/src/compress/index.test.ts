@@ -76,6 +76,8 @@ describe('compressDirectory', () => {
         liveTokenCountBefore: number;
         summaryTokenCount: number;
         liveTokenCountAfter: number;
+        summaryKind: string;
+        summaryProvider?: string;
         summary?: string;
       };
       assert.deepEqual(manifest.archivedTurnIndices, [1, 2]);
@@ -83,6 +85,8 @@ describe('compressDirectory', () => {
       assert.equal(manifest.liveTokenCountAfter, result.tokensAfter);
       assert.ok(manifest.summaryTokenCount > 0);
       assert.ok(manifest.summaryTokenCount < manifest.liveTokenCountAfter);
+      assert.equal(manifest.summaryKind, 'archive-pointer');
+      assert.equal(manifest.summaryProvider, undefined);
       assert.equal('summary' in manifest, false);
       const liveSummary = fs.readFileSync(path.join(root, '[2]system.md'), 'utf8');
       assert.match(liveSummary, /1-2/);

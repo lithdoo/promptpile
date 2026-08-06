@@ -6,7 +6,7 @@
 >
 > 基线版本：`0.1.0` / private / experimental
 >
-> 当前阶段：P0、P1 已完成，下一阶段 P2
+> 当前阶段：P0、P1、P2 已完成，下一阶段 P3
 >
 > 最近复核：2026-08-06
 
@@ -36,11 +36,10 @@
 - cooperating-writer directory lock、same-host stale-lock recovery 与 conversation generation precondition；
 - 可注入 mutation boundary、atomic temp cleanup 与 retry regression tests；
 - staging/archive-aware dry-run simulation 与可信统计；
-- 60 个 filesystem、protocol、CLI 与 lifecycle behavior tests，当前全部通过。
+- 68 个 filesystem、protocol、CLI、semantic summary 与 lifecycle behavior tests，当前全部通过。
 
 主要缺口：
 
-- `sliding-window` 只生成 archive pointer，不做 semantic distillation；
 - 字符估算仅适合作为粗略 trigger，`tiktoken` optional dependency 尚未使用；
 - orchestrator 尚未为不遵守 lifecycle lock 的 active completion 提供 exclusive phase。
 
@@ -79,23 +78,17 @@
 - staging/archive dry-run 在隔离临时副本执行真实 lifecycle 模拟，目标目录不变，统计与随后真实执行一致；
 - 设计明确保留 orchestrator exclusive-phase 前提，不把 package lock 描述为跨系统事务。
 
-### P2 · Semantic summary
+### P2 · Semantic summary（已完成：2026-08-06）
 
-工作项：
+完成结果：
 
-1. 把“选择哪些 turns”与“如何生成 summary”拆成独立接口，避免 selection strategy 绑定具体 LLM/provider。
-2. 定义稳定的 summary schema，至少包含：goal、stable facts、constraints、decisions、important tool findings、completed work、unresolved work、failed approaches、next actions 和可追溯 idx。
-3. 通过依赖注入接入 summary provider；默认不隐式读取 API key 或访问外部服务。
-4. 在调用 provider 前构建规范化输入，保留 role、idx 与 tool artifact 关系，并设定输入/输出预算。
-5. 校验空输出、结构缺失、超预算、provider timeout/error；任何失败均发生在 filesystem mutation 之前。
-6. 使用 deterministic fake provider 和固定 conversation fixtures 做 regression；另设人工质量样本评估关键信息保留率，而不是只比较文本快照。
-
-验收标准：
-
-- 固定 fixtures 中列出的目标、约束、决策、关键发现和未完成工作均能在 compact context 中定位；
-- summary 的每项历史陈述可追溯到 archived idx，且不伪造 retrieval capability；
-- provider 失败、无效输出和超预算时目录完全不变；
-- compress → restore 后原始 message artifacts 内容与文件名完全一致。
+- turn selector 与 summary generator 已拆分，`sliding-window` 不再绑定 provider；
+- 默认 `archive-pointer` 不读取 API key、不联网，程序化 API 可显式注入 semantic provider；
+- v1 schema 覆盖 goal、stable facts、constraints、decisions、important tool findings、completed/unresolved work、failed approaches 与 next actions；
+- 规范化输入保留 role、idx、message/calls/result/extra 原文及输入/输出预算；
+- 完整结构、非空来源、archived idx、provider timeout/error 与输出预算均在 staging 前校验；
+- `fixtures/semantic-summary-v1/` 提供 deterministic provider output 与人工可复核质量样本；
+- regression 覆盖成功 compact context、异常/超时/无效/超预算零 mutation，以及 semantic compress → restore byte-for-byte 精确还原。
 
 ### P3 · Context budget 与性能
 
@@ -137,9 +130,9 @@ P0 契约准确性（已完成）
     ↓
 P1 mutation safety（已完成）
     ↓
-P2 semantic summary（下一阶段）
+P2 semantic summary（已完成）
     ↓
-P3 context budget / performance
+P3 context budget / performance（下一阶段）
     ↓
 P4 orchestrator integration / maturity
 ```

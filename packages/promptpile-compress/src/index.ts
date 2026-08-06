@@ -160,5 +160,13 @@ export type {
   CompressOptions,
   CompressResult,
   CompressSkipReason,
+  SemanticSummaryArtifact,
+  SemanticSummaryDocument,
+  SemanticSummaryItem,
+  SemanticSummaryProvider,
+  SemanticSummaryRequest,
+  SemanticSummaryTurn,
+  SummaryKind,
+  SummaryOptions,
 } from './compress';
 export * from './lifecycle/mutation';

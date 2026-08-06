@@ -63,6 +63,8 @@ Consumer 不能依赖 conversation scanner 递归 archive；archive 必须由 co
 {
   "compressedAt": "ISO-8601 timestamp",
   "strategy": "sliding-window",
+  "summaryKind": "semantic",
+  "summaryProvider": "caller-provider-id",
   "liveTokenCountBefore": 12345,
   "summaryTokenCount": 42,
   "liveTokenCountAfter": 4096
@@ -71,6 +73,8 @@ Consumer 不能依赖 conversation scanner 递归 archive；archive 必须由 co
 
 这些字段当前属于 producer metadata：
 
+- `summaryKind` 标记 producer 使用 `archive-pointer` 或 `semantic` generator；
+- `summaryProvider` 仅在 semantic 模式存在，用于标识调用方注入的 provider；
 - `liveTokenCountBefore` 是压缩前全部 live turns 的估算 token 数；
 - `summaryTokenCount` 是新 summary message 的估算 token 数；
 - `liveTokenCountAfter` 是 kept turns 加新 summary 的估算 token 数。

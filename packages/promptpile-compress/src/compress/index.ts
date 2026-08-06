@@ -26,13 +26,15 @@ import type {
   LifecycleMutationHook,
   LifecycleMutationPoint,
 } from '../lifecycle/mutation';
-import { createStrategy } from './strategy';
+import { createTurnSelector } from './strategy';
+import { createSummaryGenerator } from './summary';
 import { estimateTextTokens, estimateTotalTokens } from './tokenizer';
 import type {
   CompressionManifest,
   CompressOptions,
   CompressResult,
   CompressStrategyKind,
+  SummaryKind,
   Turn,
 } from './types';
 
@@ -141,6 +143,8 @@ const prepareStaging = async (
   summary: string,
   summaryIdx: number,
   strategy: CompressStrategyKind,
+  summaryKind: SummaryKind,
+  summaryProvider: string | undefined,
   liveTokenCountBefore: number,
   summaryTokenCount: number,
   liveTokenCountAfter: number,
@@ -179,6 +183,8 @@ const prepareStaging = async (
     version: 1,
     compressedAt: new Date().toISOString(),
     strategy,
+    summaryKind,
+    ...(summaryProvider ? { summaryProvider } : {}),
     liveTokenCountBefore,
     summaryTokenCount,
     liveTokenCountAfter,
@@ -364,8 +370,8 @@ const compressDirectoryWithLockHeld = async (
     };
   }
 
-  const strategy = createStrategy(strategyKind);
-  const { keep, archive } = strategy.selectTurns(turns, { keepRecent });
+  const selector = createTurnSelector(strategyKind);
+  const { keep, archive } = selector.selectTurns(turns, { keepRecent });
   if (archive.length === 0) {
     return {
       compressed: false,
@@ -378,7 +384,8 @@ const compressDirectoryWithLockHeld = async (
     };
   }
 
-  const summary = await strategy.generateSummary(archive);
+  const summaryGenerator = createSummaryGenerator(options.summary);
+  const summary = await summaryGenerator.generateSummary(archive);
   await assertConversationGeneration(directory, generation);
   const summaryIdx = Math.max(...archive.map((turn) => turn.idx));
   const summaryTokens = estimateTextTokens(summary) + 30;
@@ -408,6 +415,8 @@ const compressDirectoryWithLockHeld = async (
     summary,
     summaryIdx,
     strategyKind,
+    summaryGenerator.kind,
+    summaryGenerator.providerId,
     tokensBefore,
     summaryTokens,
     tokensAfter,
@@ -446,4 +455,12 @@ export type {
   CompressOptions,
   CompressResult,
   CompressSkipReason,
+  SemanticSummaryArtifact,
+  SemanticSummaryDocument,
+  SemanticSummaryItem,
+  SemanticSummaryProvider,
+  SemanticSummaryRequest,
+  SemanticSummaryTurn,
+  SummaryKind,
+  SummaryOptions,
 } from './types';

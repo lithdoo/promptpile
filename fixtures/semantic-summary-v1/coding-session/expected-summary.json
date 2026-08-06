@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "goal": [
+    { "text": "Add caching to the report endpoint so repeated requests finish under 200 ms.", "sourceTurnIndices": [1] }
+  ],
+  "stableFacts": [
+    { "text": "The report endpoint previously called buildReport for every request and had no cache.", "sourceTurnIndices": [2] }
+  ],
+  "constraints": [
+    { "text": "Do not change the public JSON response shape.", "sourceTurnIndices": [1] }
+  ],
+  "decisions": [
+    { "text": "Use a five-minute in-memory TTL cache keyed by account id.", "sourceTurnIndices": [2, 4] }
+  ],
+  "importantToolFindings": [
+    { "text": "Inspection of src/report.ts found that buildReport ran directly on every request.", "sourceTurnIndices": [2] }
+  ],
+  "completedWork": [
+    { "text": "Changed the key to account id, added cache hit and expiry tests, and passed the targeted tests.", "sourceTurnIndices": [4] }
+  ],
+  "unresolvedWork": [
+    { "text": "The full test suite and p95 latency measurement have not yet been run.", "sourceTurnIndices": [4] }
+  ],
+  "failedApproaches": [
+    { "text": "Keying by display name failed because different accounts can share a name.", "sourceTurnIndices": [3] }
+  ],
+  "nextActions": [
+    { "text": "Run the full test suite and measure p95 latency.", "sourceTurnIndices": [4] }
+  ]
+}

@@ -35,6 +35,7 @@ src/
 │   ├── index.ts
 │   ├── scanner.ts
 │   ├── strategy.ts
+│   ├── summary.ts
 │   ├── tokenizer.ts
 │   └── types.ts
 └── restore/
@@ -51,6 +52,10 @@ promptpile-compress restore -d <directory> [--dry-run]
 ```
 
 当前唯一策略是 `sliding-window`。它按 idx group 保留 system turns 与最近 N 个 non-system turns，把更早历史归档。
+
+Turn selection 与 summary generation 是独立接口。默认 `archive-pointer` generator 是纯本地、确定性的协议指针，不读取 API key，也不访问网络。程序化调用可显式注入 `semantic` provider；CLI 当前仍使用默认 generator，避免隐式外部副作用。
+
+Semantic provider 输入按 idx 与文件名排序，保留 role、idx、message/calls/result/extra 的内容和输入/输出 token 预算。返回的 v1 document 必须完整包含 goal、stable facts、constraints、decisions、important tool findings、completed work、unresolved work、failed approaches 与 next actions 数组；每个非空条目必须引用真实 archived idx。结构、来源、空输出、超时和预算在创建 staging 前校验。
 
 ## 3. Archive commit
 
@@ -90,6 +95,7 @@ Atomic file write 使用同目录唯一临时文件，写入后先 sync file 再
 - system preservation；
 - threshold / dry-run；
 - sliding-window archive selection；
+- 可注入的 semantic summary provider、稳定 schema、来源 idx 与预算/超时校验；
 - staging / atomic single-file writes；
 - directory-level cooperating-writer lock 与 same-host stale-lock recovery；
 - conversation generation precondition；
@@ -102,7 +108,6 @@ Atomic file write 使用同目录唯一临时文件，写入后先 sync file 再
 
 尚未完成：
 
-- 真正保留 goals / facts / constraints / decisions / unresolved work 的 semantic summary；
 - 精确 context-budget tokenizer；
 - orchestrator 与不遵守 lifecycle lock 的 active writer 之间的 exclusive-phase integration。
 
@@ -120,7 +125,7 @@ Atomic file write 使用同目录唯一临时文件，写入后先 sync file 再
 
 ## 7. Retrieval 边界
 
-`sliding-window` summary 只声明原文已按 Archive Protocol 归档，并明确检索能力取决于上层是否配置兼容的只读 consumer。Package 本身不承诺任何具体 retrieval tool 存在；实际 consumer 接线后，由上层显式注入可用能力。
+默认 archive-pointer summary 只声明原文已按 Archive Protocol 归档，并明确检索能力取决于上层是否配置兼容的只读 consumer。Semantic summary 只保留带 archived idx 来源的 compact context，同样不承诺任何 retrieval tool 存在。
 
 ## 8. 文档治理
 

@@ -1,22 +1,6 @@
-import type {
-  CompressStrategy,
-  CompressStrategyKind,
-  Turn,
-} from './types';
+import type { CompressStrategyKind, TurnSelector } from './types';
 
-const summarizeArchiveRange = (archive: Turn[]): {
-  minIdx: number;
-  maxIdx: number;
-  turnCount: number;
-  estimatedTokens: number;
-} => ({
-  minIdx: Math.min(...archive.map((turn) => turn.idx)),
-  maxIdx: Math.max(...archive.map((turn) => turn.idx)),
-  turnCount: archive.length,
-  estimatedTokens: archive.reduce((sum, turn) => sum + turn.estimatedTokens, 0),
-});
-
-const slidingWindowStrategy: CompressStrategy = {
+const slidingWindowSelector: TurnSelector = {
   kind: 'sliding-window',
 
   selectTurns(turns, options) {
@@ -32,23 +16,13 @@ const slidingWindowStrategy: CompressStrategy = {
       archive,
     };
   },
-
-  async generateSummary(archive) {
-    const { minIdx, maxIdx, turnCount, estimatedTokens } =
-      summarizeArchiveRange(archive);
-    return [
-      `对话第 ${minIdx}-${maxIdx} 轮已按 Archive Protocol 归档。`,
-      '原文检索能力取决于上层是否配置了兼容的只读 consumer。',
-      `归档范围共 ${turnCount} 轮，原始 token 数约 ${estimatedTokens}。`,
-    ].join('\n');
-  },
 };
 
-export const createStrategy = (
+export const createTurnSelector = (
   kind: CompressStrategyKind
-): CompressStrategy => {
+): TurnSelector => {
   if (kind === 'sliding-window') {
-    return slidingWindowStrategy;
+    return slidingWindowSelector;
   }
-  throw new Error(`不支持的压缩策略: ${kind}`);
+  throw new Error(`unsupported compression strategy: ${kind}`);
 };
