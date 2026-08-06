@@ -6,7 +6,16 @@
 
 这是一个独立、只读、协议驱动的 Archive Protocol consumer。当前已经成为 npm
 workspace package，实现 archive discovery、v1 manifest 校验和 deterministic
-`readArchivedTurn()`；grep query 与 Agent tool surface 仍在后续 TODO 中。
+`readArchivedTurn()`；下一阶段落地 grep search 与 CLI 产品面。
+
+产品方向：
+
+- 核心实现保留可复用 TypeScript domain API；
+- 主要用户入口采用 `promptpile-archive` CLI，使使用者无需编码即可完成历史检索；
+- CLI 第一版围绕 `list` / `search` / `read` 三个动作；
+- `search` 返回 turn 级领域结果，raw ripgrep hit 只作为内部实现细节；
+- MCP 在 search/CLI 稳定后作为 Agent 无编码集成面，并复用同一 domain API；
+- 不优先维护独立 generic tool surface。
 
 核心原则：
 
@@ -15,7 +24,7 @@ workspace package，实现 archive discovery、v1 manifest 校验和 determinist
 - reader 不修改 archive、manifest、summary 或 archived artifacts；
 - integration test 通过 producer 的公开 package API 创建 archive，再由本包读取，
   并验证读取前后 byte-for-byte 不变；
-- grep mechanism 后续优先复用 `@agent-tool-lite/search`；vector 能力保持独立。
+- grep mechanism 优先复用 `@agent-tool-lite/search`；vector 能力保持独立。
 
 ```ts
 import {
@@ -29,4 +38,4 @@ const turn = await readArchivedTurn(directory, 12, {
 });
 ```
 
-当前工作见 [`TODO.md`](./TODO.md)。
+接口与 CLI 设计见 [`DESIGN.md`](./DESIGN.md)，实施进度见 [`TODO.md`](./TODO.md)。
