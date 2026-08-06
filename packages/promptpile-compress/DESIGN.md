@@ -76,7 +76,7 @@ Restore 在修改文件前校验 manifest、duplicate idx/file 与目标冲突�
 
 ### 4.1 Writer coordination
 
-Compress、restore 与 recover 使用 conversation 顶层 `.promptpile-compress.lock` 协调 cooperating lifecycle writers。Lock 通过 exclusive create 获取，记录 owner id、PID、hostname、operation 与创建时间。公开入口不可重入；顶层 operation 只通过 package-private 内部函数复用已经持有的锁，mutation hook 不能绕过锁启动嵌套公开操作。
+Compress、restore 与 recover 使用 conversation 顶层 `.promptpile-compress.lock.<host>.<pid>.<owner>` 唯一锁文件集合协调 cooperating lifecycle writers。每个 contender 原子发布完整 metadata，清理同机死进程的不可复用锁路径后重新扫描；只有自己的锁是唯一有效锁时才进入 mutation。活锁、异机锁、损坏锁以及旧版固定 `.promptpile-compress.lock` 一律 fail closed。公开入口不可重入；顶层 operation 只通过 package-private 内部函数复用已经持有的锁，mutation hook 不能绕过锁启动嵌套公开操作。
 
 同一主机上 owner PID 已不存在的有效 lock 可以自动恢复。跨主机 lock、仍存活的 PID 或损坏 metadata 均 fail closed，不按时间猜测并删除。Lock 是 package-private coordination artifact，read-only Archive Protocol consumer 必须忽略。
 
@@ -90,7 +90,7 @@ Atomic file write 使用同目录唯一临时文件，写入后先 sync file 再
 
 ### 4.3 Dry-run
 
-普通 dry-run 直接计算 selection。存在 staging 或 archive 时，在 OS 临时目录中的隔离副本执行真实 recover → restore → recompress 模拟，并在 `finally` 清理；目标 conversation 前后 byte-for-byte 不变。结果包含 recovery actions、待恢复 archive 数、planned outcome 以及与随后真实执行一致的 turn/token 统计。
+普通 dry-run 直接计算 selection。存在 staging 或 archive 时，在 OS 临时目录中的隔离副本执行 recover → restore → selection 模拟，并在 `finally` 清理；目标 conversation 前后 byte-for-byte 不变。规划阶段不调用 summary provider，`summaryTokens` 使用 resolved summary output limit 作为保守上限，并以 `summaryTokenBasis: 'upper-bound'` 标识；selection、turn 统计和 `tokensBefore` 与同一状态下的随后执行一致，真实执行生成一次 summary 后以 `summaryTokenBasis: 'actual'` 报告实测值。
 
 ### 4.4 I/O 与性能基准
 
@@ -98,7 +98,7 @@ Live artifacts 在 scan 中并行读取一次并缓存，tokenizer 与 semantic 
 
 ### 4.5 Orchestrator boundary 与 operation report
 
-自动化调用使用 `runCompressionBeforeCompletion()`：同一 resolved directory 的调用先进入进程内队列，执行 read-only estimate/plan，再获取 filesystem lifecycle lock、重新校验并压缩，释放 lock 后才调用 completion callback。队列覆盖 callback 完成，因此通过该入口的下一次 lifecycle phase 不会与 active completion 重叠。跨进程 filesystem mutation 仍由 lock 与 generation precondition 防护；不采用此 API 的外部 writer 仍不在进程内队列保证范围内。
+自动化调用使用 `runCompressionBeforeCompletion()`：同一 resolved directory 的调用先进入进程内队列，执行 provider-free read-only estimate/plan，再获取 filesystem lifecycle lock、重新校验并压缩，释放 lock 后才调用 completion callback。Semantic summary provider 只在实际 compress phase 调用一次。队列覆盖 callback 完成，因此通过该入口的下一次 lifecycle phase 不会与 active completion 重叠。跨进程 filesystem mutation 仍由 lock 与 generation precondition 防护；不采用此 API 的外部 writer 仍不在进程内队列保证范围内。
 
 `CompressionOperationReport` 固定记录 phase status/duration、recovery actions、archived/kept idx、budget、commit state、summary idx 与稳定错误码。报告不包含 message/tool result、semantic summary 正文或 provider 原始错误文本。`compressDirectory` / `restoreArchivedTurns` 保留为手动 lifecycle API，不应被 orchestrator 与 active completion 并发调用。
 

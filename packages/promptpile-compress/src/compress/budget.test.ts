@@ -81,7 +81,12 @@ describe('context budget', () => {
       assert.equal(actual.turnsArchived, dryRun.turnsArchived);
       assert.equal(actual.turnsKept, dryRun.turnsKept);
       assert.equal(actual.summaryIdx, dryRun.summaryIdx);
-      assert.deepEqual(actual.budget, dryRun.budget);
+      assert.deepEqual(actual.selection, dryRun.selection);
+      assert.equal(dryRun.budget.summaryTokenBasis, 'upper-bound');
+      assert.equal(dryRun.budget.summaryTokens, 250);
+      assert.equal(actual.budget.summaryTokenBasis, 'actual');
+      assert.ok(actual.budget.summaryTokens < dryRun.budget.summaryTokens);
+      assert.ok(actual.tokensAfter < dryRun.tokensAfter);
       assert.equal(actual.budget.mode, 'context-budget');
       assert.equal(actual.budget.triggerTokens, 300);
       assert.equal(actual.budget.keptHistoryTokens, 50);

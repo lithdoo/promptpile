@@ -36,7 +36,7 @@
 - cooperating-writer directory lock、same-host stale-lock recovery 与 conversation generation precondition；
 - 可注入 mutation boundary、atomic temp cleanup 与 retry regression tests；
 - staging/archive-aware dry-run simulation 与可信统计；
-- 84 个 producer/lifecycle tests 与 4 个独立 consumer tests，覆盖 filesystem、protocol、CLI、semantic summary、budget/tokenizer、orchestrator 和跨包行为。
+- 89 个 producer/lifecycle tests 与 4 个独立 consumer tests，覆盖 filesystem、protocol、CLI、semantic summary、budget/tokenizer、orchestrator 和跨包行为。
 
 本轮计划缺口已关闭；真实上层应用接线、grep query surface 和长期版本迁移演练作为后续独立工作推进。
 
@@ -67,12 +67,12 @@
 
 完成结果：
 
-- `.promptpile-compress.lock` 通过 atomic exclusive create 保证同一目录只有一个 cooperating lifecycle writer；metadata 记录 owner、PID、host、operation 与创建时间；
+- `.promptpile-compress.lock.<host>.<pid>.<owner>` 唯一锁集合通过原子发布、同机死进程精确路径清理与清理后重扫保证同一目录只有一个 cooperating lifecycle writer；metadata 记录 owner、PID、host、operation 与创建时间，旧固定锁 fail closed；
 - 同主机 dead PID lock 自动恢复，跨主机、live PID 与损坏 metadata fail closed；
 - scan 前后、summary 后及 staging 创建前校验 SHA-256 generation，检测到 conversation/archive/staging 变化即拒绝提交；
 - mutation hook 覆盖 staging、manifest、summary、archive commit、restore 与 cleanup，故障测试验证重试或 fail-closed 行为；
 - atomic write 失败会清理临时文件；POSIX sync file 与 parent directory，Windows 保留 file sync + same-directory rename 保证；
-- staging/archive dry-run 在隔离临时副本执行真实 lifecycle 模拟，目标目录不变，统计与随后真实执行一致；
+- staging/archive dry-run 在隔离临时副本执行 lifecycle 规划模拟，目标目录不变，selection、turn 统计与压缩前 token 统计和随后真实执行一致；summary 使用 provider-free 保守上限；
 - 设计明确保留 orchestrator exclusive-phase 前提，不把 package lock 描述为跨系统事务。
 
 ### P2 · Semantic summary（已完成：2026-08-06）
@@ -84,6 +84,7 @@
 - v1 schema 覆盖 goal、stable facts、constraints、decisions、important tool findings、completed/unresolved work、failed approaches 与 next actions；
 - 规范化输入保留 role、idx、message/calls/result/extra 原文及输入/输出预算；
 - 完整结构、非空来源、archived idx、provider timeout/error 与输出预算均在 staging 前校验；
+- dry-run 与 orchestrator estimate plan 不调用 provider，实际 compress phase 每次只生成一次 semantic summary；
 - `fixtures/semantic-summary-v1/` 提供 deterministic provider output 与人工可复核质量样本；
 - regression 覆盖成功 compact context、异常/超时/无效/超预算零 mutation，以及 semantic compress → restore byte-for-byte 精确还原。
 
@@ -94,7 +95,7 @@
 - 引入 `TokenizerAdapter`，默认明确使用 `promptpile-unicode-heuristic-v1` fallback，并提供按 model 创建和释放的 `tiktoken@1.0.22` exact adapter；
 - `fixtures/tokenizer-benchmark-v1/` 固定中英文 Markdown、JSON/JSONL 与 tool-heavy reference counts，并校验 exact 稳定性和 heuristic 误差边界；
 - context budget 统一 model context、reserved output、system/tool overhead、target live history、summary limit 与 safety margin；旧 `threshold` 保留为互斥兼容模式；
-- trigger、连续 recent suffix selection、summary output validation、dry-run 与 `ContextBudgetReport` 使用同一 resolved budget；
+- trigger、连续 recent suffix selection、summary output validation、dry-run 与 `ContextBudgetReport` 使用同一 resolved budget；预算报告用 `upper-bound` / `actual` 区分规划上限和真实 summary token；
 - scanner 并行读取并缓存 live artifacts，tokenizer 与 semantic provider 不再重复读取；generation precondition 继续独立复核；
 - `npm run benchmark -w promptpile-compress` 提供可调规模的 current/legacy two-pass 对比；1,000 turns / 3,000 artifacts Windows 样本为 244.17 ms 对 967.53 ms（3.96×）。
 

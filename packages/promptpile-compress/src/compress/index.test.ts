@@ -79,7 +79,12 @@ describe('compressDirectory', () => {
         summaryKind: string;
         summaryProvider?: string;
         tokenizer: { id: string; model: string; kind: string };
-        budget: { mode: string; tokensBefore: number; summaryTokens: number };
+        budget: {
+          mode: string;
+          summaryTokenBasis: string;
+          tokensBefore: number;
+          summaryTokens: number;
+        };
         summary?: string;
       };
       assert.deepEqual(manifest.archivedTurnIndices, [1, 2]);
@@ -95,6 +100,7 @@ describe('compressDirectory', () => {
         kind: 'heuristic-fallback',
       });
       assert.equal(manifest.budget.mode, 'legacy-threshold');
+      assert.equal(manifest.budget.summaryTokenBasis, 'actual');
       assert.equal(manifest.budget.tokensBefore, result.tokensBefore);
       assert.equal(manifest.budget.summaryTokens, manifest.summaryTokenCount);
       assert.equal('summary' in manifest, false);
@@ -284,7 +290,9 @@ describe('compressDirectory', () => {
       assert.equal(actual.turnsArchived, dryRun.turnsArchived);
       assert.equal(actual.turnsKept, dryRun.turnsKept);
       assert.equal(actual.tokensBefore, dryRun.tokensBefore);
-      assert.equal(actual.tokensAfter, dryRun.tokensAfter);
+      assert.ok(actual.tokensAfter <= dryRun.tokensAfter);
+      assert.equal(dryRun.budget.summaryTokenBasis, 'upper-bound');
+      assert.equal(actual.budget.summaryTokenBasis, 'actual');
       assert.equal(actual.summaryIdx, dryRun.summaryIdx);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
@@ -325,7 +333,9 @@ describe('compressDirectory', () => {
       assert.equal(actual.compressed, true);
       assert.equal(actual.turnsArchived, dryRun.turnsArchived);
       assert.equal(actual.tokensBefore, dryRun.tokensBefore);
-      assert.equal(actual.tokensAfter, dryRun.tokensAfter);
+      assert.ok(actual.tokensAfter <= dryRun.tokensAfter);
+      assert.equal(dryRun.budget.summaryTokenBasis, 'upper-bound');
+      assert.equal(actual.budget.summaryTokenBasis, 'actual');
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

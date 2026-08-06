@@ -59,6 +59,37 @@ const semanticOptions = (summaryProvider: SemanticSummaryProvider) => ({
 });
 
 describe('semantic summary generation', () => {
+  it('plans a dry-run without invoking the provider', async () => {
+    const root = makeConversation();
+    const before = snapshot(root);
+    let calls = 0;
+    try {
+      const result = await compressDirectory({
+        directory: root,
+        threshold: 0,
+        keepRecent: 1,
+        dryRun: true,
+        summary: semanticOptions(
+          provider(async () => {
+            calls += 1;
+            return expectedDocument();
+          })
+        ),
+      });
+
+      assert.equal(result.skipReason, 'dry_run');
+      assert.equal(calls, 0);
+      assert.equal(result.budget.summaryTokenBasis, 'upper-bound');
+      assert.equal(
+        result.budget.summaryTokens,
+        result.budget.summaryOutputLimitTokens
+      );
+      assert.deepEqual(snapshot(root), before);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('normalizes artifacts, renders sourced context, and restores exact bytes', async () => {
     const root = makeConversation();
     const before = snapshot(root);

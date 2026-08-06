@@ -116,7 +116,8 @@ export const createBudgetReport = (
   tokenizer: TokenizerAdapter,
   tokensBefore: number,
   keptHistoryTokens: number,
-  summaryTokens: number
+  summaryTokens: number,
+  summaryTokenBasis: ContextBudgetReport['summaryTokenBasis'] = 'actual'
 ): ContextBudgetReport => {
   const totalPlannedTokens =
     budget.systemToolOverheadTokens +
@@ -126,6 +127,7 @@ export const createBudgetReport = (
     budget.safetyMarginTokens;
   return {
     mode: budget.mode,
+    summaryTokenBasis,
     tokenizer: {
       id: tokenizer.id,
       model: tokenizer.model,

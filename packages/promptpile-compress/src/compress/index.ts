@@ -13,7 +13,7 @@ import {
   restoreArchivedTurnsWithLockHeld,
 } from '../restore';
 import {
-  LIFECYCLE_LOCK_FILE,
+  removeDirectoryLifecycleLockFiles,
   withDirectoryLifecycleLock,
 } from '../lifecycle/lock';
 import {
@@ -339,6 +339,9 @@ const commitStaging = async (
 const toPlannedOutcome = (
   result: CompressResult
 ): 'compressed' | 'below_threshold' | 'no_turns_to_compress' => {
+  if (result.dryRunPlan) {
+    return result.dryRunPlan.outcome;
+  }
   if (result.compressed) {
     return 'compressed';
   }
@@ -365,16 +368,18 @@ const simulateLifecycleDryRun = async (
     const generation = await captureConversationGeneration(directory);
     await fs.cp(directory, simulationDirectory, { recursive: true });
     await assertConversationGeneration(directory, generation);
-    await fs.rm(path.join(simulationDirectory, LIFECYCLE_LOCK_FILE), {
-      force: true,
-    });
+    await removeDirectoryLifecycleLockFiles(simulationDirectory);
 
-    const simulated = await compressDirectory({
-      ...options,
-      directory: simulationDirectory,
-      dryRun: false,
-      mutationHook: undefined,
-    });
+    const simulated = await compressDirectoryWithLockHeld(
+      {
+        ...options,
+        directory: simulationDirectory,
+        dryRun: false,
+        mutationHook: undefined,
+      },
+      simulationDirectory,
+      { planOnly: true }
+    );
 
     return {
       compressed: false,
@@ -402,11 +407,13 @@ const simulateLifecycleDryRun = async (
 
 const compressDirectoryWithLockHeld = async (
   options: CompressOptions,
-  directory: string
+  directory: string,
+  internal: { planOnly?: boolean } = {}
 ): Promise<CompressResult> => {
   const keepRecent = options.keepRecent ?? DEFAULT_KEEP_RECENT;
   const strategyKind = options.strategy ?? DEFAULT_STRATEGY;
   const dryRun = options.dryRun === true;
+  const planOnly = dryRun || internal.planOnly === true;
   const tokenizer = options.tokenizer ?? heuristicTokenizer;
   assertTokenizerAdapter(tokenizer);
   const contextBudget = resolveContextBudget(options);
@@ -544,30 +551,20 @@ const compressDirectoryWithLockHeld = async (
   }
 
   const summaryGenerator = createSummaryGenerator(options.summary);
-  const summary = await summaryGenerator.generateSummary(archive, {
-    tokenizer,
-    maxOutputTokens: contextBudget.summaryOutputLimitTokens,
-  });
-  await assertConversationGeneration(directory, generation);
   const summaryIdx = Math.max(...archive.map((turn) => turn.idx));
-  const summaryTokens =
-    estimateTextTokens(summary, tokenizer) + tokenizer.messageOverheadTokens;
-  if (summaryTokens > contextBudget.summaryOutputLimitTokens) {
-    throw new Error(
-      `summary output exceeds context budget: ${summaryTokens} > ${contextBudget.summaryOutputLimitTokens}`
-    );
-  }
   const keptHistoryTokens = estimateTotalTokens(keep);
-  const tokensAfter = keptHistoryTokens + summaryTokens;
-  const budgetReport = createBudgetReport(
-    contextBudget,
-    tokenizer,
-    tokensBefore,
-    keptHistoryTokens,
-    summaryTokens
-  );
 
-  if (dryRun) {
+  if (planOnly) {
+    const summaryTokens = contextBudget.summaryOutputLimitTokens;
+    const tokensAfter = keptHistoryTokens + summaryTokens;
+    const budgetReport = createBudgetReport(
+      contextBudget,
+      tokenizer,
+      tokensBefore,
+      keptHistoryTokens,
+      summaryTokens,
+      'upper-bound'
+    );
     return {
       compressed: false,
       skipReason: 'dry_run',
@@ -590,6 +587,27 @@ const compressDirectoryWithLockHeld = async (
       },
     };
   }
+
+  const summary = await summaryGenerator.generateSummary(archive, {
+    tokenizer,
+    maxOutputTokens: contextBudget.summaryOutputLimitTokens,
+  });
+  await assertConversationGeneration(directory, generation);
+  const summaryTokens =
+    estimateTextTokens(summary, tokenizer) + tokenizer.messageOverheadTokens;
+  if (summaryTokens > contextBudget.summaryOutputLimitTokens) {
+    throw new Error(
+      `summary output exceeds context budget: ${summaryTokens} > ${contextBudget.summaryOutputLimitTokens}`
+    );
+  }
+  const tokensAfter = keptHistoryTokens + summaryTokens;
+  const budgetReport = createBudgetReport(
+    contextBudget,
+    tokenizer,
+    tokensBefore,
+    keptHistoryTokens,
+    summaryTokens
+  );
 
   await prepareStaging(
     directory,

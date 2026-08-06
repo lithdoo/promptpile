@@ -200,6 +200,12 @@ const createSemanticGenerator = (
 ): SummaryGenerator => {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   assertPositiveInteger('summary.timeoutMs', timeoutMs);
+  if (options.maxInputTokens !== undefined) {
+    assertPositiveInteger('summary.maxInputTokens', options.maxInputTokens);
+  }
+  if (options.maxOutputTokens !== undefined) {
+    assertPositiveInteger('summary.maxOutputTokens', options.maxOutputTokens);
+  }
   if (!options.provider || typeof options.provider.summarize !== 'function') {
     throw new Error('semantic summary requires a provider');
   }

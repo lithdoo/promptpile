@@ -6,7 +6,7 @@ import { describe, it } from 'node:test';
 import { compressDirectory } from '../compress';
 import { recover, restoreArchivedTurns } from '../restore';
 import { STAGING_DIR } from '../restore/scanner';
-import { LIFECYCLE_LOCK_FILE } from './lock';
+import { isLifecycleLockFileName } from './lock';
 import type {
   LifecycleMutationHook,
   LifecycleMutationPoint,
@@ -14,6 +14,9 @@ import type {
 
 const makeRoot = (): string =>
   fs.mkdtempSync(path.join(os.tmpdir(), 'ppc-safety-'));
+
+const hasLifecycleLock = (root: string): boolean =>
+  fs.readdirSync(root).some(isLifecycleLockFileName);
 
 const writeConversation = (root: string): void => {
   fs.writeFileSync(path.join(root, '[0]system.md'), 'system');
@@ -86,7 +89,7 @@ describe('lifecycle mutation safety', () => {
       release();
       const result = await first;
       assert.equal(result.compressed, true);
-      assert.equal(fs.existsSync(path.join(root, LIFECYCLE_LOCK_FILE)), false);
+      assert.equal(hasLifecycleLock(root), false);
     } finally {
       release();
       fs.rmSync(root, { recursive: true, force: true });

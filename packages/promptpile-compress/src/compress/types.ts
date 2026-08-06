@@ -46,6 +46,8 @@ export interface ContextBudgetOptions {
 
 export interface ContextBudgetReport {
   mode: 'context-budget' | 'legacy-threshold';
+  /** Whether summaryTokens is measured output or a planning upper bound. */
+  summaryTokenBasis: 'actual' | 'upper-bound';
   tokenizer: Pick<TokenizerAdapter, 'id' | 'model' | 'kind'>;
   modelContextTokens?: number;
   reservedOutputTokens: number;
@@ -155,7 +157,7 @@ export interface CompressResult {
   turnsKept: number;
   /** Estimated tokens across all live turns before compression. */
   tokensBefore: number;
-  /** Estimated tokens across kept live turns plus the new summary. */
+  /** Kept live tokens plus the actual summary or dry-run summary upper bound. */
   tokensAfter: number;
   /** Estimated tokens across non-system turns eligible for selection. */
   compressibleTokens?: number;

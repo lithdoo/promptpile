@@ -8,7 +8,7 @@
 
 Context lifecycle filesystem gate 支持 Node 18 与 Node 22，并在
 `ubuntu-latest`、`windows-latest` 上运行。矩阵覆盖 lock、same-host stale
-lock recovery、atomic rename、POSIX directory fsync 分支、Windows
+lock recovery、唯一锁并发清理、atomic rename、POSIX directory fsync 分支、Windows
 same-directory rename、故障注入恢复、producer/consumer integration。
 
 ## 必须通过的命令
@@ -33,6 +33,8 @@ npm run benchmark -w promptpile-compress
 - `threshold` 是互斥的兼容入口；新集成使用 context budget。
 - 自动化 completion 必须通过 `runCompressionBeforeCompletion` 排队；手动
   compress/restore 入口不构成 orchestrator 调度协议。
+- dry-run / estimate plan 不调用 semantic summary provider；实际 compress phase
+  每次最多调用一次。规划预算用 `upper-bound`、提交预算用 `actual` 标识 summary token 依据。
 - operation report 只包含 idx、计数、阶段、预算、commit state 与稳定错误码，
   不记录 message、tool result 或 provider 原始错误正文。
 - package 继续保持 `private` / `experimental`，直到 grep query surface、迁移策略

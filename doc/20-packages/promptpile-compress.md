@@ -52,9 +52,9 @@ await compressDirectory({
 
 `summarize(request, signal)` 必须返回公开 `SemanticSummaryDocument` 结构；调用方负责模型选择、凭据和网络行为。
 
-默认 tokenizer 是明确标记为 fallback 的 `heuristicTokenizer`。需要按模型精确计数时使用 `await createTiktokenTokenizer(model)`，并在完成后调用 `dispose()`。`CompressResult.budget` 解释 trigger、压缩前 tokens、kept history、summary、固定开销、completion 预留、safety margin、总计划占用与剩余 context。旧 `threshold` 仍可单独使用，但不能和 `budget` 组合。
+默认 tokenizer 是明确标记为 fallback 的 `heuristicTokenizer`。需要按模型精确计数时使用 `await createTiktokenTokenizer(model)`，并在完成后调用 `dispose()`。`CompressResult.budget` 解释 trigger、压缩前 tokens、kept history、summary、固定开销、completion 预留、safety margin、总计划占用与剩余 context；`summaryTokenBasis` 区分真实执行的 `actual` 与 dry-run 的保守 `upper-bound`。旧 `threshold` 仍可单独使用，但不能和 `budget` 组合。
 
-Orchestrator 应调用 `runCompressionBeforeCompletion({ compression, completion })`。它按目录串行 plan → acquire → compress → release → completion，并返回包含 phase、recovery、selection、budget、commit 与稳定错误码的 `CompressionOperationReport`；报告不会记录 conversation 正文或 provider 原始错误。
+Orchestrator 应调用 `runCompressionBeforeCompletion({ compression, completion })`。它按目录串行 plan → acquire → compress → release → completion：plan 只计算待归档 selection 并使用 summary token 上限，不调用 semantic provider；provider 仅在实际 compress phase 调用一次。返回的 `CompressionOperationReport` 包含 phase、recovery、selection、budget、commit 与稳定错误码，不记录 conversation 正文或 provider 原始错误。
 
 `promptpile-compress` 不实现或拥有：
 

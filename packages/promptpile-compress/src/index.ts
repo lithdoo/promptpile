@@ -149,7 +149,7 @@ export const parseCli = async (argv = process.argv): Promise<number> => {
           }
 
           console.log(
-            `预算: mode=${result.budget.mode}, tokenizer=${result.budget.tokenizer.id}/${result.budget.tokenizer.model}, before=${result.budget.tokensBefore}, kept=${result.budget.keptHistoryTokens}, summary=${result.budget.summaryTokens}, fixed=${result.budget.systemToolOverheadTokens}, reserved=${result.budget.reservedOutputTokens}, safety=${result.budget.safetyMarginTokens}, total=${result.budget.totalPlannedTokens}`
+            `预算: mode=${result.budget.mode}, tokenizer=${result.budget.tokenizer.id}/${result.budget.tokenizer.model}, before=${result.budget.tokensBefore}, kept=${result.budget.keptHistoryTokens}, summary=${result.budget.summaryTokens}(${result.budget.summaryTokenBasis}), fixed=${result.budget.systemToolOverheadTokens}, reserved=${result.budget.reservedOutputTokens}, safety=${result.budget.safetyMarginTokens}, total=${result.budget.totalPlannedTokens}`
           );
 
           if (!result.compressed) {

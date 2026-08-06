@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, it } from 'node:test';
 import { runCompressionBeforeCompletion } from '../compress';
-import { LIFECYCLE_LOCK_FILE } from './lock';
+import { isLifecycleLockFileName } from './lock';
 import { STAGING_DIR } from '../restore/scanner';
 
 const makeConversation = (): string => {
@@ -12,6 +12,22 @@ const makeConversation = (): string => {
   fs.writeFileSync(path.join(root, '[1]user.md'), 'question');
   return root;
 };
+
+const hasLifecycleLock = (root: string): boolean =>
+  fs.readdirSync(root).some(isLifecycleLockFileName);
+
+const semanticDocument = (sourceTurnIndex: number) => ({
+  version: 1,
+  goal: [{ text: 'Retain the active goal.', sourceTurnIndices: [sourceTurnIndex] }],
+  stableFacts: [],
+  constraints: [],
+  decisions: [],
+  importantToolFindings: [],
+  completedWork: [],
+  unresolvedWork: [],
+  failedApproaches: [],
+  nextActions: [],
+});
 
 describe('compression orchestrator boundary', () => {
   it('returns a structured I/O error for an invalid directory', async () => {
@@ -37,10 +53,7 @@ describe('compression orchestrator boundary', () => {
       const result = await runCompressionBeforeCompletion({
         compression: { directory: root, threshold: 10_000 },
         completion: async () => {
-          assert.equal(
-            fs.existsSync(path.join(root, LIFECYCLE_LOCK_FILE)),
-            false
-          );
+          assert.equal(hasLifecycleLock(root), false);
           return 'completed';
         },
       });
@@ -110,6 +123,7 @@ describe('compression orchestrator boundary', () => {
   it('returns actionable sanitized errors without running completion', async () => {
     const root = makeConversation();
     let completionCalled = false;
+    let providerCalls = 0;
     try {
       const result = await runCompressionBeforeCompletion({
         compression: {
@@ -121,6 +135,7 @@ describe('compression orchestrator boundary', () => {
             provider: {
               id: 'failing-provider',
               summarize: async () => {
+                providerCalls += 1;
                 throw new Error('SECRET CONVERSATION PAYLOAD');
               },
             },
@@ -135,6 +150,16 @@ describe('compression orchestrator boundary', () => {
       assert.equal(result.report.error?.retryable, true);
       assert.doesNotMatch(JSON.stringify(result.report), /SECRET/);
       assert.equal(completionCalled, false);
+      assert.equal(providerCalls, 1);
+      assert.deepEqual(
+        result.report.phases.map(({ phase, status }) => ({ phase, status })),
+        [
+          { phase: 'estimate_plan', status: 'completed' },
+          { phase: 'acquire_exclusive', status: 'completed' },
+          { phase: 'compress', status: 'failed' },
+          { phase: 'release_exclusive', status: 'completed' },
+        ]
+      );
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -142,19 +167,37 @@ describe('compression orchestrator boundary', () => {
 
   it('includes recovery actions in the operation report', async () => {
     const root = makeConversation();
+    let providerCalls = 0;
     const staging = path.join(root, STAGING_DIR);
     fs.mkdirSync(staging);
     fs.renameSync(path.join(root, '[1]user.md'), path.join(staging, '[1]user.md'));
     fs.writeFileSync(path.join(staging, 'compression.json'), '{}');
     try {
       const result = await runCompressionBeforeCompletion({
-        compression: { directory: root, threshold: 10_000 },
+        compression: {
+          directory: root,
+          threshold: 0,
+          keepRecent: 0,
+          summary: {
+            kind: 'semantic',
+            provider: {
+              id: 'counting-provider',
+              summarize: async () => {
+                providerCalls += 1;
+                return semanticDocument(1);
+              },
+            },
+          },
+        },
         completion: async () => 'ok',
       });
       assert.equal(result.ok, true);
       assert.deepEqual(result.report.recoveryActions, ['[1]user.md']);
+      assert.equal(providerCalls, 1);
+      assert.equal(result.report.plan?.budget.summaryTokenBasis, 'upper-bound');
+      assert.equal(result.report.budget?.summaryTokenBasis, 'actual');
       assert.equal(fs.existsSync(staging), false);
-      assert.equal(fs.existsSync(path.join(root, '[1]user.md')), true);
+      assert.equal(fs.existsSync(path.join(root, '[1]system.md.archive')), true);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
