@@ -41,7 +41,7 @@
 
 已完成的大型 migration plan 不继续作为当前架构主入口。当前结论进入 architecture/contracts/package docs；决策原因进 ADR；完整计划进入 archive 或明确标记 Legacy。
 
-仓库根 `CLI_ARCHITECTURE_PLAN.md` 当前作为本轮迁移历史资料保留；现行边界以本文档站为准。
+已完成的 CLI boundary migration plan 保留在 Git 历史中；现行边界以 architecture、contracts、package docs 与 ADR 为准。
 
 ## 6. VitePress
 
