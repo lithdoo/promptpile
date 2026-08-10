@@ -3,9 +3,11 @@
 > 类型：package  
 > 状态：Beta
 > 主要职责：conversation compression / archive commit / restore / recovery / semantic compaction  
-> 最近复核：2026-08-06
+> 最近复核：2026-08-10
 
 `promptpile-compress` 独立处理 Promptpile conversation directory，当前以 `0.1.0-beta.0` 公开预发布。它是 [Context Lifecycle System](../10-architecture/context-lifecycle-system.md) 中负责**有副作用 lifecycle mutation** 的实现，也是 [Archive Protocol v1](../15-contracts/archive-protocol-v1.md) 当前 producer/restore implementation。
+
+Layered Conversation I/O 中只把 session output directory 交给 Compress/Restore。base/reference 输入层不参与同一个压缩事务；archive、summary、staging、lock 和 recovery 全部保持在 output directory 内。回归测试验证 compress → restore 后 output byte-for-byte 恢复，同时只读 base layer 不变。
 
 当前已经实现：
 

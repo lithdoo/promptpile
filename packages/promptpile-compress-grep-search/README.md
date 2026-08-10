@@ -53,17 +53,19 @@ const turn = await readArchivedTurn(directory, 12, {
 CLI：
 
 ```bash
-promptpile-archive list -d ./messages
-promptpile-archive search -d ./messages "postgres migration"
-promptpile-archive read -d ./messages 12
+promptpile-archive list -d ./session-conversation
+promptpile-archive search -d ./session-conversation "postgres migration"
+promptpile-archive read -d ./session-conversation 12
 ```
+
+在 layered Conversation I/O 中，`-d` 应明确指向需要查询的单个 physical directory，通常是产生 archive 的 session output directory。本包不会跨 base/reference/output layers 联合发现 archive；切换目录必须由调用方显式完成。
 
 三个命令均支持 `--json` machine envelope；search 还支持 `--limit`、可重复 `--role`、`--case-sensitive` 和 tool-result include/exclude flags。
 
 MCP：
 
 ```bash
-promptpile-archive mcp -d ./messages
+promptpile-archive mcp -d ./session-conversation
 ```
 
 stdio server 只暴露三个 read-only tool：无参数的 `list_archives`、`search_archive` 和 `read_archived_turn`。conversation directory 在 server 启动时固定，不属于 tool input；tool 结果使用与 CLI 相同的 JSON success/failure envelope。MCP stdout 专用于协议帧，诊断信息只能写 stderr。

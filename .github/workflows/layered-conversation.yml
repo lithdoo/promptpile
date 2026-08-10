@@ -1,0 +1,44 @@
+name: Layered Conversation I/O
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract-matrix:
+    name: Node 22 / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install layered I/O packages
+        run: >-
+          npm ci --ignore-scripts
+          --workspace=promptpile
+          --workspace=promptpile-react
+          --workspace=promptpile-mcp
+
+      - name: Test core layered Conversation contract
+        run: npm test -w promptpile
+
+      - name: Test React phase inheritance
+        run: npm test -w promptpile-react
+
+      - name: Test output-local tool execution
+        run: npm test -w promptpile-mcp

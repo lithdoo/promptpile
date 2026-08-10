@@ -32,7 +32,8 @@ const defaultHookFilenames = (): string[] =>
 
 /**
  * Resolve which hook script to run: CLI path (relative cwd) > TOML path (relative scan dir).
- * Default names in the scan directory are considered only with explicit CLI opt-in.
+ * `scanAbs` is the conversation anchor. Default names there are considered only
+ * with explicit CLI opt-in.
  */
 export const resolveAfterHookScript = (options: {
   cwd: string;
@@ -90,6 +91,8 @@ const callsPathForMainOutput = (resolvedMainPath: string): string => {
 
 export const buildPromptpileHookEnv = (params: {
   scanAbs: string;
+  inputDirectories: string[];
+  outputDirectory?: string;
   resolvedOutput?: string;
   toolCalls: ToolCall[] | undefined;
   model: string;
@@ -105,6 +108,8 @@ export const buildPromptpileHookEnv = (params: {
 }): NodeJS.ProcessEnv => {
   const {
     scanAbs,
+    inputDirectories,
+    outputDirectory,
     resolvedOutput,
     toolCalls,
     model,
@@ -121,7 +126,9 @@ export const buildPromptpileHookEnv = (params: {
       : '';
   return {
     ...process.env,
-    PROMPTPILE_SCAN_DIRECTORY: scanAbs,
+    PROMPTPILE_SCAN_DIRECTORY: inputDirectories.length === 1 ? scanAbs : '',
+    PROMPTPILE_INPUT_DIRECTORIES_JSON: JSON.stringify(inputDirectories),
+    PROMPTPILE_OUTPUT_DIRECTORY: outputDirectory ?? '',
     PROMPTPILE_OUTPUT_FILE: resolvedOutput ?? '',
     PROMPTPILE_CALLS_FILE: callsPath,
     PROMPTPILE_ASSISTANT_MD_FILE: continueMdPath ?? '',

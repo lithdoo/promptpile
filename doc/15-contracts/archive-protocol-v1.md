@@ -119,6 +119,8 @@ Archive Protocol
 - Retrieval consumer 是 **read-only**：不得修改 archive、manifest 或 archived message files。
 - Consumer 不得 import `promptpile-compress` 私有源码、`dist/*` 或内部 TypeScript types 作为协议替代品。
 
+Layered Conversation I/O 中，producer/restore 的 lifecycle root 是调用方明确传入的单个 directory，通常为 session output directory。Consumer 同样一次选择一个明确 directory；Archive Protocol 不定义跨 Conversation layers 的联合 discovery、排序或查询。
+
 ## 6. Derived indexes
 
 全文索引、embedding、vector index、cache 等属于可再生 derived state，不是 authoritative archive。Consumer SHOULD 把这些数据放在 archive 目录之外，并能在索引丢失时从 Archive Protocol 重建。

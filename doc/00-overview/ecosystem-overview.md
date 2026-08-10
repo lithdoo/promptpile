@@ -4,7 +4,7 @@
 > 状态：Active Design  
 > 稳定程度：Evolving  
 > 主要定义：Promptpile ecosystem 的能力分区  
-> 最近复核：2026-08-05
+> 最近复核：2026-08-10
 
 ```text
                      Orchestration
@@ -47,3 +47,16 @@
 | Tool implementations | `agent-lite-tools/*` | file/search/shell/web 等通用工具能力 |
 
 跨组件共享的是公开 CLI 与 versioned artifacts，而不是彼此的私有实现。Conversation、Archive、tool artifacts 与 `.tools.toml` 的互操作定义集中在 [15 · 正式契约](../15-contracts/README.md)。
+
+## Layered Conversation I/O 的生态边界
+
+```text
+base/context layers (read-only) ──┐
+                                  ├─► Promptpile completion
+session output (read/write) ──────┘          │
+                                             ├─ calls/result: promptpile-mcp
+                                             ├─ compress/restore: promptpile-compress
+                                             └─ archive read/search: promptpile-archive
+```
+
+只有 `promptpile` / orchestrator 组合有序输入 layers。生态 consumer 不继承“联合多目录”能力：MCP executor 接收 output 中的精确 calls 文件或单个 output directory；Compress/Restore 以 output 为完整生命周期边界；Archive Search 查询调用方明确指定的一个 Conversation Directory。

@@ -7,9 +7,9 @@
 #   PROMPTPILE_MCP_TOKEN     可选，与 launch [gateway].token 一致
 #
 # promptpile 注入变量（见 ../../promptpile/src/after-hook.ts buildPromptpileHookEnv）：
-#   PROMPTPILE_SCAN_DIRECTORY   消息目录绝对路径
-#   PROMPTPILE_HAS_TOOL_CALLS    本次是否有 tool_calls（'1' / '0'）
-#   PROMPTPILE_CALLS_FILE       主输出旁 *.calls.jsonl（若有）
+#   PROMPTPILE_HAS_TOOL_CALLS       本次是否有 tool_calls（'1' / '0'）
+#   PROMPTPILE_ASSISTANT_CALL_FILE  --continue 写入 output directory 的 calls 绝对路径
+#   PROMPTPILE_CALLS_FILE           -o 主输出旁 *.calls.jsonl（若有）
 
 set -euo pipefail
 
@@ -22,13 +22,16 @@ if [[ "${PROMPTPILE_HAS_TOOL_CALLS:-0}" != "1" ]]; then
   exit 0
 fi
 
-SCAN="${PROMPTPILE_SCAN_DIRECTORY:-}"
-if [[ -z "$SCAN" ]]; then
-  echo "promptpile-mcp after-hook example: PROMPTPILE_SCAN_DIRECTORY empty, skip" >&2
+CALLS="${PROMPTPILE_ASSISTANT_CALL_FILE:-}"
+if [[ -z "$CALLS" ]]; then
+  CALLS="${PROMPTPILE_CALLS_FILE:-}"
+fi
+if [[ -z "$CALLS" ]]; then
+  echo "promptpile-mcp after-hook example: no calls artifact path, skip" >&2
   exit 0
 fi
 
-ARGS=(exec-calls --base-url "$PROMPTPILE_MCP_BASE_URL" --dir "$SCAN")
+ARGS=(exec-calls --base-url "$PROMPTPILE_MCP_BASE_URL" --input "$CALLS")
 if [[ -n "${PROMPTPILE_MCP_TOKEN:-}" ]]; then
   ARGS+=(--token "$PROMPTPILE_MCP_TOKEN")
 fi

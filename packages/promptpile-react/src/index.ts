@@ -55,7 +55,12 @@ async function runInputMode(
     }
 
     try {
-      await appendUserFromTerminal(spawn, config.directoryAbs, userContent, config.cwd);
+      await appendUserFromTerminal(
+        spawn,
+        config.outputDirectoryAbs ?? config.directoryAbs,
+        userContent,
+        config.cwd
+      );
       reactDebugLog('inputRound userAppended');
     } catch (e) {
       console.error('Error:', e instanceof Error ? e.message : e);

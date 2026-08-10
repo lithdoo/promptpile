@@ -212,9 +212,12 @@ promptpile 在运行结束时可执行钩子脚本，并向子进程注入环境
 
 | 变量（promptpile 注入） | 含义 |
 |-------------------------|------|
-| **`PROMPTPILE_SCAN_DIRECTORY`** | 扫描目录（消息目录）绝对路径 |
+| **`PROMPTPILE_INPUT_DIRECTORIES_JSON`** | canonical 有效输入层数组；含末尾 output layer |
+| **`PROMPTPILE_OUTPUT_DIRECTORY`** | 唯一 Conversation 写入目录；纯只读调用时为空 |
+| **`PROMPTPILE_SCAN_DIRECTORY`** | 单层兼容路径；多层时为空且已 deprecated |
 | **`PROMPTPILE_HAS_TOOL_CALLS`** | 本次输出是否含 **`tool_calls`**：`1` / `0` |
-| **`PROMPTPILE_CALLS_FILE`** | 主输出旁 **`*.calls.jsonl`** 路径（有调用时；否则为空） |
+| **`PROMPTPILE_ASSISTANT_CALL_FILE`** | `--continue` 写入 output directory 的精确 Conversation calls 路径 |
+| **`PROMPTPILE_CALLS_FILE`** | `-o` 主输出旁普通 **`*.calls.jsonl`** 路径；不是 Conversation calls |
 | **`PROMPTPILE_OUTPUT_FILE`** | 主输出文件路径 |
 
 | 变量（自建，示例脚本约定） | 含义 |
@@ -222,9 +225,11 @@ promptpile 在运行结束时可执行钩子脚本，并向子进程注入环境
 | **`PROMPTPILE_MCP_BASE_URL`** | 已运行的 **`launch`** 网关根 URL，例如 **`http://127.0.0.1:8765`** |
 | **`PROMPTPILE_MCP_TOKEN`** | 可选，与 **`mcp.toml`** **`[gateway].token`** 一致 |
 
-示例 Bash 脚本（可复制到项目根并 **`chmod +x`**，或在 promptpile 配置里指向该路径）：[`docs/after-hook.example.sh`](./docs/after-hook.example.sh)。逻辑：若 **`PROMPTPILE_HAS_TOOL_CALLS=1`** 且 **`PROMPTPILE_MCP_BASE_URL`** 已设置，则 **`exec-calls --dir "$PROMPTPILE_SCAN_DIRECTORY"`**。
+示例 Bash 脚本（可复制到项目根并 **`chmod +x`**，或在 promptpile 配置里指向该路径）：[`docs/after-hook.example.sh`](./docs/after-hook.example.sh)。逻辑：若 **`PROMPTPILE_HAS_TOOL_CALLS=1`** 且 **`PROMPTPILE_MCP_BASE_URL`** 已设置，优先执行 **`exec-calls --input "$PROMPTPILE_ASSISTANT_CALL_FILE"`**；普通 `-o` 场景回退到 `PROMPTPILE_CALLS_FILE`。精确单文件模式保证 result 写回 calls 的同目录 sibling，不会扫描其它 Conversation layer。
 
 **Windows（PowerShell）**：可在钩子中设置 **`$env:PROMPTPILE_MCP_BASE_URL='http://127.0.0.1:8765'`** 后调用 **`npx promptpile-mcp exec-calls ...`**；环境变量名与 Bash 相同。
+
+Layered Conversation I/O 不让 `exec-calls --dir` 接受多个目录。目录模式应明确指向 output directory；after-hook 更推荐使用上述精确 calls 文件。`check --input` 同样只检查该 calls 文件及其同目录 result。
 
 ---
 

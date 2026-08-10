@@ -28,6 +28,17 @@ Protocol directory and can be restored byte-for-byte. Cooperating lifecycle
 writers use a per-directory lock, and dry-run planning never invokes an
 external semantic-summary provider.
 
+For layered Conversation I/O, pass only the writable output directory. Input
+layers are immutable context and are not part of a joint compression lifecycle:
+
+```bash
+promptpile-compress compress -d ./session-conversation
+promptpile-compress restore -d ./session-conversation
+```
+
+Compression, archives, summaries, recovery state, and locks remain local to
+that one physical directory.
+
 ## API
 
 ```js

@@ -32,7 +32,7 @@ const appendLlm = (
 };
 
 export interface BuildPhaseArgvOptions {
-  /** 覆盖 `-d` 扫描目录（check 阶段使用空临时目录）。 */
+  /** Override every Conversation directory (Check uses one empty temporary directory). */
   directoryOverride?: string;
 }
 
@@ -45,8 +45,17 @@ export const buildPhaseArgv = (
   config: ResolvedReactConfig,
   options?: BuildPhaseArgvOptions
 ): string[] => {
-  const directory = options?.directoryOverride ?? config.directoryAbs;
-  const argv: string[] = ['-d', directory];
+  const isolatedDirectory = options?.directoryOverride;
+  const directories = isolatedDirectory === undefined
+    ? config.inputDirectoriesAbs ?? [config.directoryAbs]
+    : [isolatedDirectory];
+  const argv: string[] = [];
+  for (const directory of directories) {
+    argv.push('-d', directory);
+  }
+  if (isolatedDirectory === undefined && config.outputDirectoryAbs !== undefined) {
+    argv.push('--output-dir', config.outputDirectoryAbs);
+  }
   const llm = config.phases[phase];
   appendLlm(argv, config.configPath, llm);
 

@@ -29,6 +29,10 @@ export interface PromptpileCommandHandlers {
 
 export const buildProgram = (handlers?: PromptpileCommandHandlers): Command => {
   const program = new Command();
+  const collectDirectory = (value: string, previous: string[]): string[] => [
+    ...previous,
+    value
+  ];
   program
     .name('promptpile')
     .description('Assemble message files and call Chat Completions APIs')
@@ -37,7 +41,13 @@ export const buildProgram = (handlers?: PromptpileCommandHandlers): Command => {
     .option('--config <path>', 'TOML config file path (relative to cwd)')
     .option('--llm-config <path>', 'TOML file used only as the [[llm_api]] profile database')
     .option('--llm-api <name>', 'Select a named [[llm_api]] profile')
-    .option('-d, --directory <path>', 'Directory to scan for files')
+    .option(
+      '-d, --directory <path>',
+      'Conversation input directory; repeat to add ordered layers',
+      collectDirectory,
+      []
+    )
+    .option('--output-dir <path>', 'Unique writable Conversation directory')
     .option('-m, --model <model>', 'AI model to use')
     .option('-k, --api-key <key>', 'AI API key')
     .option('--api-key-env <name>', 'Read the AI API key from this environment variable')
@@ -77,7 +87,7 @@ export const buildProgram = (handlers?: PromptpileCommandHandlers): Command => {
     )
     .option(
       '--allow-default-after-hook',
-      'Allow discovery of a default .after-hook script in the scan directory'
+      'Allow discovery of a default .after-hook script at the conversation anchor'
     )
     .option(
       '--tool-choice <value>',
@@ -114,7 +124,8 @@ export const parseCli = (argv: string[]): CliParseResult => {
     config?: string;
     llmConfig?: string;
     llmApi?: string;
-    directory?: string;
+    directory?: string[];
+    outputDir?: string;
     model?: string;
     apiKey?: string;
     apiKeyEnv?: string;
@@ -191,13 +202,28 @@ export const parseCli = (argv: string[]): CliParseResult => {
   }
   const missingToolResults = parseMissingToolResultsPolicy(options.missingToolResults);
 
+  const inputDirectories = options.directory?.map((value, index) => {
+    const directory = value.trim();
+    if (directory === '') {
+      throw new Error(`--directory value at position ${index + 1} must not be empty`);
+    }
+    return directory;
+  });
+  const rawOutputDirectory = options.outputDir;
+  const outputDirectory = trimOpt(rawOutputDirectory);
+  if (rawOutputDirectory !== undefined && outputDirectory === undefined) {
+    throw new Error('--output-dir value must not be empty');
+  }
+
   return {
     configPath,
     llmConfigPath,
     llmApiName,
     apiKeyEnvName,
     options: {
-      directory: options.directory,
+      inputDirectories:
+        inputDirectories && inputDirectories.length > 0 ? inputDirectories : undefined,
+      outputDirectory,
       model: options.model,
       apiKey: options.apiKey,
       apiBaseUrl: options.apiBaseUrl,

@@ -1,6 +1,6 @@
 # promptpile
 
-将目录中的 Markdown / JSON 片段按顺序组装成 **OpenAI Chat Completions** 所需的消息列表（可选 `tools`、历史 `tool_calls` / `tool`），调用大模型 API 并输出回复。适合用「一个文件一条消息」的方式维护多轮对话上下文，再由命令行一键发起单次补全请求。
+将一个或多个有序目录中的 Markdown / JSON 片段组装成 **OpenAI Chat Completions** 所需的消息列表（可选 `tools`、历史 `tool_calls` / `tool`），调用大模型 API 并输出回复。适合用「一个文件一条消息」的方式维护多轮对话上下文，再由命令行一键发起单次补全请求。
 
 ---
 
@@ -27,7 +27,8 @@
 
 ## 功能概览
 
-- 只扫描指定消息目录的**根层文件**，读取符合命名规则的 `.md`、`.json`，以及可选的 `[idx]assistant.calls.jsonl` / `[idx]assistant.extra.json` / `[idx]assistant.result.jsonl`；子目录中的协议文件不会进入会话。
+- `-d/--directory` 可重复提供有序 Conversation layers；每层只扫描目录的**根层文件**，层内按 idx 排序后再按目录参数顺序串联。相同 idx、role 或 basename 不跨层冲突。
+- `--output-dir` 指定唯一可写 Conversation directory；它会自动创建、canonical 去重并作为最后输入层，`--input` / `--continue` 只写该目录。
 - **工具**：仅支持 **显式** 的 **`.toml`** 工具文件路径（`--tools-file` / 配置中的 `tools_file`），支持根表 **`extends`** 继承其它 toml；或使用 **`--disable-tool`** 不传 `tools`。不再支持 `.jsonl` 工具文件，也不在消息目录自动探测默认工具文件。
 - 按文件名中的 **序号** 与 **固定规则** 排序，拼成 Chat Completions 所需的 `messages`（含可选的 `tool_calls` 与 `tool` 消息）。
 - 通过 **`node-fetch`** 向兼容端点发起 `POST .../chat/completions` 请求（固定 **`stream: true`**）。
@@ -45,10 +46,10 @@
 2. 校验 **API Key** 是否存在；不存在则退出并提示错误。
 3. 若配置了 `-o` / TOML `output`，在发起请求前 **创建输出目录并校验可写**；失败则退出且不调用 API。
 4. 按 [工具文件解析规则](#工具定义与历史工具调用toolstoml--assistantcalls--assistantresult) 解析 `tools`（**仅**显式 `.toml`，可含 `extends`）；**在调用 API 之前**完成校验，非法则退出；`--disable-tool` 时请求体中 **省略** `tools` 字段。
-5. 读取配置 `directory` 的**直接子文件**（不进入子目录），收集：
+5. 依次读取配置 `inputDirectories` 中每个目录的**直接子文件**（不进入子目录），收集：
    - `^\[(\d+)\](.+?)\.(md|json)$`（扩展名不区分大小写）；
    - `^\[(\d+)\]assistant\.calls\.jsonl$`、`^\[(\d+)\]assistant\.extra\.json$`、`^\[(\d+)\]assistant\.result\.jsonl$`。
-6. 按序号 **升序** 组装 `messages`：先将根层文件按 **序号分组**，再在组内按固定顺序拼消息（见下节「序号与同一序号内的顺序」与 [工具章节](#工具定义与历史工具调用toolstoml--assistantcalls--assistantresult)）。
+6. 每个目录独立按序号 **升序** 组装 `messages`，再按 `-d` / TOML `dirs` 的顺序串联各层。calls/result 只在同一物理目录内配对（见下节「序号与同一序号内的顺序」与 [工具章节](#工具定义与历史工具调用toolstoml--assistantcalls--assistantresult)）。
 7. 若指定 **`insert_files` / `append_files`**（CLI：`--insert-files`、`--append-files`；TOML 见下表）：从各路径读取 **UTF-8** sidecar 文件（**相对路径相对当前工作目录**，与 `--tools-file` 一致）。多个路径用 **`|`** 分隔。每个文件的 **basename** 必须为 **`{name}.{role}.md`**（`name` 可含点，如 `react.core.system.md` → `role=system`）；`role` 仅允许 `system`、`user`、`assistant`。去除 BOM；`.md` 去 YAML front matter；trim 后 **仅空白** 则跳过该条。`insert_files` 按列表顺序 **插在** 扫描目录组装的 `messages` **之前**；`append_files` **追加在之后**。每条 sidecar 对应 **独立** 一条 API 消息（不与 `[idx]system.md` 合并）。文件不存在、不可读或命名非法则 **退出并报错**。sidecar 文件 **不会** 被 `scanDirectory` 当作 `[idx]role.md` 扫描。
 8. 合并 **`temperature`**：`--temperature` > `[promptpile].llm_api_temperature` > 所选 profile 的 `temperature` > 默认 `0.8`，并写入请求体。
 9. 合并可选 **`extra_body`**：`--extra-body` > `[promptpile].llm_api_extra_body` > 所选 profile 的 `extra_body`；TOML 为内联表，CLI 为 JSON 对象字符串；各层均未设置时不写入；合并后浅展开进请求体（可覆盖 `temperature` 等字段）。
@@ -172,7 +173,7 @@ npm start -- --help
 | 来源 | 含义 | 相对路径解析基准 |
 |------|------|------------------|
 | CLI `--tools-file <path>` | 入口 `.toml`（可含 `extends`） | **`process.cwd()`** |
-| TOML `tools_file` | 同上 | **扫描目录根**（`-d` 解析后的绝对路径） |
+| TOML `tools_file` | 同上 | **conversation anchor**（output 优先，否则最后输入层） |
 
 **优先级**：**`--tools-file`** > TOML `tools_file`。
 
@@ -365,7 +366,7 @@ API key 保留既有的 direct-key 优先语义：
 
 ### TOML（`--config`）
 
-- **`[promptpile]`**：与 `example.toml` 一致，如 `dir`、`output`（路径字符串）、`output_pile_file`、`output_pile_fd`、`output_pile_format`、`quiet`、`after_hook`、`tool_choice`、`tools_file`、`disable_tool`、`continue`、`input`、`insert_files`、`append_files`、`missing_tool_results`、`llm_api`、`llm_api_key`、`llm_api_key_env`、`llm_api_model`、`llm_api_base_url`、`llm_api_temperature`、`llm_api_extra_body`。旧名 `output_pipe` / `output_pipe_format` 仍兼容，新名优先。
+- **`[promptpile]`**：与 `example.toml` 一致，如有序目录数组 `dirs`（或兼容单值 `dir`）、Conversation 写入目录 `output_dir`、普通输出文件 `output`、`output_pile_file`、`output_pile_fd`、`output_pile_format`、`quiet`、`after_hook`、`tool_choice`、`tools_file`、`disable_tool`、`continue`、`input`、`insert_files`、`append_files`、`missing_tool_results`、`llm_api`、`llm_api_key`、`llm_api_key_env`、`llm_api_model`、`llm_api_base_url`、`llm_api_temperature`、`llm_api_extra_body`。`dirs` 与 `dir` 不能同时声明；旧名 `output_pipe` / `output_pipe_format` 仍兼容，新名优先。
 - **`[[llm_api]]`**：`name`、`model`、`base_url`、`api_key`、`api_key_env`、`temperature`、`extra_body`；由 `--llm-api` 或 `[promptpile].llm_api` 选择 profile 后，再应用显式 CLI / `[promptpile].llm_api_*` 覆盖。
 - **密钥**：若配置了 `api_key_env` / `llm_api_key_env`，在同一合并结果中的直写 `api_key` / `llm_api_key` 仍为空时从 `process.env[该变量名]` 读取。该兼容语义保持不变。
 
@@ -376,7 +377,8 @@ API key 保留既有的 direct-key 优先语义：
 | `--config <path>` | TOML 配置文件（相对 cwd） | 无 |
 | `--llm-config <path>` | 仅用作 `[[llm_api]]` profile 数据库的 TOML（相对 cwd）；不继承其中的运行时配置 | 无 |
 | `--llm-api <name>` | 显式选择 profile；名称不区分大小写，找不到时退出 `1` | `[promptpile].llm_api` |
-| `-d, --directory <path>` | 扫描目录 | 见上合并链 |
+| `-d, --directory <path>` | Conversation 输入目录；可重复，按出现顺序形成 layers；CLI 数组整体覆盖 TOML `dirs` / `dir` | `./messages` |
+| `--output-dir <path>` | 唯一可写 Conversation directory；不存在时创建，并自动作为最后输入层；覆盖 TOML `output_dir` | 单输入 mutation 时兼容使用该输入目录 |
 | `-m, --model <model>` | 模型 ID | 见上合并链 |
 | `-k, --api-key <key>` | API Key | 无 |
 | `--api-key-env <name>` | 在 Promptpile 进程内从指定环境变量读取 API Key；与 `--api-key` 互斥 | 无 |
@@ -395,7 +397,7 @@ API key 保留既有的 direct-key 优先语义：
 | `--insert-files <paths>` | 在扫描消息 **之前** 插入 sidecar 消息；多路径用 `\|` 分隔；每文件须 `{name}.{role}.md`；**相对路径相对 cwd** | 无 |
 | `--append-files <paths>` | 在扫描消息 **之后** 追加 sidecar 消息；规则同 `--insert-files` | 无 |
 | `--after-hook-path <path>` | 完成后执行的脚本文件；**相对路径相对当前工作目录** | 无 |
-| `--allow-default-after-hook` | 未显式配置 hook 时，允许在扫描目录根发现默认 `.after-hook.*`；**仅 CLI 可启用** | 关闭 |
+| `--allow-default-after-hook` | 未显式配置 hook 时，允许在 conversation anchor 发现默认 `.after-hook.*`；**仅 CLI 可启用** | 关闭 |
 | `--tool-choice <value>` | OpenAI `tool_choice`：当且仅当本次请求包含非空 `tools` 时写入请求体。`none`（禁止工具调用）\|`auto`\|`required`\|`function:<name>`（强制指定工具）。**优先级**：CLI 高于 TOML `tool_choice`；均未设置时按 `auto` | 无（由下层或未设置时的 `auto` 决定） |
 | `--disable-tool` | 不加载、不发送 `tools`：忽略 `--tools-file` 与 TOML `tools_file`；与 `--tools-file` 同时出现时 **本开关优先** | 关闭 |
 | `--missing-tool-results <policy>` | 缺失工具结果处理：`warn`、`error` 或 `ignore` | `warn` |
@@ -461,6 +463,52 @@ messages/
 node dist/index.js -d ./messages -k "sk-..." --disable-tool
 ```
 
+只读组合多个目录时重复传入 `-d`；每层保留自己的 idx 命名空间：
+
+```bash
+node dist/index.js \
+  -d ./base-conversation \
+  -d ./shared-context \
+  -k "sk-..." \
+  --disable-tool
+```
+
+TOML 等价配置：
+
+```toml
+[promptpile]
+dirs = ["./base-conversation", "./shared-context"]
+disable_tool = true
+```
+
+需要在只读上下文之外持续当前会话时，指定唯一 output directory：
+
+```bash
+node dist/index.js \
+  -d ./base-conversation \
+  -d ./shared-context \
+  --output-dir ./session-conversation \
+  --continue \
+  -k "sk-..." \
+  --disable-tool
+```
+
+output 会自动成为最后输入层；若已在 `-d` 中出现，会按 canonical identity 移到最后且只保留一次。多输入 mutation 缺少 `--output-dir` 时会在调用模型前失败；单目录 mutation 继续兼容读写同一目录。
+
+下游生态工具继续使用单个 physical directory 边界，不联合扫描所有 layer：
+
+```bash
+# 精确执行本轮 calls 时优先使用 after-hook 的 PROMPTPILE_ASSISTANT_CALL_FILE
+promptpile-mcp exec-calls --base-url http://127.0.0.1:8765 \
+  --input ./session-conversation/[7]assistant.calls.jsonl
+
+# lifecycle 与 archive retrieval 都只指向可写 session
+promptpile-compress compress -d ./session-conversation
+promptpile-archive search -d ./session-conversation "migration"
+```
+
+这样 base/shared layers 可以保持只读；result、archive、summary 与 restore mutation 都留在 session output directory。
+
 也可在 TOML 中配置 `api_key_env = "OPENAI_API_KEY"`，再由 shell 或密钥管理器提供该变量。
 
 对于单次调用，也可只传环境变量名称，避免把 secret 放入 argv：
@@ -503,7 +551,9 @@ node dist/index.js -d ./messages -m gpt-4o
 node dist/index.js -d ./messages --continue
 ```
 
-启用后会在 `directory` 根目录下追加 **`[N]assistant.md`**（本轮正文；若仅有工具调用而无正文，仍会写入该文件，可为空）。若本轮 API 返回 **`tool_calls`**，会追加 **同一 `N` 的 `[N]assistant.calls.jsonl`**（每行一个 JSON，与 `outputs` 下的 `.calls.jsonl` 每行格式一致），便于下一轮 **[助理发起工具调用](#工具定义与历史工具调用toolstoml--assistantcalls--assistantresult)**。若返回非空 **`reasoning_content`**（thinking 模型），会追加 **同一 `N` 的 `[N]assistant.extra.json`**（见上文 **[`[idx]assistant.extra.json`](#idxassistantextrajson历史thinking-模型的-reasoning_content)**）。主输出同目录下的 **`{basename}.calls.jsonl`** / **`{basename}.extra.json`** 仍仅在指定 **`-o` / TOML `output`** 时写入。
+多层输入使用 `--continue` 时必须指定 `--output-dir`。next idx 只根据 output directory 的本地 artifacts 计算；只读层中的更大 idx 不影响写入编号。
+
+启用后会在 output directory（单目录兼容模式下即该输入目录）追加 **`[N]assistant.md`**。若本轮 API 返回 **`tool_calls`**，会追加 **同一 `N` 的 `[N]assistant.calls.jsonl`**；若返回非空 **`reasoning_content`**，会追加 **同一 `N` 的 `[N]assistant.extra.json`**。Conversation artifacts 与 `-o` 旁边的普通 `{basename}.calls.jsonl` / `{basename}.extra.json` 是不同输出通道。
 
 ### 终端输入并执行
 
@@ -511,7 +561,7 @@ node dist/index.js -d ./messages --continue
 node dist/index.js -d ./messages --input
 ```
 
-启用后会先在终端等待输入，将输入保存为 `directory` 根目录下的 `[nextIdx]user.md`，然后再调用模型执行。
+启用后会先在终端等待输入，将输入保存为 output directory 下的 `[nextIdx]user.md`，然后再调用模型执行。多层模式同样要求显式 `--output-dir`。
 
 ### nextIdx 计算规则
 
@@ -546,7 +596,7 @@ node dist/index.js -d ./messages -o ./outputs/last-response.txt --quiet
 ```
 ### 带工具定义（显式 `.toml`）的最小目录示例
 
-通过 **`--tools-file`**（相对 cwd）或 TOML **`tools_file`**（相对扫描目录）指向 **`.toml`**，消息目录内只需消息文件，例如：
+通过 **`--tools-file`**（相对 cwd）或 TOML **`tools_file`**（相对 conversation anchor）指向 **`.toml`**，消息目录内只需消息文件，例如：
 
 ```text
 messages/
@@ -618,9 +668,9 @@ output_pile_format = "json"
 | 来源 | 含义 | 相对路径解析基准 |
 |------|------|-------------------|
 | CLI `--after-hook-path <path>` | 调用者显式指定，视为授权执行 | **`process.cwd()`**（当前工作目录） |
-| TOML `after_hook` | 项目显式配置，视为授权执行 | **扫描目录根**（`dir` 解析后的绝对路径） |
+| TOML `after_hook` | 项目显式配置，视为授权执行 | **conversation anchor**（output 优先，否则最后输入层） |
 | 均未配置 | 默认不查找、不执行 hook | — |
-| CLI `--allow-default-after-hook` | 允许在扫描目录根查找默认文件名 | — |
+| CLI `--allow-default-after-hook` | 允许在 conversation anchor 查找默认文件名 | — |
 
 优先级：**CLI 路径** > TOML `after_hook` > 由 `--allow-default-after-hook` 启用的**默认文件**。绝对路径在 CLI / TOML 中均不再拼相对基准。
 
@@ -630,7 +680,7 @@ output_pile_format = "json"
 
 ### 默认文件名（仅在 CLI 授权时）
 
-只有传入 **`--allow-default-after-hook`** 且未配置 CLI/TOML hook 路径时，才在扫描目录根查找第一个存在且解析后为普通文件的项：
+只有传入 **`--allow-default-after-hook`** 且未配置 CLI/TOML hook 路径时，才在 conversation anchor 查找第一个存在且解析后为普通文件的项：
 
 - **Windows**（`win32`）：`.after-hook.ps1` → `.after-hook.bat` → `.after-hook.cmd`  
 - **macOS / Linux**（非 `win32`）：仅 **`.after-hook.sh`**
@@ -639,11 +689,13 @@ Windows **默认链**不包含 `.sh`；若要在 Windows 上跑 shell 脚本，�
 
 ### 子进程环境
 
-子进程 **`cwd`** 为扫描目录绝对路径；继承当前环境变量，并追加（供脚本读取）：
+子进程 **`cwd`** 为 conversation anchor；继承当前环境变量，并追加（供脚本读取）：
 
 | 变量 | 含义 |
 |------|------|
-| `PROMPTPILE_SCAN_DIRECTORY` | 扫描目录绝对路径 |
+| `PROMPTPILE_SCAN_DIRECTORY` | 单 layer 时为其绝对路径；多 layer 时为空字符串（deprecated） |
+| `PROMPTPILE_INPUT_DIRECTORIES_JSON` | canonical、去重后的有效输入层绝对路径 JSON 数组，包含末尾 output layer |
+| `PROMPTPILE_OUTPUT_DIRECTORY` | 显式或单目录兼容 mutation 的 Conversation output directory，否则为空字符串 |
 | `PROMPTPILE_OUTPUT_FILE` | 主输出文件绝对路径；未使用 `-o` 则为空字符串 |
 | `PROMPTPILE_CALLS_FILE` | 若本轮写入了 `{basename}.calls.jsonl`（由 `-o` / TOML `output` 决定）则为该文件绝对路径，否则空字符串 |
 | `PROMPTPILE_ASSISTANT_MD_FILE` | 若启用了 `--continue` 且本轮有正文（`response.length > 0`）写入了 `[N]assistant.md` 则为该文件绝对路径，否则空字符串 |

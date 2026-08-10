@@ -11,8 +11,11 @@ const reactCli = path.join(root, 'dist', 'index.js');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ppr-input-failure-'));
 
 try {
+  const base = path.join(tmp, 'base');
   const messages = path.join(tmp, 'messages');
+  const output = path.join(tmp, 'session');
   const logPath = path.join(tmp, 'invocations.jsonl');
+  fs.mkdirSync(base);
   fs.mkdirSync(messages);
 
   const fakeJs = path.join(tmp, 'fake-promptpile.cjs');
@@ -57,7 +60,15 @@ try {
 
   const result = spawnSync(
     process.execPath,
-    [reactCli, '--input', '--directory', messages, '--api-key', 'unused-key', '--max-step', '1'],
+    [
+      reactCli,
+      '--input',
+      '--directory', base,
+      '--directory', messages,
+      '--output-dir', output,
+      '--api-key', 'unused-key',
+      '--max-step', '1'
+    ],
     {
       cwd: tmp,
       input: 'user input\n',
@@ -79,10 +90,13 @@ try {
   assert.strictEqual(invocations.length, 1, 'append failure aborts before any React phase starts');
   assert.deepStrictEqual(
     invocations[0].args,
-    ['conversation', 'append-user', '-d', messages, '--quiet']
+    ['conversation', 'append-user', '-d', output, '--quiet'],
+    'terminal input targets the writable output directory'
   );
   assert.strictEqual(invocations[0].stdin, 'user input');
   assert.deepStrictEqual(fs.readdirSync(messages), [], 'failed append writes no conversation files');
+  assert.deepStrictEqual(fs.readdirSync(base), [], 'failed append leaves every input layer untouched');
+  assert.deepStrictEqual(fs.readdirSync(output), [], 'failed append leaves the output directory empty');
 
   console.log('promptpile-react input append failure tests ok');
 } finally {

@@ -3,9 +3,11 @@
 > 类型：workspace package
 > 状态：Beta / P4 complete
 > 主要职责：基于 Archive Protocol 的只读 grep history retrieval  
-> 最近复核：2026-08-06
+> 最近复核：2026-08-10
 
 `packages/promptpile-compress-grep-search/` 是独立的 Archive Protocol read-only consumer，实现 archive discovery、v1 manifest validation、`readArchivedTurn()`、Node.js 流式 literal search、`promptpile-archive` CLI 和 stdio MCP adapter。Producer/consumer integration test 使用公开 package 边界创建并读取 archive，architecture guard 禁止 production reader 或 adapter 依赖 compress implementation。
+
+Layered Conversation I/O 不改变它的单目录读取边界：CLI/domain/MCP 启动参数必须明确选择一个 physical Conversation Directory，通常是 session output。Reader 不联合搜索其它 input layers；跨目录查询由调用方分别发起。
 
 ## 目标边界
 

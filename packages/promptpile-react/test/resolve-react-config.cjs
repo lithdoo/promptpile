@@ -312,6 +312,101 @@ thought_llm_api_key_env = "IGNORED_PHASE_ENV"
     'direct phase key follows Promptpile direct-key precedence'
   );
   assert.ok(!directKeyArgv.includes('--api-key-env'));
+
+  const layerA = path.join(tmp, 'layer-a');
+  const layerB = path.join(tmp, 'layer-b');
+  const tomlSession = path.join(tmp, 'toml-session');
+  const cliSession = path.join(tmp, 'cli-session');
+  fs.mkdirSync(layerA, { recursive: true });
+  fs.mkdirSync(layerB, { recursive: true });
+  fs.writeFileSync(
+    tomlPath,
+    `
+[promptpile]
+dirs = ["ignored-by-react", "also-ignored"]
+output_dir = "ignored-output"
+
+[promptpile-react]
+dirs = ["layer-a", "layer-b"]
+output_dir = "toml-session"
+tools_file = "tools.toml"
+after_hook = "after.js"
+`
+  );
+  const cfgTomlLayers = resolveReactConfig(tmp, [
+    'node', fakeScript, '--config', 'app.toml'
+  ]);
+  assert.deepStrictEqual(
+    cfgTomlLayers.inputDirectoriesAbs,
+    [layerA, layerB],
+    '[promptpile-react].dirs wins as one ordered layer over [promptpile].dirs'
+  );
+  assert.strictEqual(cfgTomlLayers.outputDirectoryAbs, tomlSession);
+  assert.strictEqual(cfgTomlLayers.directoryAbs, tomlSession, 'explicit output is the conversation anchor');
+  assert.strictEqual(cfgTomlLayers.toolsFileForCli, path.join(tomlSession, 'tools.toml'));
+  assert.strictEqual(cfgTomlLayers.afterHookForCli, path.join(tomlSession, 'after.js'));
+
+  const cfgCliLayers = resolveReactConfig(tmp, [
+    'node', fakeScript,
+    '--config', 'app.toml',
+    '-d', 'layer-b',
+    '-d', 'layer-a',
+    '--output-dir', 'cli-session'
+  ]);
+  assert.deepStrictEqual(
+    cfgCliLayers.inputDirectoriesAbs,
+    [layerB, layerA],
+    'repeated CLI directories replace TOML dirs and retain argv order'
+  );
+  assert.strictEqual(cfgCliLayers.outputDirectoryAbs, cliSession);
+  const layeredArgv = buildPhaseArgv('thought', cfgCliLayers);
+  assert.deepStrictEqual(
+    layeredArgv.slice(0, 6),
+    ['-d', layerB, '-d', layerA, '--output-dir', cliSession],
+    'Thought forwards ordered input layers and the output directory'
+  );
+  const isolated = path.join(tmp, 'isolated-check');
+  const isolatedArgv = buildPhaseArgv('check', cfgCliLayers, { directoryOverride: isolated });
+  assert.deepStrictEqual(isolatedArgv.slice(0, 2), ['-d', isolated]);
+  assert.ok(!isolatedArgv.includes(layerA));
+  assert.ok(!isolatedArgv.includes(layerB));
+  assert.ok(!isolatedArgv.includes('--output-dir'), 'Check does not inherit the writable session');
+
+  const cfgDuplicateMutation = resolveReactConfig(tmp, [
+    'node', fakeScript,
+    '-d', layerA,
+    '-d', path.join(layerA, '.'),
+    '--continue'
+  ]);
+  assert.deepStrictEqual(
+    cfgDuplicateMutation.inputDirectoriesAbs,
+    [fs.realpathSync(layerA)],
+    'canonical duplicate inputs count as one layer for mutation safety'
+  );
+
+  const cfgOutputWasInput = resolveReactConfig(tmp, [
+    'node', fakeScript,
+    '-d', layerA,
+    '-d', cliSession,
+    '--output-dir', cliSession
+  ]);
+  assert.deepStrictEqual(
+    cfgOutputWasInput.inputDirectoriesAbs,
+    [fs.realpathSync(layerA)],
+    'an explicit output is removed from the forwarded input list and re-added by --output-dir'
+  );
+
+  const outputOnly = path.join(tmp, 'output-only');
+  const cfgOutputOnly = resolveReactConfig(tmp, [
+    'node', fakeScript, '--output-dir', outputOnly
+  ]);
+  assert.deepStrictEqual(cfgOutputOnly.inputDirectoriesAbs, []);
+  assert.strictEqual(cfgOutputOnly.directoryAbs, outputOnly);
+  assert.deepStrictEqual(
+    buildPhaseArgv('observe', cfgOutputOnly).slice(0, 2),
+    ['--output-dir', outputOnly],
+    'output-only mode lets Promptpile use the output as its sole effective input'
+  );
 } finally {
   process.chdir(prevCwd);
   for (const [key, value] of envBefore) {

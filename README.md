@@ -25,6 +25,19 @@ Promptpile is a **file-native, CLI-first lightweight agent runtime ecosystem**. 
                                    read-only archive reader
 ```
 
+Layered Conversation I/O separates immutable context from the writable session:
+
+```text
+base / reference layers ──read──┐
+                               ├─► promptpile / promptpile-react
+session output layer ──read/write┘           │
+                                             ├─► promptpile-mcp (calls/results)
+                                             ├─► promptpile-compress (lifecycle)
+                                             └─► promptpile-archive (read-only history)
+```
+
+The output directory is the handoff boundary for downstream tools. MCP execution, compression/restore, and archive retrieval each receive that one physical directory (or an exact calls file); they do not jointly scan all input layers.
+
 ## Packages and projects
 
 | Component | Role | Status |
@@ -42,6 +55,7 @@ Promptpile is a **file-native, CLI-first lightweight agent runtime ecosystem**. 
 - Message and tool shapes currently follow OpenAI Chat Completions.
 - `promptpile` does **not** execute model-generated tools and does not automatically run a second completion.
 - `promptpile-react` integrates only through documented CLI/stdin/artifacts; it does not import `promptpile/dist/*` internals or assume a fixed build path.
+- Layered completion has one writable output directory; downstream mutators operate only on that directory or an exact artifact path.
 - `promptpile-compress` owns lifecycle mutation, not history-search implementations.
 - Archive readers consume the documented Archive Protocol and must not depend on `promptpile-compress` private code.
 - Cross-package compatibility is documented as versioned contracts under [`doc/15-contracts`](./doc/15-contracts/README.md).

@@ -5,7 +5,7 @@
 > 稳定程度：Evolving  
 > 主要定义：Promptpile 系统分层、状态归属与主要数据流  
 > 依赖：[产品定位](../00-overview/product-vision.md)  
-> 最近复核：2026-08-05
+> 最近复核：2026-08-10
 
 ```text
 Execution System ── conversation/calls artifacts ──► Tool Execution System
@@ -50,4 +50,5 @@ Context lifecycle 操作 conversation artifacts，但不成为普通 completion 
 - Orchestrator 与 Promptpile 的运行时边界是公开 CLI + artifacts。
 - MCP executor 与 Promptpile 通过 tool artifacts 解耦。
 - 压缩实现与历史检索实现通过 Archive Protocol 解耦。
+- Layered completion 只有一个可写 output directory；工具执行与 lifecycle mutation 不跨 input layers 猜测或联合写入。
 - Package 布局可以演化，但系统职责不能因代码复用需要而反向改变。

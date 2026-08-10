@@ -215,7 +215,8 @@ export type LoadToolsParams = {
 
 /**
  * Load tools from an explicit `.toml` path only (no JSONL, no scan-directory defaults).
- * Priority: `toolsFileCli` (relative to cwd) > `toolsFileConfig` from TOML (relative to scan root).
+ * Priority: `toolsFileCli` (relative to cwd) > `toolsFileConfig` from TOML
+ * (relative to the conversation anchor supplied as `directory`).
  * Returns `undefined` when neither path is set (caller should require one or `--disable-tool`).
  */
 export const loadTools = (params: LoadToolsParams): ToolDefinition[] | undefined => {

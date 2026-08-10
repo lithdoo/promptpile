@@ -25,6 +25,11 @@ const parseMaxStepCli = (raw: unknown): number | undefined => {
   return n;
 };
 
+const collectDirectory = (value: string, previous: string[]): string[] => [
+  ...previous,
+  value
+];
+
 const buildProgram = (): Command => {
   const program = new Command();
   program
@@ -32,7 +37,13 @@ const buildProgram = (): Command => {
     .description('Agent loop around the `promptpile` CLI (React-style orchestration; subprocess only)')
     .version('1.0.0')
     .option('--config <path>', 'TOML config (relative to cwd); reads [promptpile-react] and shared keys')
-    .option('-d, --directory <path>', 'Directory to scan for message files')
+    .option(
+      '-d, --directory <path>',
+      'Conversation input directory; repeat to add ordered layers',
+      collectDirectory,
+      []
+    )
+    .option('--output-dir <path>', 'Unique writable Conversation directory')
     .option('-m, --model <model>', 'Model ID (overrides all phases when set)')
     .option('-k, --api-key <key>', 'API key (overrides all phases when set)')
     .option('-b, --api-base-url <url>', 'API base URL (overrides all phases when set)')
@@ -72,7 +83,8 @@ export const parseReactCli = (argv: string[]): ReactCliOverrides => {
   program.parse(userArgvFromProcess(argv), { from: 'user' });
   const o = program.opts() as {
     config?: string;
-    directory?: string;
+    directory?: string[];
+    outputDir?: string;
     model?: string;
     apiKey?: string;
     apiBaseUrl?: string;
@@ -86,9 +98,25 @@ export const parseReactCli = (argv: string[]): ReactCliOverrides => {
     extraBody?: string;
   };
 
+  const inputDirectories = o.directory?.map((value, index) => {
+    const directory = value.trim();
+    if (directory === '') {
+      throw new Error(`--directory value at position ${index + 1} must not be empty`);
+    }
+    return directory;
+  });
+  const outputDirectory = trimmed(o.outputDir);
+  if (o.outputDir !== undefined && outputDirectory === undefined) {
+    throw new Error('--output-dir value must not be empty');
+  }
+
   return {
     configPath: trimmed(o.config),
-    directory: trimmed(o.directory),
+    inputDirectories:
+      inputDirectories !== undefined && inputDirectories.length > 0
+        ? inputDirectories
+        : undefined,
+    outputDirectory,
     model: trimmed(o.model),
     apiKey: trimmed(o.apiKey),
     apiBaseUrl: trimmed(o.apiBaseUrl),

@@ -19,7 +19,8 @@ import { parseMissingToolResultsPolicy } from './tool-result-policy';
 
 /** Pre-merge shape: booleans use undefined = “本层未写”. */
 interface FlatLayer {
-  directory?: string;
+  inputDirectories?: string[];
+  outputDirectory?: string;
   model?: string;
   apiKey?: string;
   apiKeyEnvName?: string;
@@ -82,6 +83,23 @@ const getBool = (r: Record<string, unknown>, key: string): boolean | undefined =
   return undefined;
 };
 
+const getNonEmptyStringArray = (
+  record: Record<string, unknown>,
+  key: string
+): string[] | undefined => {
+  const value = record[key];
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(`${key} must be a non-empty array of non-empty strings`);
+  }
+  return value.map((item, index) => {
+    if (typeof item !== 'string' || item.trim() === '') {
+      throw new Error(`${key}[${index}] must be a non-empty string`);
+    }
+    return item.trim();
+  });
+};
+
 const buildTomlLayer = (
   runtimeParsed: ParsedTomlConfig,
   profiles: ParsedTomlConfig['llmApis'],
@@ -89,9 +107,26 @@ const buildTomlLayer = (
 ): FlatLayer => {
   const p = runtimeParsed.promptpile;
   const out: FlatLayer = {};
+  if (
+    Object.prototype.hasOwnProperty.call(p, 'dirs') &&
+    Object.prototype.hasOwnProperty.call(p, 'dir')
+  ) {
+    throw new Error('promptpile.dirs and promptpile.dir cannot be used together');
+  }
+  const dirs = getNonEmptyStringArray(p, 'dirs');
+  if (dirs !== undefined) {
+    out.inputDirectories = dirs;
+  }
   const dir = getStr(p, 'dir');
   if (dir !== undefined) {
-    out.directory = dir;
+    out.inputDirectories = [dir];
+  }
+  if (Object.prototype.hasOwnProperty.call(p, 'output_dir')) {
+    const outputDirectory = p.output_dir;
+    if (typeof outputDirectory !== 'string' || outputDirectory.trim() === '') {
+      throw new Error('output_dir must be a non-empty string');
+    }
+    out.outputDirectory = outputDirectory.trim();
   }
   const outv = p.output;
   if (typeof outv === 'string') {
@@ -221,7 +256,8 @@ const pickBool = (
 ): boolean => cli ?? toml ?? def;
 
 const mapCliToFlat = (cli: Partial<Config>): FlatLayer => ({
-  directory: trim(cli.directory),
+  inputDirectories: cli.inputDirectories,
+  outputDirectory: trim(cli.outputDirectory),
   model: trim(cli.model),
   apiKey: trim(cli.apiKey),
   apiBaseUrl: trim(cli.apiBaseUrl),
@@ -310,12 +346,113 @@ export const resolveConfig = (cwd: string, argv: string[]): Config => {
   const tomlLayer = buildTomlLayer(runtimeParsed, profiles, selectedProfileName);
   const cliLayer = mapCliToFlat(cliPartial);
 
-  const directory = pickStr(
-    cliLayer.directory,
-    tomlLayer.directory,
-    './messages'
+  // Preserve the established CLI diagnostic precedence: an explicitly named
+  // missing key source is reported before conversation-directory preflight.
+  if (explicitApiKeyEnvName !== undefined) {
+    const value = trim(process.env[explicitApiKeyEnvName]);
+    if (value === undefined) {
+      console.error(
+        `Error: API key environment variable is not set or empty: ${explicitApiKeyEnvName}`
+      );
+      process.exit(1);
+    }
+  }
+
+  const explicitOutputDirectory = pickOptStr(
+    cliLayer.outputDirectory,
+    tomlLayer.outputDirectory
   );
-  const resolvedDirAbs = path.isAbsolute(directory) ? directory : path.resolve(cwd, directory);
+  const configuredDirectories =
+    cliLayer.inputDirectories && cliLayer.inputDirectories.length > 0
+      ? cliLayer.inputDirectories
+      : tomlLayer.inputDirectories;
+  const selectedDirectories =
+    configuredDirectories ?? (explicitOutputDirectory === undefined ? ['./messages'] : []);
+  const seenDirectoryIdentities = new Set<string>();
+  let inputDirectories: string[] = [];
+  for (const rawDirectory of selectedDirectories) {
+    const candidate = path.isAbsolute(rawDirectory)
+      ? path.normalize(rawDirectory)
+      : path.resolve(cwd, rawDirectory);
+    let stat: fs.Stats;
+    try {
+      stat = fs.statSync(candidate);
+    } catch {
+      throw new Error(`conversation input directory does not exist: ${candidate}`);
+    }
+    if (!stat.isDirectory()) {
+      throw new Error(`conversation input path is not a directory: ${candidate}`);
+    }
+    const canonical = fs.realpathSync(candidate);
+    const identity = process.platform === 'win32' ? canonical.toLowerCase() : canonical;
+    if (seenDirectoryIdentities.has(identity)) continue;
+    seenDirectoryIdentities.add(identity);
+    inputDirectories.push(canonical);
+  }
+
+  let resolvedExplicitOutputDirectory: string | undefined;
+  if (explicitOutputDirectory !== undefined) {
+    const candidate = path.isAbsolute(explicitOutputDirectory)
+      ? path.normalize(explicitOutputDirectory)
+      : path.resolve(cwd, explicitOutputDirectory);
+    try {
+      fs.mkdirSync(candidate, { recursive: true });
+      const stat = fs.statSync(candidate);
+      if (!stat.isDirectory()) {
+        throw new Error('path is not a directory');
+      }
+      fs.accessSync(candidate, fs.constants.R_OK | fs.constants.W_OK);
+    } catch (error) {
+      const detail = error instanceof Error ? `: ${error.message}` : '';
+      throw new Error(`cannot create, scan, or write conversation output directory: ${candidate}${detail}`);
+    }
+    resolvedExplicitOutputDirectory = fs.realpathSync(candidate);
+    const outputIdentity = process.platform === 'win32'
+      ? resolvedExplicitOutputDirectory.toLowerCase()
+      : resolvedExplicitOutputDirectory;
+    inputDirectories = inputDirectories.filter(directory => {
+      const identity = process.platform === 'win32' ? directory.toLowerCase() : directory;
+      return identity !== outputIdentity;
+    });
+    inputDirectories.push(resolvedExplicitOutputDirectory);
+  }
+
+  if (inputDirectories.length === 0) {
+    throw new Error('at least one conversation input directory is required');
+  }
+  const requestedContinueMode = pickBool(
+    cliLayer.continueMode,
+    tomlLayer.continueMode,
+    false
+  );
+  const requestedInputMode = pickBool(
+    cliLayer.inputMode,
+    tomlLayer.inputMode,
+    false
+  );
+  if (
+    inputDirectories.length > 1 &&
+    (requestedContinueMode || requestedInputMode) &&
+    resolvedExplicitOutputDirectory === undefined
+  ) {
+    throw new Error(
+      'multiple conversation input directories cannot be used with --continue or --input without --output-dir'
+    );
+  }
+  const resolvedDirAbs = inputDirectories[inputDirectories.length - 1];
+  const outputDirectory =
+    resolvedExplicitOutputDirectory ??
+    (requestedContinueMode || requestedInputMode ? resolvedDirAbs : undefined);
+  if (outputDirectory !== undefined && resolvedExplicitOutputDirectory === undefined) {
+    try {
+      fs.accessSync(outputDirectory, fs.constants.R_OK | fs.constants.W_OK);
+    } catch (error) {
+      const detail = error instanceof Error ? `: ${error.message}` : '';
+      throw new Error(
+        `cannot scan or write conversation output directory: ${outputDirectory}${detail}`
+      );
+    }
+  }
 
   const model = pickStr(
     cliLayer.model,
@@ -379,17 +516,9 @@ export const resolveConfig = (cwd: string, argv: string[]): Config => {
     false
   );
 
-  const continueMode = pickBool(
-    cliLayer.continueMode,
-    tomlLayer.continueMode,
-    false
-  );
+  const continueMode = requestedContinueMode;
 
-  const inputMode = pickBool(
-    cliLayer.inputMode,
-    tomlLayer.inputMode,
-    false
-  );
+  const inputMode = requestedInputMode;
 
   const disableTool = pickBool(
     cliLayer.disableTool,
@@ -439,7 +568,9 @@ export const resolveConfig = (cwd: string, argv: string[]): Config => {
     cliLayer.missingToolResults ?? tomlLayer.missingToolResults ?? 'warn';
 
   return {
+    inputDirectories,
     directory: resolvedDirAbs,
+    outputDirectory,
     model,
     apiKey,
     apiBaseUrl,

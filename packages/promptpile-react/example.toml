@@ -45,6 +45,9 @@
 [promptpile-react]
     # 以下参数单独读取，如果未配置则从 promptpile 采用的同名配置
     dir = './message'
+    # 分层模式使用 dirs 替代 dir，并用 output_dir 指定唯一写入目录：
+    # dirs = ['./base', './reference']
+    # output_dir = './session'
     quiet = false
     after_hook = './after_hook.sh'
     tools_file = './.tools.toml'

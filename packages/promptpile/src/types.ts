@@ -44,6 +44,8 @@ export type MissingToolResultsPolicy = 'warn' | 'error' | 'ignore';
 
 export interface MessageDiagnostic {
   kind: 'missing_tool_result';
+  /** Source conversation layer; idx is only local to this directory. */
+  directoryIndex: number;
   idx: number;
   toolCallId: string;
   resultPath: string;
@@ -70,6 +72,10 @@ export type FileKind = 'message' | 'assistant_call' | 'assistant_result' | 'assi
 
 export interface FileInfo {
   path: string;
+  /** Position in the effective ordered conversation directory list. */
+  directoryIndex: number;
+  /** Direct-child path relative to the source conversation directory. */
+  relativePath: string;
   idx: number;
   /** Role from filename for normal messages; for assistant_call/assistant_result use `assistant`. */
   role: string;
@@ -78,7 +84,15 @@ export interface FileInfo {
 }
 
 export interface Config {
+  /** Canonical, de-duplicated conversation input directories in layer order. */
+  inputDirectories: string[];
+  /**
+   * Compatibility conversation anchor. Equal to the sole input in legacy mode,
+   * and to the final effective input in read-only layered mode.
+   */
   directory: string;
+  /** Canonical unique Conversation mutation target, explicit or single-layer fallback. */
+  outputDirectory?: string;
   model: string;
   apiKey: string;
   apiBaseUrl: string;
@@ -98,7 +112,7 @@ export interface Config {
   quiet: boolean;
   /** CLI `--tools-file`: relative to cwd when relative. */
   toolsFileCli?: string;
-  /** TOML `tools_file`: relative to scan directory root when relative. */
+  /** TOML `tools_file`: relative to the conversation anchor when relative. */
   toolsFileConfig?: string;
   /** Merged `insert_files` / `--insert-files`: pipe-separated paths, relative to cwd. */
   insertFilesCli?: string;
@@ -106,9 +120,9 @@ export interface Config {
   appendFilesCli?: string;
   /** CLI `--after-hook-path`: relative to cwd when relative. */
   afterHookCli?: string;
-  /** TOML `after_hook`: relative to scan directory when relative. */
+  /** TOML `after_hook`: relative to the conversation anchor when relative. */
   afterHookConfig?: string;
-  /** CLI-only opt-in for discovering default .after-hook files in the scan directory. */
+  /** CLI-only opt-in for discovering default .after-hook files at the conversation anchor. */
   allowDefaultAfterHook: boolean;
   /**
    * Raw `none` | `auto` | `required` | `function:<name>` from CLI `--tool-choice` or TOML `tool_choice`.

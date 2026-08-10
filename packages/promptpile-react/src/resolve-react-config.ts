@@ -26,6 +26,18 @@ const resolveCwdRelative = (cwd: string, rel: string | undefined): string | unde
   return path.isAbsolute(rel) ? rel : path.resolve(cwd, rel);
 };
 
+const directoryIdentity = (directory: string): string =>
+  process.platform === 'win32' ? directory.toLowerCase() : directory;
+
+const canonicalizeExistingPath = (candidate: string): string => {
+  try {
+    return fs.realpathSync(candidate);
+  } catch {
+    // Promptpile remains the owner of input-directory existence/type diagnostics.
+    return candidate;
+  }
+};
+
 const mergePhaseLlm = (
   defaultProfile: string | undefined,
   phase: {
@@ -97,15 +109,27 @@ export const resolveReactConfig = (cwd: string, argv: string[]): ResolvedReactCo
     }
   }
 
-  const directoryRel = pickStr(
-    cli.directory,
-    sharedTomlReact.directory,
-    sharedTomlPile.directory,
-    './message'
-  )!;
-  const directoryAbs = path.isAbsolute(directoryRel)
-    ? directoryRel
-    : path.resolve(cwd, directoryRel);
+  const outputDirectoryRel = pickStr(
+    cli.outputDirectory,
+    sharedTomlReact.outputDirectory,
+    sharedTomlPile.outputDirectory
+  );
+  const configuredInputDirectories =
+    cli.inputDirectories ??
+    sharedTomlReact.inputDirectories ??
+    sharedTomlPile.inputDirectories;
+  // Match Promptpile: an explicit output by itself is the sole effective input;
+  // the legacy default is synthesized only when neither side is configured.
+  const inputDirectoriesRel =
+    configuredInputDirectories ?? (outputDirectoryRel === undefined ? ['./message'] : []);
+  const inputDirectoryCandidates = inputDirectoriesRel.map(directory =>
+    path.isAbsolute(directory) ? path.normalize(directory) : path.resolve(cwd, directory)
+  );
+  let outputDirectoryAbs = outputDirectoryRel === undefined
+    ? undefined
+    : path.isAbsolute(outputDirectoryRel)
+      ? path.normalize(outputDirectoryRel)
+      : path.resolve(cwd, outputDirectoryRel);
 
   const quiet = pickBool(
     cli.quiet,
@@ -127,6 +151,52 @@ export const resolveReactConfig = (cwd: string, argv: string[]): ResolvedReactCo
     sharedTomlPile.continueMode,
     false
   )!;
+
+  if (outputDirectoryAbs !== undefined) {
+    try {
+      fs.mkdirSync(outputDirectoryAbs, { recursive: true });
+      const stat = fs.statSync(outputDirectoryAbs);
+      if (!stat.isDirectory()) {
+        throw new Error('path is not a directory');
+      }
+      fs.accessSync(outputDirectoryAbs, fs.constants.R_OK | fs.constants.W_OK);
+    } catch (error) {
+      const detail = error instanceof Error ? `: ${error.message}` : '';
+      console.error(
+        `Error: cannot create, scan, or write conversation output directory: ${outputDirectoryAbs}${detail}`
+      );
+      process.exit(1);
+    }
+    outputDirectoryAbs = fs.realpathSync(outputDirectoryAbs);
+  }
+
+  const outputIdentity = outputDirectoryAbs === undefined
+    ? undefined
+    : directoryIdentity(outputDirectoryAbs);
+  const seenInputIdentities = new Set<string>();
+  const inputDirectoriesAbs: string[] = [];
+  for (const candidate of inputDirectoryCandidates) {
+    const canonical = canonicalizeExistingPath(candidate);
+    const identity = directoryIdentity(canonical);
+    if (identity === outputIdentity || seenInputIdentities.has(identity)) {
+      continue;
+    }
+    seenInputIdentities.add(identity);
+    inputDirectoriesAbs.push(canonical);
+  }
+
+  if (
+    inputDirectoriesAbs.length > 1 &&
+    (continueMode || inputMode) &&
+    outputDirectoryAbs === undefined
+  ) {
+    console.error(
+      'Error: multiple conversation input directories cannot be used with --continue or --input without --output-dir'
+    );
+    process.exit(1);
+  }
+
+  const directoryAbs = outputDirectoryAbs ?? inputDirectoriesAbs[inputDirectoriesAbs.length - 1];
 
   const maxStep =
     pickInt(
@@ -239,6 +309,8 @@ export const resolveReactConfig = (cwd: string, argv: string[]): ResolvedReactCo
   return {
     cwd,
     configPath: configPathAbs,
+    inputDirectoriesAbs,
+    outputDirectoryAbs,
     directoryAbs,
     quiet,
     inputMode,

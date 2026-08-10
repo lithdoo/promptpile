@@ -111,7 +111,20 @@ async function runCompletion(cwd: string): Promise<void> {
 
     const quiet = config.quiet;
 
-    let files = scanDirectory(config.directory);
+    const scanInputLayers = () =>
+      config.inputDirectories.flatMap((directory, directoryIndex) =>
+        scanDirectory(directory, directoryIndex)
+      );
+    let files = scanInputLayers();
+    const outputDirectoryIndex = config.outputDirectory === undefined
+      ? undefined
+      : config.inputDirectories.indexOf(config.outputDirectory);
+    if (config.outputDirectory !== undefined && outputDirectoryIndex === -1) {
+      throw new Error('resolved conversation output directory is not an input layer');
+    }
+    const outputFiles = () => outputDirectoryIndex === undefined
+      ? []
+      : files.filter(file => file.directoryIndex === outputDirectoryIndex);
 
     if (config.inputMode) {
       const userContent = await readUserInputFromTerminal();
@@ -120,8 +133,8 @@ async function runCompletion(cwd: string): Promise<void> {
         process.exit(1);
       }
 
-      appendUserMessage(config.directory, files, userContent);
-      files = scanDirectory(config.directory);
+      appendUserMessage(config.outputDirectory!, outputFiles(), userContent);
+      files = scanInputLayers();
     }
     const hasInsertFiles = (config.insertFilesCli?.trim() ?? '') !== '';
     if (files.length === 0 && !hasInsertFiles) {
@@ -241,8 +254,8 @@ async function runCompletion(cwd: string): Promise<void> {
     let continueExtraPath: string | undefined;
     if (config.continueMode) {
       const saved = appendAssistantTurn(
-        config.directory,
-        files,
+        config.outputDirectory!,
+        outputFiles(),
         response,
         toolCalls,
         reasoningContent
@@ -270,6 +283,8 @@ async function runCompletion(cwd: string): Promise<void> {
     } else if (hookResolution.status === 'run') {
       const hookEnv = buildPromptpileHookEnv({
         scanAbs,
+        inputDirectories: config.inputDirectories,
+        outputDirectory: config.outputDirectory,
         resolvedOutput,
         toolCalls,
         model: config.model,

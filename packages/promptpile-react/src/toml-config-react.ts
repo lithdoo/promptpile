@@ -29,7 +29,8 @@ export const loadReactTomlConfig = (absPath: string): ReactTomlLayers => {
 
 /** Shared orchestration keys from a TOML table (promptpile or promptpile-react). */
 export interface SharedTomlLayer {
-  directory?: string;
+  inputDirectories?: string[];
+  outputDirectory?: string;
   quiet?: boolean;
   afterHook?: string;
   toolsFile?: string;
@@ -40,17 +41,59 @@ export interface SharedTomlLayer {
   llmApiExtraBody?: string;
 }
 
-export const buildSharedTomlLayer = (table: Record<string, unknown>): SharedTomlLayer => ({
-  directory: getStr(table, 'dir'),
-  quiet: getBool(table, 'quiet'),
-  afterHook: getStr(table, 'after_hook'),
-  toolsFile: getStr(table, 'tools_file'),
-  continueMode: getBool(table, 'continue'),
-  inputMode: getBool(table, 'input'),
-  defaultLlmApi: getStr(table, 'llm_api'),
-  llmApiTemperature: getRawCliValue(table, 'llm_api_temperature'),
-  llmApiExtraBody: getJsonCliValue(table, 'llm_api_extra_body')
-});
+const getNonEmptyStringArray = (
+  table: Record<string, unknown>,
+  key: string
+): string[] | undefined => {
+  const value = table[key];
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(`${key} must be a non-empty array of non-empty strings`);
+  }
+  return value.map((item, index) => {
+    if (typeof item !== 'string' || item.trim() === '') {
+      throw new Error(`${key}[${index}] must be a non-empty string`);
+    }
+    return item.trim();
+  });
+};
+
+export const buildSharedTomlLayer = (
+  table: Record<string, unknown>
+): SharedTomlLayer => {
+  if (
+    Object.prototype.hasOwnProperty.call(table, 'dirs') &&
+    Object.prototype.hasOwnProperty.call(table, 'dir')
+  ) {
+    throw new Error('dirs and dir cannot be used together');
+  }
+
+  const dirs = getNonEmptyStringArray(table, 'dirs');
+  const dir = getStr(table, 'dir');
+  let outputDirectory: string | undefined;
+  if (Object.prototype.hasOwnProperty.call(table, 'output_dir')) {
+    const rawOutputDirectory = table.output_dir;
+    if (typeof rawOutputDirectory !== 'string' || rawOutputDirectory.trim() === '') {
+      throw new Error('output_dir must be a non-empty string');
+    }
+    outputDirectory = rawOutputDirectory.trim();
+  }
+
+  return {
+    inputDirectories: dirs ?? (dir === undefined ? undefined : [dir]),
+    outputDirectory,
+    quiet: getBool(table, 'quiet'),
+    afterHook: getStr(table, 'after_hook'),
+    toolsFile: getStr(table, 'tools_file'),
+    continueMode: getBool(table, 'continue'),
+    inputMode: getBool(table, 'input'),
+    defaultLlmApi: getStr(table, 'llm_api'),
+    llmApiTemperature: getRawCliValue(table, 'llm_api_temperature'),
+    llmApiExtraBody: getJsonCliValue(table, 'llm_api_extra_body')
+  };
+};
 
 export interface ReactOnlyTomlLayer {
   maxStep?: number;

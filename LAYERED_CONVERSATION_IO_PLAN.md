@@ -1,9 +1,11 @@
 # Promptpile Layered Conversation I/O 初步设计计划
 
-> 状态：讨论草案  
+> 状态：Phase 4 已完成
 > 日期：2026-08-07  
 > 目标组件：`promptpile`、`promptpile-react`，以及依赖 Conversation Protocol 的 MCP/Compress 工具  
 > 核心提案：允许重复使用 `-d/--directory` 提供有序输入目录，并以 `--output-dir` 指定唯一可写 Conversation 目录
+
+> Phase 0 决议（2026-08-10）：规范性结论已进入 `doc/15-contracts/cli-contract-v1.md`、`conversation-protocol-v1.md` 与 `tool-artifacts-v1.md`；若本文其余草案描述与三份 contract 冲突，以 contract 为准。
 
 ## 1. 摘要
 
@@ -369,7 +371,7 @@ Dayloom 仍应把一个稳定 output directory 作为该 Session 的主要 Conve
 
 ## 11. 初步实施阶段
 
-### Phase 0：冻结契约
+### Phase 0：冻结契约（已完成，2026-08-10）
 
 - 为 CLI Contract、Conversation Protocol 和 Tool Artifacts 起草扩展条款；
 - 冻结目录层串联、output 自动作为最后一层、local idx 和同目录 sidecar 规则；
@@ -378,7 +380,17 @@ Dayloom 仍应把一个稳定 output directory 作为该 Session 的主要 Conve
 - 决定多目录 `--continue` 未指定 output 时是拒绝还是采用其它兼容策略；
 - 明确 after-hook 环境变量迁移策略。
 
-### Phase 1：Promptpile 只读多目录
+冻结结果：
+
+- layer 逐目录扫描后串联；output canonical identity 去重后固定为最后 layer；idx 与 sidecar 配对严格限于 physical directory；
+- CLI 目录数组整组覆盖 TOML，TOML `dirs` 与 `dir` 同时出现报错；目录类路径保留 cwd 兼容基准，TOML tools/hook 使用 conversation anchor；
+- 目录 identity 使用创建/存在后的 realpath，Windows 比较不区分大小写；重复 input 保留第一次，output 移到最后；不同 identity 的嵌套目录允许；
+- 多输入 root mutation（`--input` / `--continue`）缺少 output directory 时拒绝；单输入继续兼容读写同目录；
+- output directory 不存在时在模型调用前递归创建并验证；
+- after-hook cwd 使用 conversation anchor；新增 inputs JSON 与 output directory 环境变量，多 layer 时旧 `PROMPTPILE_SCAN_DIRECTORY` 置空并进入弃用迁移期；
+- 第一版不提供关闭“output 自动成为最后输入 layer”的开关，也不新增 resolved-layer manifest 命令。
+
+### Phase 1：Promptpile 只读多目录（已完成，2026-08-10）
 
 - `-d` 支持重复 option；
 - TOML 支持 `dirs`；
@@ -388,7 +400,7 @@ Dayloom 仍应把一个稳定 output directory 作为该 Session 的主要 Conve
 - 增加重复 idx、跨目录同名和 sidecar 隔离测试；
 - 暂不改变 mutation 逻辑。
 
-### Phase 2：单一 output directory
+### Phase 2：单一 output directory（已完成，2026-08-10）
 
 - 增加 `--output-dir` / `output_dir`；
 - output 自动成为最后输入层；
@@ -397,7 +409,7 @@ Dayloom 仍应把一个稳定 output directory 作为该 Session 的主要 Conve
 - 更新 after-hook artifact paths 和环境变量；
 - 增加 crash、部分 sidecar 和只读 input layer 测试。
 
-### Phase 3：React 继承
+### Phase 3：React 继承（已完成，2026-08-10）
 
 - `promptpile-react` CLI/config 支持重复 `-d` 和 `--output-dir`；
 - Thought/Observe/Final 正确透传目录层；
@@ -405,7 +417,7 @@ Dayloom 仍应把一个稳定 output directory 作为该 Session 的主要 Conve
 - 验证多 step calls/results 始终落在 output directory；
 - 增加 fake Promptpile argv contract 和真实 Promptpile parser 集成测试。
 
-### Phase 4：生态验证和文档
+### Phase 4：生态验证和文档（已完成，2026-08-10）
 
 - 验证 `promptpile-mcp exec-calls/check` 对 output artifacts 的兼容性；
 - 验证 `promptpile-compress` 只处理 output directory 的生命周期；
@@ -445,18 +457,18 @@ Dayloom 仍应把一个稳定 output directory 作为该 Session 的主要 Conve
 9. CLI Contract 与 Conversation Protocol 对目录层、写入目标和 artifact identity 的描述无歧义。
 10. Windows 和 POSIX 上的路径规范化、目录顺序和写入规则具有 contract tests。
 
-## 14. 尚待决定
+## 14. Phase 0 已决事项
 
-1. output directory 与某个 input directory 通过不同符号链接指向同一 real path 时，是去重、警告还是拒绝。
-2. Windows 上目录 identity 是否必须使用 realpath 加大小写归一化。
-3. output directory 不存在时是否自动创建；若创建，应在哪个阶段完成并如何设置权限。
-4. TOML `dirs` 与旧 `dir` 同时出现时，是 `dirs` 优先还是视为配置错误。
-5. 多目录模式下旧 `PROMPTPILE_SCAN_DIRECTORY` 的值和弃用周期。
-6. after-hook cwd 使用 output directory，还是继续使用显式、独立的 hook cwd。
-7. `--tools-file` 默认发现和 TOML 相对路径是否仍依赖某个 Conversation Directory；建议彻底改为 cwd/config-relative。
-8. 是否需要新增只输出已解析 layer/artifact manifest 的诊断命令，供上层在调用模型前验证组合结果。
-9. output directory 已作为中间 input layer 显式出现时，是移动到最后还是拒绝顺序含糊的配置。
-10. 将来是否允许显式关闭“output 自动成为输入层”；第一版建议不提供该开关。
+1. realpath 相同的 input/output 去重，不额外警告；output 移到最后。
+2. Windows 使用 realpath 加不区分大小写比较；POSIX 保持大小写敏感。
+3. output 不存在时在模型调用前递归创建，权限遵循 umask / 平台默认 ACL，并立即做目录与可写性验证。
+4. TOML `dirs` 与 `dir` 同时出现视为配置错误。
+5. 多 layer 时旧 `PROMPTPILE_SCAN_DIRECTORY` 置空并 deprecated；新增 JSON 数组变量作为稳定替代，旧变量至少保留一个 minor release。
+6. after-hook cwd 使用 conversation anchor：显式/兼容 output 优先，否则最后一个有效 input。
+7. CLI tools/hook 路径相对 cwd；TOML tools/hook 相对 conversation anchor，以保持单目录兼容并为 layered mode 提供确定基准；不恢复 tools 默认发现。
+8. 第一版不新增 resolved-layer/artifact manifest 命令；以 diagnostics 和 contract tests 验证。
+9. output 已作为 input 出现时按 canonical identity 删除旧位置并只在最后保留。
+10. 第一版不允许关闭 output 自动作为最后输入 layer。
 
 ## 15. 预期修改范围
 

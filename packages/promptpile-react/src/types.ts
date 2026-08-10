@@ -15,7 +15,10 @@ export interface PhaseLlmSelection {
 /** CLI overrides (highest merge priority). */
 export interface ReactCliOverrides {
   configPath?: string;
-  directory?: string;
+  /** Ordered Conversation input layers supplied by repeated -d/--directory. */
+  inputDirectories?: string[];
+  /** Unique writable Conversation directory. */
+  outputDirectory?: string;
   model?: string;
   apiKey?: string;
   apiBaseUrl?: string;
@@ -32,6 +35,11 @@ export interface ReactCliOverrides {
 export interface ResolvedReactConfig {
   cwd: string;
   configPath?: string;
+  /** Ordered input layers passed to Promptpile before its output layer. */
+  inputDirectoriesAbs: string[];
+  /** Explicit writable Conversation directory, when configured. */
+  outputDirectoryAbs?: string;
+  /** Compatibility conversation anchor: output directory, otherwise final input layer. */
   directoryAbs: string;
   quiet: boolean;
   inputMode: boolean;

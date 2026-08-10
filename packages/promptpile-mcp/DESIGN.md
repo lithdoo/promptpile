@@ -311,7 +311,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/allowed/path"]
 3. **运行补全**：`promptpile --tools-file .tools.toml …`（或 TOML `tools_file`）
 4. **执行工具**（模型返回 `tool_calls` 后）：`promptpile-mcp exec-calls --base-url http://127.0.0.1:<port> [--dir <消息或项目根>]` 或 `exec-calls --base-url … --input <路径.calls.jsonl> [--output <路径.result.jsonl>]`
 
-**After-hook**：可在 `.after-hook.sh` 等脚本中调用 `exec-calls`，环境变量可使用 `PROMPTPILE_CALLS_FILE`、`PROMPTPILE_SCAN_DIRECTORY`（见 `buildPromptpileHookEnv`），将 `base-url` 写死或通过环境变量传入。
+**After-hook**：可在 `.after-hook.sh` 等脚本中调用 `exec-calls`。Conversation continuation 应使用 `PROMPTPILE_ASSISTANT_CALL_FILE` 精确执行 output directory 中的 calls；普通 `-o` sidecar 使用 `PROMPTPILE_CALLS_FILE`。多 layer 时 `PROMPTPILE_SCAN_DIRECTORY` 为空且 deprecated，不得用它猜测 mutation target（见 `buildPromptpileHookEnv`）。
 
 ---
 

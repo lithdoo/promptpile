@@ -69,7 +69,7 @@ const compareScannedFiles = (a: FileInfo, b: FileInfo): number => {
 };
 
 /** Scan only direct files in the message directory; nested directories are intentionally ignored. */
-export const scanDirectory = (directory: string): FileInfo[] => {
+export const scanDirectory = (directory: string, directoryIndex = 0): FileInfo[] => {
   const files: FileInfo[] = [];
   const entries = fs.readdirSync(directory, { withFileTypes: true });
 
@@ -81,6 +81,8 @@ export const scanDirectory = (directory: string): FileInfo[] => {
     if (m) {
       files.push({
         path: fullPath,
+        directoryIndex,
+        relativePath: entry.name,
         idx: parseInt(m[1], 10),
         role: 'assistant',
         extension: 'jsonl',
@@ -92,6 +94,8 @@ export const scanDirectory = (directory: string): FileInfo[] => {
     if (m) {
       files.push({
         path: fullPath,
+        directoryIndex,
+        relativePath: entry.name,
         idx: parseInt(m[1], 10),
         role: 'assistant',
         extension: 'jsonl',
@@ -103,6 +107,8 @@ export const scanDirectory = (directory: string): FileInfo[] => {
     if (m) {
       files.push({
         path: fullPath,
+        directoryIndex,
+        relativePath: entry.name,
         idx: parseInt(m[1], 10),
         role: 'assistant',
         extension: 'json',
@@ -114,6 +120,8 @@ export const scanDirectory = (directory: string): FileInfo[] => {
     if (m) {
       files.push({
         path: fullPath,
+        directoryIndex,
+        relativePath: entry.name,
         idx: parseInt(m[1], 10),
         role: m[2],
         extension: m[3] as 'md' | 'json',
@@ -313,6 +321,7 @@ const buildMessagesForIdx = (
         if (!r) {
           diagnostics.push({
             kind: 'missing_tool_result',
+            directoryIndex: group[0]?.directoryIndex ?? 0,
             idx,
             toolCallId: tc.id,
             resultPath: resultFile.path,
@@ -346,6 +355,7 @@ const buildMessagesForIdx = (
     for (const tc of idsFromCall) {
       diagnostics.push({
         kind: 'missing_tool_result',
+        directoryIndex: group[0]?.directoryIndex ?? 0,
         idx,
         toolCallId: tc.id,
         resultPath: path.join(path.dirname(callFile!.path), '[' + idx + ']assistant.result.jsonl'),
@@ -364,21 +374,28 @@ const buildMessagesForIdx = (
 
 export const buildMessagesWithDiagnostics = (files: FileInfo[]): BuildMessagesResult => {
   const diagnostics: MessageDiagnostic[] = [];
-  const byIdx = new Map<number, FileInfo[]>();
+  const byDirectory = new Map<number, FileInfo[]>();
   for (const f of files) {
-    if (!byIdx.has(f.idx)) {
-      byIdx.set(f.idx, []);
+    if (!byDirectory.has(f.directoryIndex)) {
+      byDirectory.set(f.directoryIndex, []);
     }
-    byIdx.get(f.idx)!.push(f);
+    byDirectory.get(f.directoryIndex)!.push(f);
   }
 
-  const indices = [...byIdx.keys()].sort((a, b) => a - b);
   const out: ChatMessage[] = [];
-
-  for (const idx of indices) {
-    const group = byIdx.get(idx)!;
-    group.sort(compareScannedFiles);
-    out.push(...buildMessagesForIdx(group, diagnostics));
+  const directoryIndices = [...byDirectory.keys()].sort((a, b) => a - b);
+  for (const directoryIndex of directoryIndices) {
+    const byIdx = new Map<number, FileInfo[]>();
+    for (const file of byDirectory.get(directoryIndex)!) {
+      if (!byIdx.has(file.idx)) byIdx.set(file.idx, []);
+      byIdx.get(file.idx)!.push(file);
+    }
+    const indices = [...byIdx.keys()].sort((a, b) => a - b);
+    for (const idx of indices) {
+      const group = byIdx.get(idx)!;
+      group.sort(compareScannedFiles);
+      out.push(...buildMessagesForIdx(group, diagnostics));
+    }
   }
 
   return { messages: out, diagnostics };

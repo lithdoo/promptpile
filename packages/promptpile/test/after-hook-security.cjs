@@ -2,7 +2,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { resolveAfterHookScript } = require('../dist/after-hook.js');
+const { buildPromptpileHookEnv, resolveAfterHookScript } = require('../dist/after-hook.js');
 const { resolveConfig } = require('../dist/resolve-config.js');
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'promptpile-hook-security-'));
@@ -82,6 +82,43 @@ try {
     '--allow-default-after-hook',
   ]);
   assert.strictEqual(fromCli.allowDefaultAfterHook, true);
+
+  const outputAbs = path.join(root, 'output');
+  const layeredEnv = buildPromptpileHookEnv({
+    scanAbs: outputAbs,
+    inputDirectories: [scanAbs, outputAbs],
+    outputDirectory: outputAbs,
+    toolCalls: undefined,
+    model: 'test-model',
+    quiet: true,
+    responseLength: 2,
+    continueMdPath: path.join(outputAbs, '[1]assistant.md')
+  });
+  assert.strictEqual(layeredEnv.PROMPTPILE_SCAN_DIRECTORY, '');
+  assert.deepStrictEqual(
+    JSON.parse(layeredEnv.PROMPTPILE_INPUT_DIRECTORIES_JSON),
+    [scanAbs, outputAbs]
+  );
+  assert.strictEqual(layeredEnv.PROMPTPILE_OUTPUT_DIRECTORY, outputAbs);
+  assert.strictEqual(
+    layeredEnv.PROMPTPILE_ASSISTANT_MD_FILE,
+    path.join(outputAbs, '[1]assistant.md')
+  );
+
+  const singleEnv = buildPromptpileHookEnv({
+    scanAbs,
+    inputDirectories: [scanAbs],
+    outputDirectory: scanAbs,
+    toolCalls: undefined,
+    model: 'test-model',
+    quiet: false,
+    responseLength: 0
+  });
+  assert.strictEqual(
+    singleEnv.PROMPTPILE_SCAN_DIRECTORY,
+    scanAbs,
+    'the legacy scan variable remains available in single-layer mode'
+  );
 
   console.log('after-hook security tests passed');
 } finally {
