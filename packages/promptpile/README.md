@@ -441,6 +441,50 @@ spawn promptpile conversation append-user -d <directory> --quiet
   exit 0 -> 开始后续编排
 ```
 
+### 只读检查 Conversation artifacts
+
+`conversation inspect` 列出当前 scanner 识别的直接子文件，不读取 artifact 正文，也不
+加载 completion config、API key、tools 或 after-hook。默认输出人类可读 text：
+
+```bash
+promptpile conversation inspect -d ./messages
+```
+
+机器调用方使用纯 JSON stdout：
+
+```bash
+promptpile conversation inspect -d ./messages --format json
+```
+
+```json
+{
+  "schemaVersion": 1,
+  "directory": "./messages",
+  "artifactCount": 2,
+  "maxIndex": 1,
+  "artifacts": [
+    {
+      "index": 0,
+      "kind": "message",
+      "role": "system",
+      "extension": "md",
+      "path": "[0]system.md"
+    },
+    {
+      "index": 1,
+      "kind": "message",
+      "role": "user",
+      "extension": "md",
+      "path": "[1]user.md"
+    }
+  ]
+}
+```
+
+`-d/--directory` 必填且只接受一次；`--format` 只接受 `text` 或 `json`。目录缺失、
+目标不是目录或参数非法时，命令以状态码 `1` 退出，错误只写 stderr，stdout 保持为空。
+空目录是合法结果，`artifactCount` 为 `0`、`maxIndex` 为 `null`。
+
 配置示例见 [example.toml](./example.toml)、[example.sh](./example.sh)。
 
 ---

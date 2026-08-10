@@ -1,6 +1,6 @@
 # Promptpile Conversation Inspect MVP 设计
 
-> 状态：可实施设计（待开发）
+> 状态：已实施
 >
 > 日期：2026-08-07
 >
@@ -81,7 +81,7 @@ MVP 不提供：
 --strict
 --include-ignored
 --through-index
-重复 -d
+重复 -d（显式拒绝）
 ```
 
 非法 format 由 Commander 拒绝。目录不存在或目标不是目录时，错误写入 stderr，退出码为 `1`，stdout 保持为空。
@@ -201,6 +201,7 @@ JSON 模式的 stdout 只写一次，并且只包含这一个 JSON document。
 ## 6. Text 输出
 
 Text formatter 使用同一个 `ConversationInspection`，不得重新扫描目录。
+空目录的 text 输出固定使用 `Max index: null`，与 JSON contract 对齐。
 
 ```text
 Conversation: ./messages

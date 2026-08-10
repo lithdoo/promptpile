@@ -23,7 +23,10 @@ import { isPromptpileDiagnostic } from './diagnostic-log';
 import { createOutputPileWriter } from './output-pile';
 import type { AssistantExtraPayload, ChatApiToolChoice, ToolCall } from './types';
 import { applyMissingToolResultsPolicy } from './tool-result-policy';
-import { runAppendUserCommand } from './conversation-command';
+import {
+  runAppendUserCommand,
+  runInspectConversationCommand
+} from './conversation-command';
 import { runCli } from './cli';
 
 const readUserInputFromTerminal = async (): Promise<string> => {
@@ -313,7 +316,8 @@ async function main(): Promise<void> {
   const cwd = process.cwd();
   await runCli(process.argv, {
     completion: () => runCompletion(cwd),
-    appendUser: options => runAppendUserCommand(options, cwd)
+    appendUser: options => runAppendUserCommand(options, cwd),
+    inspectConversation: options => runInspectConversationCommand(options, cwd)
   });
 }
 

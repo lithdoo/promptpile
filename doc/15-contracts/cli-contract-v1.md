@@ -97,7 +97,9 @@ promptpile-archive search -d "$PROMPTPILE_OUTPUT_DIRECTORY" "query"
 
 这些下游 CLI 的 `-d/--dir` 仍表示一个明确的 physical directory，不继承 root completion 可重复 `-d` 的语义。精确 artifact path 优先于通过 cwd 或旧 `PROMPTPILE_SCAN_DIRECTORY` 猜测 output。
 
-## Conversation domain command
+## Conversation domain commands
+
+### Append user
 
 ```bash
 promptpile conversation append-user -d <directory> [-q]
@@ -110,6 +112,42 @@ promptpile conversation append-user -d <directory> [-q]
 - 不加载 tools；
 - 不调用模型；
 - failure：非零退出并写 stderr。
+
+### Inspect
+
+```bash
+promptpile conversation inspect -d <directory> [--format text|json]
+```
+
+- `-d/--directory`：必填，只接受一次；相对路径相对 process cwd；目标必须是已存在的目录；
+- `--format`：`text`（默认）或 `json`，其他值由 CLI parser 拒绝；
+- 只列出当前 Conversation scanner 识别的直接子文件，顺序与 scanner 完全一致；
+- 不读取 artifact 正文，不解析 JSON/JSONL，不递归、不展示未知文件；
+- 不解析 completion config，不要求 API key，不加载 tools，不调用模型或 after-hook；
+- success：退出码 `0`，stdout 只包含所选 formatter 的一个完整结果，stderr 为空；
+- failure：退出码 `1`，错误写入 stderr，stdout 为空。
+
+JSON 输出固定为 `JSON.stringify(inspection, null, 2) + '\n'`，schema 为：
+
+```ts
+interface ConversationInspection {
+  schemaVersion: 1;
+  directory: string;          // 调用者提供的目录标识
+  artifactCount: number;      // 始终等于 artifacts.length
+  maxIndex: number | null;    // 空目录为 null
+  artifacts: Array<{
+    index: number;
+    kind: 'message' | 'assistant_call' | 'assistant_extra' | 'assistant_result';
+    role: string;
+    extension: 'md' | 'json' | 'jsonl';
+    path: string;             // 相对目录的 `/` 分隔协议路径
+  }>;
+}
+```
+
+`[1]user.md` 与 `[01]user.md` 是两个独立 artifact，二者的 `index` 都是 `1`。Inspect
+不实现独立 filename parser、comparator 或去重逻辑。空目录是成功结果；text 模式输出
+`Artifacts: 0` 和 `Max index: null`。
 
 ## LLM profile selector
 
