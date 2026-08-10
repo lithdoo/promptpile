@@ -130,6 +130,7 @@ const sendCompletion = (response, content) => {
 
     conflictFingerprint = (await fingerprintConversationDirectory(conflictDir)).fingerprint;
     const mainOutput = path.join(root, 'post-model-output.md');
+    const outputPile = path.join(root, 'post-model-output.jsonl');
     const hookMarker = path.join(root, 'hook-ran.txt');
     const hook = path.join(root, process.platform === 'win32' ? 'hook.cmd' : 'hook.sh');
     fs.writeFileSync(
@@ -145,11 +146,20 @@ const sendCompletion = (response, content) => {
       '--expected-output-next-index', '1',
       '--api-key', 'test-key', '--api-base-url', api,
       '--disable-tool', '--quiet', '--output', mainOutput,
+      '--output-pile-file', outputPile, '--output-pile-format', 'json',
       '--after-hook-path', hook
     ], '', { HOOK_MARKER: hookMarker });
     assert.strictEqual(continueConflict.code, 3, continueConflict.stderr);
     assert.match(continueConflict.stderr, /(fingerprint_mismatch|next_index_mismatch)/);
     assert.strictEqual(fs.readFileSync(mainOutput, 'utf8'), 'assistant-conflict');
+    assert.deepStrictEqual(
+      fs.readFileSync(outputPile, 'utf8').trim().split('\n').map(line => JSON.parse(line)),
+      [
+        { type: 'assistant_delta', content: 'assistant-conflict' },
+        { type: 'assistant_done' }
+      ],
+      'model-stream completion remains independent from the later Conversation commit conflict'
+    );
     assert.ok(!fs.existsSync(path.join(conflictDir, '[1]assistant.md')));
     assert.strictEqual(fs.readFileSync(path.join(conflictDir, '[1]user.md'), 'utf8'), 'competing writer');
     assert.ok(!fs.existsSync(hookMarker), 'after-hook must not run after post-model conflict');

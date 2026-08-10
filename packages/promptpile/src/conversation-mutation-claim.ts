@@ -66,18 +66,22 @@ export const acquireConversationMutationClaim = (
     throw error;
   }
 
+  let closed = false;
   try {
     (dependencies.write ?? ((targetFd, content) => fs.writeFileSync(targetFd, content, 'utf8')))(
       fd,
       `${JSON.stringify(metadata)}\n`
     );
+    (dependencies.close ?? fs.closeSync)(fd);
+    closed = true;
+    return { path: claimPath, ownerToken };
   } catch (error) {
-    try { (dependencies.close ?? fs.closeSync)(fd); } catch { /* preserve write failure */ }
+    if (!closed) {
+      try { (dependencies.close ?? fs.closeSync)(fd); } catch { /* preserve acquisition failure */ }
+    }
     try { (dependencies.unlink ?? fs.unlinkSync)(claimPath); } catch { /* best effort */ }
     throw error;
   }
-  (dependencies.close ?? fs.closeSync)(fd);
-  return { path: claimPath, ownerToken };
 };
 
 export const releaseConversationMutationClaim = (

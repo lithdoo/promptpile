@@ -40,5 +40,8 @@ jobs:
       - name: Verify real append-user contention
         run: node packages/promptpile/test/conversation-append-user-occ.cjs
 
+      - name: Verify atomic claim contention with IPC barriers
+        run: node packages/promptpile/test/conversation-claim-contention.cjs
+
       - name: Verify root preflight, commit recheck, and derived baseline
         run: node packages/promptpile/test/root-conversation-occ.cjs

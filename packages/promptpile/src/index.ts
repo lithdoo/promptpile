@@ -23,7 +23,7 @@ import {
 } from './message-sidecar-files';
 import { isPromptpileDiagnostic } from './diagnostic-log';
 import { createOutputPileWriter } from './output-pile';
-import type { AssistantExtraPayload, ChatApiToolChoice, ToolCall } from './types';
+import type { AssistantExtraPayload, ChatApiToolChoice, FileInfo, ToolCall } from './types';
 import { applyMissingToolResultsPolicy } from './tool-result-policy';
 import {
   runAppendUserCommand,
@@ -133,7 +133,7 @@ async function runCompletion(cwd: string): Promise<void> {
       inputDirectories.flatMap((directory, directoryIndex) =>
         scanDirectory(directory, directoryIndex)
       );
-    let files = scanInputLayers();
+    let files: FileInfo[] = [];
     const outputDirectoryIndex = outputDirectory === undefined
       ? undefined
       : inputDirectories.indexOf(outputDirectory);
@@ -156,6 +156,9 @@ async function runCompletion(cwd: string): Promise<void> {
         config.inputMode ? 'append_user' : 'continue_assistant',
         callerPrecondition
       );
+    }
+    if (!config.inputMode || !occEnabled) {
+      files = scanInputLayers();
     }
 
     if (config.inputMode) {

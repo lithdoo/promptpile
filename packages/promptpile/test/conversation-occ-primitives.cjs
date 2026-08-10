@@ -61,6 +61,23 @@ const {
     fs.writeFileSync(first.path, `${JSON.stringify(raw)}\n`);
     releaseConversationMutationClaim(first);
 
+    let acquisitionCloseCalls = 0;
+    assert.throws(
+      () => acquireConversationMutationClaim(root, 'append_user', {
+        close: fd => {
+          acquisitionCloseCalls += 1;
+          if (acquisitionCloseCalls === 1) throw new Error('injected acquisition close failure');
+          fs.closeSync(fd);
+        }
+      }),
+      /injected acquisition close failure/
+    );
+    assert.strictEqual(acquisitionCloseCalls, 2, 'cleanup retries close best-effort');
+    assert.ok(
+      !fs.existsSync(path.join(root, CONVERSATION_CLAIM_FILENAME)),
+      'failed acquisition must not leave a stale claim'
+    );
+
     await assert.rejects(
       withConversationMutationClaim(
         root,
