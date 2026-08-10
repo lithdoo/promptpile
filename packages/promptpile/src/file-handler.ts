@@ -21,6 +21,14 @@ const ASSISTANT_CALL_PATTERN = /^\[(\d+)\]assistant\.calls\.jsonl$/;
 const ASSISTANT_RESULT_PATTERN = /^\[(\d+)\]assistant\.result\.jsonl$/;
 const ASSISTANT_EXTRA_PATTERN = /^\[(\d+)\]assistant\.extra\.json$/;
 
+export const MAX_CONVERSATION_INDEX = Number.MAX_SAFE_INTEGER;
+
+/** Parse the protocol's frozen non-negative safe-integer index domain. */
+export const parseConversationIndex = (raw: string): number | undefined => {
+  const index = Number(raw);
+  return Number.isSafeInteger(index) && index >= 0 ? index : undefined;
+};
+
 export const stripBom = (s: string) => (s.charCodeAt(0) === 0xfeff ? s.slice(1) : s);
 
 /** YAML front matter: opening `---` on first line, closing `---` on a later line. */
@@ -83,11 +91,13 @@ export const scanDirectory = (directory: string, directoryIndex = 0): FileInfo[]
     const fullPath = path.join(directory, entry.name);
     let m = entry.name.match(ASSISTANT_CALL_PATTERN);
     if (m) {
+      const idx = parseConversationIndex(m[1]);
+      if (idx === undefined) continue;
       files.push({
         path: fullPath,
         directoryIndex,
         relativePath: entry.name,
-        idx: parseInt(m[1], 10),
+        idx,
         role: 'assistant',
         extension: 'jsonl',
         fileKind: 'assistant_call'
@@ -96,11 +106,13 @@ export const scanDirectory = (directory: string, directoryIndex = 0): FileInfo[]
     }
     m = entry.name.match(ASSISTANT_RESULT_PATTERN);
     if (m) {
+      const idx = parseConversationIndex(m[1]);
+      if (idx === undefined) continue;
       files.push({
         path: fullPath,
         directoryIndex,
         relativePath: entry.name,
-        idx: parseInt(m[1], 10),
+        idx,
         role: 'assistant',
         extension: 'jsonl',
         fileKind: 'assistant_result'
@@ -109,11 +121,13 @@ export const scanDirectory = (directory: string, directoryIndex = 0): FileInfo[]
     }
     m = entry.name.match(ASSISTANT_EXTRA_PATTERN);
     if (m) {
+      const idx = parseConversationIndex(m[1]);
+      if (idx === undefined) continue;
       files.push({
         path: fullPath,
         directoryIndex,
         relativePath: entry.name,
-        idx: parseInt(m[1], 10),
+        idx,
         role: 'assistant',
         extension: 'json',
         fileKind: 'assistant_extra'
@@ -122,11 +136,13 @@ export const scanDirectory = (directory: string, directoryIndex = 0): FileInfo[]
     }
     m = entry.name.match(FILE_PATTERN);
     if (m) {
+      const idx = parseConversationIndex(m[1]);
+      if (idx === undefined) continue;
       files.push({
         path: fullPath,
         directoryIndex,
         relativePath: entry.name,
-        idx: parseInt(m[1], 10),
+        idx,
         role: m[2],
         extension: m[3] as 'md' | 'json',
         fileKind: 'message'
@@ -433,6 +449,9 @@ export const appendUserMessage = (directory: string, files: FileInfo[], content:
  */
 export const nextAssistantIdx = (directory: string, files: FileInfo[]): number => {
   const maxIdx = files.reduce((max, file) => Math.max(max, file.idx), -1);
+  if (maxIdx >= MAX_CONVERSATION_INDEX) {
+    throw new Error(`Conversation index space is exhausted at ${MAX_CONVERSATION_INDEX}`);
+  }
   let idx = maxIdx + 1;
   while (
     fs.existsSync(path.join(directory, `[${idx}]assistant.md`)) ||
@@ -440,6 +459,9 @@ export const nextAssistantIdx = (directory: string, files: FileInfo[]): number =
     fs.existsSync(path.join(directory, `[${idx}]assistant.extra.json`)) ||
     fs.existsSync(path.join(directory, `[${idx}]assistant.result.jsonl`))
   ) {
+    if (idx >= MAX_CONVERSATION_INDEX) {
+      throw new Error(`Conversation index space is exhausted at ${MAX_CONVERSATION_INDEX}`);
+    }
     idx += 1;
   }
   return idx;
@@ -492,10 +514,16 @@ export const appendAssistantTurn = (
 
 const appendMessage = (directory: string, files: FileInfo[], role: string, content: string): string => {
   const maxIdx = files.reduce((max, file) => Math.max(max, file.idx), -1);
+  if (maxIdx >= MAX_CONVERSATION_INDEX) {
+    throw new Error(`Conversation index space is exhausted at ${MAX_CONVERSATION_INDEX}`);
+  }
   let nextIdx = maxIdx + 1;
   let filePath = path.join(directory, `[${nextIdx}]${role}.md`);
 
   while (fs.existsSync(filePath)) {
+    if (nextIdx >= MAX_CONVERSATION_INDEX) {
+      throw new Error(`Conversation index space is exhausted at ${MAX_CONVERSATION_INDEX}`);
+    }
     nextIdx += 1;
     filePath = path.join(directory, `[${nextIdx}]${role}.md`);
   }

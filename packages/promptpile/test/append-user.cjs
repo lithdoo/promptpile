@@ -45,6 +45,22 @@ try {
   assert.strictEqual(path.basename(collisionPath), '[5]user.md', 'append skips an occupied target index');
   assert.strictEqual(fs.readFileSync(path.join(indexedDir, '[4]user.md'), 'utf8'), 'occupied');
 
+  const exhaustedDir = path.join(tmp, 'exhausted');
+  fs.mkdirSync(exhaustedDir);
+  fs.writeFileSync(
+    path.join(exhaustedDir, `[${Number.MAX_SAFE_INTEGER}]user.md`),
+    'last legal artifact'
+  );
+  assert.throws(
+    () => appendUserMessage(exhaustedDir, scanDirectory(exhaustedDir), 'must not be written'),
+    /index space is exhausted/
+  );
+  assert.deepStrictEqual(
+    fs.readdirSync(exhaustedDir),
+    [`[${Number.MAX_SAFE_INTEGER}]user.md`],
+    'append does not create an out-of-range index artifact'
+  );
+
   console.log('append-user tests ok');
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });

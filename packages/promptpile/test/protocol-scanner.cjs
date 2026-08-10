@@ -22,6 +22,12 @@ try {
   fs.writeFileSync(path.join(root, '[6]e\u0301.md'), 'combining');
   fs.writeFileSync(path.join(root, '[7]user.md'), 'plain');
   fs.writeFileSync(path.join(root, '[07]user.md'), 'zero padded');
+  fs.writeFileSync(path.join(root, '[9007199254740991]user.md'), 'largest valid index');
+  fs.writeFileSync(path.join(root, '[9007199254740992]user.md'), 'outside safe integer range');
+  fs.writeFileSync(
+    path.join(root, '[9007199254740992]assistant.extra.json'),
+    'must not fall back to a normal .json message'
+  );
 
   const files = scanDirectory(root);
   assert.deepStrictEqual(
@@ -35,6 +41,7 @@ try {
       { idx: 6, role: 'é', fileKind: 'message' },
       { idx: 7, role: 'user', fileKind: 'message' },
       { idx: 7, role: 'user', fileKind: 'message' },
+      { idx: Number.MAX_SAFE_INTEGER, role: 'user', fileKind: 'message' },
     ]
   );
   assert.strictEqual(
@@ -48,6 +55,7 @@ try {
   );
   assert.ok(compareUtf8Bytes('A', 'a') < 0);
   assert.ok(compareUtf8Bytes('e\u0301', 'é') < 0);
+  assert.ok(!files.some(({ relativePath }) => relativePath.includes('9007199254740992')));
 
   const sameArtifactAtDifferentRoots = [
     { ...files[0], path: path.join(root, 'z', files[0].relativePath) },

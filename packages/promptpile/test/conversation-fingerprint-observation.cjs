@@ -68,6 +68,26 @@ const expectCode = async (promise, code) => assert.rejects(
       'raw BOM/line-ending bytes participate in the fingerprint'
     );
 
+    const indexBoundary = makeDirectory('index-boundary');
+    const maximumArtifact = path.join(indexBoundary, '[9007199254740991]user.md');
+    const outsideArtifact = path.join(indexBoundary, '[9007199254740992]a.md');
+    fs.writeFileSync(maximumArtifact, 'maximum');
+    fs.writeFileSync(outsideArtifact, 'ignored outside index domain');
+    const boundaryResult = await fingerprintConversationDirectory(indexBoundary);
+    assert.strictEqual(boundaryResult.artifactCount, 1);
+    assert.strictEqual(boundaryResult.maxIndex, Number.MAX_SAFE_INTEGER);
+    fs.writeFileSync(outsideArtifact, 'changed but still outside index domain');
+    assert.strictEqual(
+      (await fingerprintConversationDirectory(indexBoundary)).fingerprint,
+      boundaryResult.fingerprint,
+      'out-of-range index files are not Conversation artifacts'
+    );
+    fs.writeFileSync(maximumArtifact, 'changed maximum');
+    assert.notStrictEqual(
+      (await fingerprintConversationDirectory(indexBoundary)).fingerprint,
+      boundaryResult.fingerprint
+    );
+
     const between = makeDirectory('between-observations');
     const betweenFile = path.join(between, '[0]user.md');
     fs.writeFileSync(betweenFile, 'AAAA');

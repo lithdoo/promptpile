@@ -43,7 +43,9 @@ Conversation scanner 只读取配置目录的**直接子文件**，不递归进�
 
 ## 2. 普通消息
 
-- `idx` 是十进制非负整数排序键。
+- `idx` 是十进制非负安全整数排序键，数值域固定为 `0 <= idx <= 9007199254740991`（`Number.MAX_SAFE_INTEGER`）。前导零不改变数值排序键，因此 `[1]user.md` 与 `[01]user.md` 的排序 idx 都是 `1`，但仍是两个 exact path 不同的 artifact。
+- 文件名数字部分匹配、但数值超出上述范围时，该文件不属于有效 Conversation artifact；scanner 按 unknown/non-protocol 文件静默忽略，不产生 rounded idx，也不降级匹配成其它 artifact kind。
+- 当当前最大 idx 已为 `9007199254740991` 时，不存在合法的 next idx；append/continue mutation 必须失败且不得创建范围外 artifact。
 - 文件名中的 role 原样成为 API message role。
 - `.md`：UTF-8；若起始存在完整 YAML front matter，则移除后使用正文。
 - `.json`：完整 UTF-8 文件内容作为字符串 content，不解析成 message object。

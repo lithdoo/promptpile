@@ -345,6 +345,7 @@ interface FingerprintArtifactObservation {
 
 - exact `relativePath` 已保留原始 `[1]` / `[01]` 差异；
 - scanner 的 parsed idx 只负责 canonical ordering 与 `maxIndex` summary；
+- parsed idx 的合法域继承 Conversation Protocol v1：`0..9007199254740991`；范围外文件不被 scanner 识别，因此不参与 fingerprint；
 - 避免为既有 JS numeric idx 再引入新的整数序列化兼容面。
 
 `kind`、`role`、`extension` 虽然可从文件名推导，仍进入 canonical record，用于绑定 scanner 对 artifact 的协议解释。

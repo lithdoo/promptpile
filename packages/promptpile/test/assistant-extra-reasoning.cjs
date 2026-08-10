@@ -97,6 +97,21 @@ try {
     fs.rmSync(tmp4, { recursive: true, force: true });
   }
 
+  const exhausted = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-next-exhausted-'));
+  try {
+    fs.writeFileSync(
+      path.join(exhausted, `[${Number.MAX_SAFE_INTEGER}]assistant.md`),
+      'last legal artifact',
+      'utf8'
+    );
+    assert.throws(
+      () => nextAssistantIdx(exhausted, scanDirectory(exhausted)),
+      /index space is exhausted/
+    );
+  } finally {
+    fs.rmSync(exhausted, { recursive: true, force: true });
+  }
+
   const tmp5 = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-non-recursive-'));
   try {
     fs.writeFileSync(path.join(tmp5, '[0]system.md'), 'root system', 'utf8');
