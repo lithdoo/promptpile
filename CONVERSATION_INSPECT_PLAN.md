@@ -1,6 +1,6 @@
 # Promptpile Conversation Inspect MVP 设计
 
-> 状态：可实施设计（待开发）
+> 状态：已实施
 >
 > 日期：2026-08-07
 >
@@ -81,7 +81,7 @@ MVP 不提供：
 --strict
 --include-ignored
 --through-index
-重复 -d
+重复 -d（显式拒绝）
 ```
 
 非法 format 由 Commander 拒绝。目录不存在或目标不是目录时，错误写入 stderr，退出码为 `1`，stdout 保持为空。
@@ -186,7 +186,8 @@ sidecar 的 `role` 沿用 scanner 当前行为，值为 `assistant`。调用者�
 - `artifactCount` 必须严格等于 `artifacts.length`。
 - `maxIndex` 是 artifacts 中最大的 `index`；空数组时为 `null`。
 - `path` 相对于被检查目录，并统一使用 `/` 分隔符。
-- `directory` 保留调用者提供的目录标识，不输出内部解析后的绝对路径。
+- `directory` 保留调用者提供的原始目录字符串，仅用于显示或关联本次调用；它不是 canonical physical-directory identity，也不输出内部解析后的绝对路径。
+- Conversation Fingerprint 不得直接 hash 整个 Inspect JSON；fingerprint 必须独立定义 canonical artifact refs/content。
 - `[1]user.md` 与 `[01]user.md` 会作为两个 artifacts 输出，二者的 `index` 都是 `1`。
 - 未被现有 scanner 识别的文件不计入 `artifactCount`。
 
@@ -201,6 +202,7 @@ JSON 模式的 stdout 只写一次，并且只包含这一个 JSON document。
 ## 6. Text 输出
 
 Text formatter 使用同一个 `ConversationInspection`，不得重新扫描目录。
+空目录的 text 输出固定使用 `Max index: null`，与 JSON contract 对齐。
 
 ```text
 Conversation: ./messages
@@ -302,7 +304,7 @@ MVP 稳定后，再按独立需求评估：
 
 - `conversation validate`：校验 calls/result/extra 内容并输出 diagnostics。
 - `--include-ignored`：显式展示未识别文件。
-- Layered Conversation：为 artifacts 增加目录层身份。
+- Layered/composed-view inspection：在现有 Layered Conversation I/O 之上为 inspection artifacts 增加目录层身份。
 - 确定性 comparator 迁移：作为独立协议变更评审。
 
 这些扩展不应阻塞基础 Inspect，也不应被静默加入 v1。

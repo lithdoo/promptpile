@@ -4,7 +4,7 @@
 > 状态：implemented / beta  
 > 主要职责：单次 Chat Completions execution primitive  
 > 代码入口：`packages/promptpile/src/index.ts`  
-> 最近复核：2026-08-05
+> 最近复核：2026-08-10
 
 ## 责任
 
@@ -17,6 +17,7 @@
 - binary：`promptpile`
 - root completion CLI
 - `promptpile conversation append-user`
+- `promptpile conversation inspect`
 - `--llm-config` / `--llm-api` / `--api-key-env`
 - conversation / tool artifacts
 
@@ -24,10 +25,10 @@
 
 ## 内部模块
 
-当前源码按职责拆分为 CLI、config resolution、file handler、AI client、tools loader、atomic file、diagnostics、LLM sampling/extra-body、sidecar、output pile、after-hook 等模块。
+当前源码按职责拆分为 CLI、config resolution、conversation inspection、file handler、AI client、tools loader、atomic file、diagnostics、LLM sampling/extra-body、sidecar、output pile、after-hook 等模块。
 
 ## 测试
 
-package test 覆盖 config resolution、LLM profile CLI、API-key env、append-user、output、tools extends、LLM dump、sidecar、empty-dir insert、sampling/extra-body、reasoning extra、atomic diagnostics 与 after-hook security。
+package test 覆盖 config resolution、LLM profile CLI、API-key env、append-user、只读 conversation inspect、output、tools extends、LLM dump、sidecar、empty-dir insert、sampling/extra-body、reasoning extra、atomic diagnostics 与 after-hook security。
 
 [查看 package README](https://github.com/lithdoo/promptpile/blob/main/packages/promptpile/README.md)

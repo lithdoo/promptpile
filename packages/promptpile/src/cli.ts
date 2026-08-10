@@ -6,7 +6,8 @@ import { Config } from './types';
 import { parseMissingToolResultsPolicy } from './tool-result-policy';
 import {
   registerConversationCommand,
-  type AppendUserOptions
+  type AppendUserOptions,
+  type InspectConversationOptions
 } from './conversation-command';
 
 /** Result of {@link parseCli}; `configPath` is raw path from argv (resolve against cwd in resolve-config). */
@@ -25,6 +26,7 @@ export interface CliParseResult {
 export interface PromptpileCommandHandlers {
   completion: () => void | Promise<void>;
   appendUser: (options: AppendUserOptions) => void | Promise<void>;
+  inspectConversation: (options: InspectConversationOptions) => void | Promise<void>;
 }
 
 export const buildProgram = (handlers?: PromptpileCommandHandlers): Command => {
@@ -102,7 +104,10 @@ export const buildProgram = (handlers?: PromptpileCommandHandlers): Command => {
       'Handle missing tool results: warn | error | ignore (default: warn)'
     );
 
-  registerConversationCommand(program, handlers?.appendUser);
+  registerConversationCommand(program, {
+    appendUser: handlers?.appendUser,
+    inspectConversation: handlers?.inspectConversation
+  });
   // Keep the root command as the backwards-compatible default completion path.
   // parseCli builds the same tree without executing completion side effects.
   program.action(handlers?.completion ?? (() => undefined));

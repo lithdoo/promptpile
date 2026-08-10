@@ -2,12 +2,13 @@
 
 > 类型：Tracking  
 > 非 normative  
-> 最近复核：2026-08-06
+> 最近复核：2026-08-10
 
 ## 已完成
 
 - React CLI-first architecture migration 已进入 main。
 - `conversation append-user` 已注册为正式 Commander command tree。
+- `conversation inspect` 已提供只读 text/JSON artifact discovery，且不进入 completion/config 路径。
 - React production code 不依赖 `promptpile/dist/*`。
 - real Promptpile config boundary integration tests 与递归 architecture guard 已存在。
 - VitePress + GitHub Pages 已从 main 自动构建发布。
