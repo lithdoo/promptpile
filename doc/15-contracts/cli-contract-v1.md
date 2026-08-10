@@ -132,7 +132,7 @@ JSON 输出固定为 `JSON.stringify(inspection, null, 2) + '\n'`，schema 为�
 ```ts
 interface ConversationInspection {
   schemaVersion: 1;
-  directory: string;          // 调用者提供的目录标识
+  directory: string;          // 调用者提供的原始目录字符串，仅用于显示/关联本次调用
   artifactCount: number;      // 始终等于 artifacts.length
   maxIndex: number | null;    // 空目录为 null
   artifacts: Array<{
@@ -148,6 +148,12 @@ interface ConversationInspection {
 `[1]user.md` 与 `[01]user.md` 是两个独立 artifact，二者的 `index` 都是 `1`。Inspect
 不实现独立 filename parser、comparator 或去重逻辑。空目录是成功结果；text 模式输出
 `Artifacts: 0` 和 `Max index: null`。
+
+`directory` 不是 canonical physical-directory identity。同一物理目录通过相对路径、绝对路径、
+不同相对拼写或符号链接调用时，可能产生不同的 `directory` 字符串。需要目录 identity 的调用方
+必须独立使用 Layered Conversation I/O 定义的 realpath canonicalization。Conversation Fingerprint
+不得直接 hash 整个 Inspect JSON；fingerprint 应基于独立 canonicalization 后的 artifact refs/content，
+与 Inspect 的显示字段保持解耦。
 
 ## LLM profile selector
 

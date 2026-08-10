@@ -4,18 +4,24 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const inspectModule = require('../dist/conversation-inspect');
 const {
-  buildConversationInspection,
   formatConversationInspectionJson,
   formatConversationInspectionText,
   inspectConversation
-} = require('../dist/conversation-inspect');
+} = inspectModule;
 const { scanDirectory } = require('../dist/file-handler');
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'promptpile-inspect-'));
 
 try {
-  const empty = buildConversationInspection('./empty', []);
+  assert.strictEqual(
+    inspectModule.buildConversationInspection,
+    undefined,
+    'the single-directory builder must remain module-private'
+  );
+
+  const empty = inspectConversation(root, './empty');
   assert.deepStrictEqual(empty, {
     schemaVersion: 1,
     directory: './empty',
@@ -31,17 +37,6 @@ try {
     formatConversationInspectionJson(empty),
     `${JSON.stringify(empty, null, 2)}\n`
   );
-
-  const synthetic = buildConversationInspection('display', [{
-    path: 'unused',
-    directoryIndex: 0,
-    relativePath: path.join('nested', '[9]user.md'),
-    idx: 9,
-    role: 'user',
-    extension: 'md',
-    fileKind: 'message'
-  }]);
-  assert.strictEqual(synthetic.artifacts[0].path, 'nested/[9]user.md');
 
   fs.writeFileSync(path.join(root, '[0]system.md'), 'system body');
   fs.writeFileSync(path.join(root, '[1]user.md'), 'one');

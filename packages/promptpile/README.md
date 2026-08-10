@@ -485,6 +485,10 @@ promptpile conversation inspect -d ./messages --format json
 目标不是目录或参数非法时，命令以状态码 `1` 退出，错误只写 stderr，stdout 保持为空。
 空目录是合法结果，`artifactCount` 为 `0`、`maxIndex` 为 `null`。
 
+JSON 中的 `directory` 原样保留调用者传入的目录字符串，只用于显示或关联本次调用，
+不是基于 realpath 的 canonical physical-directory identity。不要直接把整个 Inspect JSON
+作为 Conversation Fingerprint 输入。
+
 配置示例见 [example.toml](./example.toml)、[example.sh](./example.sh)。
 
 ---

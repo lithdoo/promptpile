@@ -20,6 +20,7 @@ export interface ConversationArtifact {
 
 export interface ConversationInspection {
   schemaVersion: 1;
+  /** Caller-supplied display/correlation string; never a canonical directory identity. */
   directory: string;
   artifactCount: number;
   maxIndex: number | null;
@@ -29,8 +30,8 @@ export interface ConversationInspection {
 const toProtocolPath = (relativePath: string): string =>
   relativePath.split(path.sep).join('/');
 
-/** Map scanner output without parsing, sorting, merging, or reading artifact contents. */
-export const buildConversationInspection = (
+/** Map one scanner result without parsing, sorting, merging, or reading artifact contents. */
+const buildSingleDirectoryInspection = (
   displayDirectory: string,
   files: readonly FileInfo[]
 ): ConversationInspection => {
@@ -62,7 +63,7 @@ export const inspectConversation = (
   resolvedDirectory: string,
   displayDirectory: string
 ): ConversationInspection =>
-  buildConversationInspection(displayDirectory, scanDirectory(resolvedDirectory));
+  buildSingleDirectoryInspection(displayDirectory, scanDirectory(resolvedDirectory));
 
 export const formatConversationInspectionJson = (
   inspection: ConversationInspection
