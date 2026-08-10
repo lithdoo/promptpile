@@ -489,6 +489,31 @@ JSON 中的 `directory` 原样保留调用者传入的目录字符串，只用�
 不是基于 realpath 的 canonical physical-directory identity。不要直接把整个 Inspect JSON
 作为 Conversation Fingerprint 输入。
 
+### 计算 Conversation Fingerprint
+
+`conversation fingerprint` 对 scanner 识别的全部直接子 artifact 原始 bytes 计算确定性的强
+内容 fingerprint。命令只接受一个 physical directory，不加载 completion config、API key、
+tools、模型或 after-hook：
+
+```bash
+promptpile conversation fingerprint -d ./messages
+promptpile conversation fingerprint -d ./messages --format json
+```
+
+默认 stdout 只包含：
+
+```text
+promptpile-conversation-v1:sha256:<64-lowercase-hex>
+```
+
+JSON 包含 `schemaVersion`、`fingerprintVersion`、`algorithm`、`artifactCount`、`maxIndex` 和
+`fingerprint`。实现连续执行两次完整 observation；artifact 集合、scanner interpretation、长度或
+内容 hash 有任何差异都会失败，且 failure stdout 为空。非法 JSON/JSONL 仍参与 fingerprint，
+unknown/nested 文件不参与。路径写法、cwd 和 mtime 不影响结果；BOM、换行、front matter、文件名
+或任意正文 byte 改变都会改变结果。
+
+Fingerprint 表示观察到的 artifact 状态，不是锁、事务、CAS、访问控制或线性化 snapshot。
+
 配置示例见 [example.toml](./example.toml)、[example.sh](./example.sh)。
 
 ---

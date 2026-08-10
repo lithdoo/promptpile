@@ -1,6 +1,6 @@
 # Promptpile Conversation Fingerprint 实施设计计划
 
-> 状态：实施前冻结稿  
+> 状态：v1 已实施
 > 日期：2026-08-10  
 > 核心提案：为一个 physical Conversation Directory 定义跨平台、确定性的强 fingerprint，作为内容身份与 optimistic concurrency 的共享只读 primitive
 
@@ -866,25 +866,25 @@ Fingerprint v1 本身稳定后，再推进：
 
 实现完成必须同时满足：
 
-- [ ] v1 一次只 fingerprint 一个 physical Conversation Directory；
-- [ ] Fingerprint 是独立 command，不破坏 Inspect 的 no-content-read contract；
-- [ ] artifact discovery 100% 复用 Conversation scanner；
-- [ ] scanner 使用 locale-independent deterministic comparator；
-- [ ] Fingerprint 不实现第二套 filename parser / comparator；
-- [ ] 所有 scanner-recognized artifacts 都参与，无论内容是否合法；
-- [ ] ignored / nested / non-protocol 文件不参与；
-- [ ] artifact 内容按 raw bytes streaming SHA-256；
-- [ ] canonical binary encoding 有 byte-level golden fixture；
-- [ ] empty directory fingerprint 被固定为 golden；
-- [ ] Windows / Linux 对相同 fixture 产生相同 token；
-- [ ] absolute path、cwd、mtime、枚举顺序不影响 fingerprint；
-- [ ] recognized artifact 任意 byte 或 exact path 变化会改变 fingerprint；
-- [ ] 只有两个连续强 observation 完全一致时才返回结果；
-- [ ] unstable / unreadable 时不返回部分 fingerprint；
-- [ ] failure stdout 为空；
-- [ ] 命令不要求 completion config、API key、tools、LLM 或 hook；
-- [ ] 算法内存使用不随全部正文总大小线性增长；
-- [ ] Fingerprint 文档明确声明其不是锁、CAS、事务或线性化 snapshot；
+- [x] v1 一次只 fingerprint 一个 physical Conversation Directory；
+- [x] Fingerprint 是独立 command，不破坏 Inspect 的 no-content-read contract；
+- [x] artifact discovery 100% 复用 Conversation scanner；
+- [x] scanner 使用 locale-independent deterministic comparator；
+- [x] Fingerprint 不实现第二套 filename parser / comparator；
+- [x] 所有 scanner-recognized artifacts 都参与，无论内容是否合法；
+- [x] ignored / nested / non-protocol 文件不参与；
+- [x] artifact 内容按 raw bytes streaming SHA-256；
+- [x] canonical binary encoding 有 byte-level golden fixture；
+- [x] empty directory fingerprint 被固定为 golden；
+- [x] Windows / Linux 对相同 fixture 产生相同 token；
+- [x] absolute path、cwd、mtime、枚举顺序不影响 fingerprint；
+- [x] recognized artifact 任意 byte 或 exact path 变化会改变 fingerprint；
+- [x] 只有两个连续强 observation 完全一致时才返回结果；
+- [x] unstable / unreadable 时不返回部分 fingerprint；
+- [x] failure stdout 为空；
+- [x] 命令不要求 completion config、API key、tools、LLM 或 hook；
+- [x] 算法内存使用不随全部正文总大小线性增长；
+- [x] Fingerprint 文档明确声明其不是锁、CAS、事务或线性化 snapshot；
 - [ ] OCC 只消费该 fingerprint primitive，不复制算法。
 
 ---

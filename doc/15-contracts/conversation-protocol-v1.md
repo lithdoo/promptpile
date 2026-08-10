@@ -50,11 +50,13 @@ Conversation scanner 只读取配置目录的**直接子文件**，不递归进�
 
 ## 3. 同一 idx 的固定顺序
 
-1. 普通 `[idx]{role}.md|json`，但不含 `assistant`；多条按 role 再按路径排序；
+1. 普通 `[idx]{role}.md|json`，但不含 `[idx]assistant.md`；因此 `[idx]assistant.json` 仍是普通 message；多条按 role 再按路径排序；
 2. `[idx]assistant.md`；
 3. `[idx]assistant.calls.jsonl`；
 4. `[idx]assistant.extra.json`；
 5. `[idx]assistant.result.jsonl`。
+
+全部排序字符串使用 UTF-8 编码后的 unsigned bytes 做 lexicographic ascending 比较，不依赖 OS locale、Node/ICU 默认 locale、大小写折叠或 Unicode normalization。最终路径排序键是 scanner 提供的精确 `relativePath`，不是绝对路径。
 
 calls/extra 与 assistant 内容合并进 assistant message；result 中每条结果形成 tool message。
 

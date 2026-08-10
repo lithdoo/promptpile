@@ -155,6 +155,43 @@ interface ConversationInspection {
 不得直接 hash 整个 Inspect JSON；fingerprint 应基于独立 canonicalization 后的 artifact refs/content，
 与 Inspect 的显示字段保持解耦。
 
+### Fingerprint
+
+```bash
+promptpile conversation fingerprint -d <directory> [--format text|json]
+```
+
+- 一次只接受一个已存在的 physical Conversation Directory；
+- discovery、artifact interpretation 和顺序完全复用 Conversation scanner；
+- 对每个 recognized artifact 的原始 bytes 做 streaming SHA-256，不解析或规范化正文；
+- 连续执行两次完整的 `scan -> hash -> rescan` observation，只有两次 observation 完全相同才成功；
+- unknown 文件、nested 文件和 metadata 不参与；绝对路径、display path、cwd、mtime、权限位不进入 canonical encoding；
+- 不解析 completion config，不要求 API key，不加载 tools，不调用模型或 after-hook；
+- failure：非零退出、diagnostic 写入 stderr、stdout 为空，不输出部分 fingerprint。
+
+text stdout 固定为一个 token 和换行：
+
+```text
+promptpile-conversation-v1:sha256:<64-lowercase-hex>
+```
+
+JSON 使用 `JSON.stringify(result, null, 2) + '\n'`：
+
+```ts
+interface ConversationFingerprintResult {
+  schemaVersion: 1;
+  fingerprintVersion: 1;
+  algorithm: 'sha256';
+  artifactCount: number;
+  maxIndex: number | null;
+  fingerprint: string;
+}
+```
+
+Fingerprint 是强内容 identity 和 stable observation，不是访问控制、文件系统锁、CAS、事务或
+线性化 snapshot。mutation/OCC consumer 必须在自己的临界区内消费该 primitive，不能把一次
+较早计算的 token 当作写入时状态未变化的证明。
+
 ## LLM profile selector
 
 ```text

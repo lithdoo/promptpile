@@ -8,6 +8,12 @@ import {
   inspectConversation,
   type ConversationInspectFormat
 } from './conversation-inspect';
+import {
+  fingerprintConversationDirectory,
+  formatConversationFingerprintJson,
+  formatConversationFingerprintText,
+  type ConversationFingerprintFormat
+} from './conversation-fingerprint';
 
 export interface AppendUserOptions {
   directory: string;
@@ -19,11 +25,19 @@ export interface InspectConversationOptions {
   format: ConversationInspectFormat;
 }
 
+export interface FingerprintConversationOptions {
+  directory: string;
+  format: ConversationFingerprintFormat;
+}
+
 export const registerConversationCommand = (
   program: Command,
   handlers?: {
     appendUser?: (options: AppendUserOptions) => void | Promise<void>;
     inspectConversation?: (options: InspectConversationOptions) => void | Promise<void>;
+    fingerprintConversation?: (
+      options: FingerprintConversationOptions
+    ) => void | Promise<void>;
   }
 ): void => {
   const conversation = program
@@ -64,6 +78,24 @@ export const registerConversationCommand = (
 
   if (handlers?.inspectConversation !== undefined) {
     inspect.action(handlers.inspectConversation);
+  }
+
+  const fingerprint = conversation
+    .command('fingerprint')
+    .description('Hash the exact raw-byte state of recognized Conversation artifacts')
+    .requiredOption(
+      '-d, --directory <path>',
+      'Existing Conversation directory',
+      singleDirectory
+    )
+    .addOption(
+      new Option('--format <format>', 'Output format')
+        .choices(['text', 'json'])
+        .default('text')
+    );
+
+  if (handlers?.fingerprintConversation !== undefined) {
+    fingerprint.action(handlers.fingerprintConversation);
   }
 };
 
@@ -123,6 +155,24 @@ export const runInspectConversationCommand = (
     const output = options.format === 'json'
       ? formatConversationInspectionJson(inspection)
       : formatConversationInspectionText(inspection);
+    process.stdout.write(output);
+  } catch (error) {
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 1;
+  }
+};
+
+/** Fingerprint one physical Conversation directory without loading completion runtime state. */
+export const runFingerprintConversationCommand = async (
+  options: FingerprintConversationOptions,
+  cwd: string
+): Promise<void> => {
+  try {
+    const directory = requireExistingDirectory(cwd, options.directory);
+    const result = await fingerprintConversationDirectory(directory);
+    const output = options.format === 'json'
+      ? formatConversationFingerprintJson(result)
+      : formatConversationFingerprintText(result);
     process.stdout.write(output);
   } catch (error) {
     console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);

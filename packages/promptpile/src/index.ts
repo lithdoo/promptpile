@@ -25,6 +25,7 @@ import type { AssistantExtraPayload, ChatApiToolChoice, ToolCall } from './types
 import { applyMissingToolResultsPolicy } from './tool-result-policy';
 import {
   runAppendUserCommand,
+  runFingerprintConversationCommand,
   runInspectConversationCommand
 } from './conversation-command';
 import { runCli } from './cli';
@@ -317,7 +318,8 @@ async function main(): Promise<void> {
   await runCli(process.argv, {
     completion: () => runCompletion(cwd),
     appendUser: options => runAppendUserCommand(options, cwd),
-    inspectConversation: options => runInspectConversationCommand(options, cwd)
+    inspectConversation: options => runInspectConversationCommand(options, cwd),
+    fingerprintConversation: options => runFingerprintConversationCommand(options, cwd)
   });
 }
 

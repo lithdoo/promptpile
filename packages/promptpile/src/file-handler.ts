@@ -38,8 +38,12 @@ export const stripYamlFrontMatter = (raw: string): string => {
   return text;
 };
 
-/** Sort key: non-assistant messages, then `[idx]assistant.md`, then call, then result. */
-const tier = (f: FileInfo): number => {
+/** Locale-independent lexicographic order over the exact UTF-8 bytes. */
+export const compareUtf8Bytes = (a: string, b: string): number =>
+  Buffer.compare(Buffer.from(a, 'utf8'), Buffer.from(b, 'utf8'));
+
+/** Sort key: ordinary messages, `[idx]assistant.md`, call/extra, then result. */
+export const conversationArtifactTier = (f: FileInfo): number => {
   if (f.fileKind === 'assistant_result') {
     return 3;
   }
@@ -52,20 +56,20 @@ const tier = (f: FileInfo): number => {
   return 0;
 };
 
-const compareScannedFiles = (a: FileInfo, b: FileInfo): number => {
+export const compareConversationArtifacts = (a: FileInfo, b: FileInfo): number => {
   if (a.idx !== b.idx) {
     return a.idx - b.idx;
   }
-  const ta = tier(a);
-  const tb = tier(b);
+  const ta = conversationArtifactTier(a);
+  const tb = conversationArtifactTier(b);
   if (ta !== tb) {
     return ta - tb;
   }
-  const ra = a.role.localeCompare(b.role);
+  const ra = compareUtf8Bytes(a.role, b.role);
   if (ra !== 0) {
     return ra;
   }
-  return a.path.localeCompare(b.path);
+  return compareUtf8Bytes(a.relativePath, b.relativePath);
 };
 
 /** Scan only direct files in the message directory; nested directories are intentionally ignored. */
@@ -129,7 +133,7 @@ export const scanDirectory = (directory: string, directoryIndex = 0): FileInfo[]
       });
     }
   }
-  return files.sort(compareScannedFiles);
+  return files.sort(compareConversationArtifacts);
 };
 
 const readMessageFileContent = (file: FileInfo): string => {
@@ -393,7 +397,7 @@ export const buildMessagesWithDiagnostics = (files: FileInfo[]): BuildMessagesRe
     const indices = [...byIdx.keys()].sort((a, b) => a - b);
     for (const idx of indices) {
       const group = byIdx.get(idx)!;
-      group.sort(compareScannedFiles);
+      group.sort(compareConversationArtifacts);
       out.push(...buildMessagesForIdx(group, diagnostics));
     }
   }
