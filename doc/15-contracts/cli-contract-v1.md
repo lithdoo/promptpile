@@ -34,6 +34,21 @@ Root completion 的 Conversation mutation 包括 `--input` 追加 user artifact�
 
 `conversation append-user` 不是 layered completion：它继续要求且只接受一个 `-d`，不接受 `--output-dir`。
 
+### Conversation optimistic concurrency
+
+Root mutation 可选声明 writable output physical directory 的 expected condition：
+
+```text
+--expect-output-fingerprint <promptpile-conversation-v1:sha256:64-lowercase-hex>
+--expected-output-next-index <0..9007199254740991>
+```
+
+条件只允许与 `--input` 或 `--continue` 一起使用；否则是配置错误且不调用模型。两者同时给出时必须全部匹配。Fingerprint 是强内容条件，next-index 是只检测 allocator 结果的弱条件。Layered mode 不检查只读 base/shared layer。
+
+实现可以在模型调用前 preflight 以尽早失败，但只有获取 `.promptpile.occ.claim` 后的 fresh recheck 才是权威 commit 判断。模型请求期间不持 claim。仅 `--continue` 时 caller condition 在模型返回后重新验证；`--input --continue` 时 user commit 后在同一 claim 内派生内部 baseline，assistant commit 验证该 baseline。
+
+退出码固定为：`0` success、`1` ordinary/config/runtime failure、`3` Conversation conflict。post-model conflict 不写本轮 assistant Conversation artifacts，也不执行 after-hook；此前已经流向 stdout/output pile 或写入 `-o` 的独立结果不回滚。组合模式已经提交的 user artifact同样不回滚。
+
 ### TOML keys 与优先级
 
 ```toml
@@ -103,6 +118,8 @@ promptpile-archive search -d "$PROMPTPILE_OUTPUT_DIRECTORY" "query"
 
 ```bash
 promptpile conversation append-user -d <directory> [-q]
+  [--expect-fingerprint <token>]
+  [--expected-next-index <idx>]
 ```
 
 - stdin：完整 user message；空/纯空白输入失败；
@@ -112,6 +129,9 @@ promptpile conversation append-user -d <directory> [-q]
 - 不加载 tools；
 - 不调用模型；
 - failure：非零退出并写 stderr。
+- expected condition mismatch、claim busy、state unstable 或 target collision：退出码 `3`，stdout 为空且不写 user artifact；
+- claim cleanup 等普通文件系统失败：退出码 `1`；
+- 无 expected condition 时保留原有兼容 mutation 路径。
 
 ### Inspect
 

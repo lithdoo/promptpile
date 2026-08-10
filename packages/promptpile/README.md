@@ -393,6 +393,8 @@ API key 保留既有的 direct-key 优先语义：
 | `-q, --quiet` | 静默模式：不打印过程日志、流式正文、工具调用行；**仍会**写入 `-o` 主文件与 `.calls.jsonl` / `.extra.json`（若存在），也不会关闭 output pile | 关闭 |
 | `-i, --input` | 在终端读取输入并保存为下一条 `user` 消息后再执行 | 关闭 |
 | `-c, --continue` | 将本次 assistant 输出追加为下一条消息文件：有正文则写 `[N]assistant.md`；含 `tool_calls` 则写 `[N]assistant.calls.jsonl`；含 `reasoning_content` 则写 `[N]assistant.extra.json`；三者**可共存**于同一 `N`，下一轮拼请求时会合并为一条 assistant 消息；三者皆无时不写文件 | 关闭 |
+| `--expect-output-fingerprint <token>` | OCC 强条件：commit 时 writable output directory 的 Fingerprint v1 必须匹配；要求 `--input` 或 `--continue` | 无 |
+| `--expected-output-next-index <idx>` | OCC 弱条件：下一次 output mutation allocator 必须得到该 safe integer；要求 `--input` 或 `--continue` | 无 |
 | `--tools-file <path>` | 工具定义 **`.toml`**（可含 `extends`）；**相对路径相对当前工作目录**；未设置且 TOML 无 `tools_file` 且未 `--disable-tool` 时报错 | 无 |
 | `--insert-files <paths>` | 在扫描消息 **之前** 插入 sidecar 消息；多路径用 `\|` 分隔；每文件须 `{name}.{role}.md`；**相对路径相对 cwd** | 无 |
 | `--append-files <paths>` | 在扫描消息 **之后** 追加 sidecar 消息；规则同 `--insert-files` | 无 |
@@ -426,12 +428,20 @@ printf '%s' 'Analyze this repository' \
 ```text
 -d, --directory <path>  必填；已存在的消息目录，相对路径相对 cwd
 -q, --quiet             成功时不输出文件路径
+--expect-fingerprint <token>  可选 OCC 强条件
+--expected-next-index <idx>   可选 OCC next-index 条件
 ```
 
 stdin 仅在 `content.trim()` 为空时被拒绝；非空内容不会被 trim，写入文件时保留原文。
 默认成功 stdout 为 `<写入文件路径>\n`，`--quiet` 成功 stdout 为空；诊断写入 stderr。
-成功退出码为 `0`，空输入、目录缺失、目标不是目录、扫描或写入失败时退出码为 `1`，
-且不会创建 assistant 文件。
+成功退出码为 `0`，空输入、目录缺失、目标不是目录、扫描或写入失败时退出码为 `1`。
+expected condition mismatch、claim busy、state unstable 或 target collision 时退出码为 `3`，
+stdout 为空且不写 user artifact。两个 condition 同时提供时必须全部满足。
+
+OCC 使用 output-directory-scoped 的 `.promptpile.occ.claim` 做短临界区 exclusive claim，并在
+claim 后重新计算 condition。它不会在 stdin 等待或模型调用期间持有 claim，不会 TTL 自动偷取
+残留 claim。保证范围限于遵守同一协议的 cooperative writers；无 expected condition 时保留原有
+兼容路径。
 
 编排器应直接将已经读取的用户内容写入子进程 stdin，不要通过 shell 拼接或转义正文：
 

@@ -4,6 +4,8 @@ import { parseTemperatureInput } from './llm-sampling';
 import { parseOutputPileFd, parseOutputPileFormat } from './output-pile';
 import { Config } from './types';
 import { parseMissingToolResultsPolicy } from './tool-result-policy';
+import { parseConversationFingerprintTokenV1 } from './conversation-fingerprint';
+import { parseExpectedConversationIndex } from './conversation-index';
 import {
   registerConversationCommand,
   type AppendUserOptions,
@@ -75,6 +77,16 @@ export const buildProgram = (handlers?: PromptpileCommandHandlers): Command => {
     .option('-q, --quiet', 'Disable normal stdout logs and response output')
     .option('-i, --input', 'Read user input from terminal and append as next user message')
     .option('-c, --continue', 'Append assistant reply to next message file')
+    .option(
+      '--expect-output-fingerprint <token>',
+      'Require the current writable output Conversation Fingerprint v1 token',
+      parseConversationFingerprintTokenV1
+    )
+    .option(
+      '--expected-output-next-index <idx>',
+      'Require the next writable output Conversation mutation index',
+      parseExpectedConversationIndex
+    )
     .option(
       '--insert-files <paths>',
       'Prepend messages from sidecar files before scanned messages; paths separated by |; each file must be {name}.{role}.md (relative to cwd)'
@@ -149,6 +161,8 @@ export const parseCli = (argv: string[]): CliParseResult => {
     quiet?: boolean;
     continue?: boolean;
     input?: boolean;
+    expectOutputFingerprint?: string;
+    expectedOutputNextIndex?: number;
     toolsFile?: string;
     afterHookPath?: string;
     allowDefaultAfterHook?: boolean;
@@ -244,6 +258,8 @@ export const parseCli = (argv: string[]): CliParseResult => {
       quiet: options.quiet as boolean | undefined,
       continueMode: options.continue === true ? true : undefined,
       inputMode: options.input === true ? true : undefined,
+      expectedOutputFingerprint: options.expectOutputFingerprint,
+      expectedOutputNextIndex: options.expectedOutputNextIndex,
       toolsFileCli,
       insertFilesCli,
       appendFilesCli,

@@ -6,7 +6,9 @@ import path from 'path';
 import { resolveConfig } from './resolve-config';
 import {
   appendAssistantTurn,
+  appendAssistantTurnAtIndex,
   appendUserMessage,
+  appendUserMessageAtIndex,
   buildMessagesWithDiagnostics,
   scanDirectory
 } from './file-handler';
@@ -29,6 +31,17 @@ import {
   runInspectConversationCommand
 } from './conversation-command';
 import { runCli } from './cli';
+import {
+  commitConversationMutation,
+  hasConversationMutationPrecondition,
+  preflightConversationMutation,
+  type ConversationMutationPrecondition
+} from './conversation-mutation-guard';
+import {
+  CONVERSATION_CONFLICT_EXIT_CODE,
+  formatConversationConflict,
+  isConversationConflictError
+} from './conversation-conflict';
 
 const readUserInputFromTerminal = async (): Promise<string> => {
   console.log('Enter user message. Finish with Ctrl+Z then Enter (Windows), or Ctrl+D (macOS/Linux).');
@@ -131,6 +144,20 @@ async function runCompletion(cwd: string): Promise<void> {
       ? []
       : files.filter(file => file.directoryIndex === outputDirectoryIndex);
 
+    const callerPrecondition: ConversationMutationPrecondition = {
+      expectedFingerprint: config.expectedOutputFingerprint,
+      expectedNextIndex: config.expectedOutputNextIndex
+    };
+    const occEnabled = hasConversationMutationPrecondition(callerPrecondition);
+    let assistantPrecondition: ConversationMutationPrecondition = callerPrecondition;
+    if (occEnabled) {
+      await preflightConversationMutation(
+        outputDirectory!,
+        config.inputMode ? 'append_user' : 'continue_assistant',
+        callerPrecondition
+      );
+    }
+
     if (config.inputMode) {
       const userContent = await readUserInputFromTerminal();
       if (!userContent) {
@@ -138,7 +165,23 @@ async function runCompletion(cwd: string): Promise<void> {
         process.exit(1);
       }
 
-      appendUserMessage(outputDirectory!, outputFiles(), userContent);
+      if (occEnabled) {
+        const committed = await commitConversationMutation({
+          directory: outputDirectory!,
+          mutationKind: 'append_user',
+          precondition: callerPrecondition,
+          mutate: state => appendUserMessageAtIndex(outputDirectory!, state.nextIndex, userContent),
+          deriveFor: config.continueMode ? 'continue_assistant' : undefined
+        });
+        if (config.continueMode) {
+          assistantPrecondition = {
+            expectedFingerprint: committed.baseline?.fingerprint,
+            expectedNextIndex: committed.baseline?.nextIndex
+          };
+        }
+      } else {
+        appendUserMessage(outputDirectory!, outputFiles(), userContent);
+      }
       files = scanInputLayers();
     }
     const hasInsertFiles = (config.insertFilesCli?.trim() ?? '') !== '';
@@ -258,13 +301,26 @@ async function runCompletion(cwd: string): Promise<void> {
     let continueCallsPath: string | undefined;
     let continueExtraPath: string | undefined;
     if (config.continueMode) {
-      const saved = appendAssistantTurn(
-        outputDirectory!,
-        outputFiles(),
-        response,
-        toolCalls,
-        reasoningContent
-      );
+      const saved = occEnabled
+        ? (await commitConversationMutation({
+            directory: outputDirectory!,
+            mutationKind: 'continue_assistant',
+            precondition: assistantPrecondition,
+            mutate: state => appendAssistantTurnAtIndex(
+              outputDirectory!,
+              state.nextIndex,
+              response,
+              toolCalls,
+              reasoningContent
+            )
+          })).value
+        : appendAssistantTurn(
+            outputDirectory!,
+            outputFiles(),
+            response,
+            toolCalls,
+            reasoningContent
+          );
       continueMdPath = saved.mdPath;
       continueCallsPath = saved.callsPath;
       continueExtraPath = saved.extraPath;
@@ -308,8 +364,13 @@ async function runCompletion(cwd: string): Promise<void> {
       });
     }
   } catch (error) {
+    if (isConversationConflictError(error)) {
+      console.error(formatConversationConflict(error));
+      process.exitCode = CONVERSATION_CONFLICT_EXIT_CODE;
+      return;
+    }
     console.error('Error:', error);
-    process.exit(1);
+    process.exitCode = 1;
   }
 }
 

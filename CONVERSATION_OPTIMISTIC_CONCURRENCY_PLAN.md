@@ -1,6 +1,6 @@
 # Promptpile Conversation Optimistic Concurrency 实施设计计划
 
-> 状态：实施前冻结稿  
+> 状态：已实施
 > 日期：2026-08-10  
 > 核心提案：为 Conversation mutations 提供可选 expected precondition，并用 output-directory-scoped 的短临界区 exclusive claim 完成 commit-time compare-and-commit，避免 TOCTOU，同时不引入长期锁服务
 
@@ -1438,30 +1438,30 @@ process acquires claim
 
 实现完成必须同时满足：
 
-- [ ] Fingerprint precondition 直接复用 Conversation Fingerprint v1 primitive；
-- [ ] OCC 不复制 scanner / hash / canonicalization；
-- [ ] Fingerprint token 有唯一 parser / validator；
-- [ ] idx safe-integer 数值域已在 Conversation Protocol 冻结；
-- [ ] next-index allocator 是 guard 与 writer 共用的唯一 primitive；
-- [ ] OCC-enabled mutation 在 authoritative check 前先 acquire exclusive claim；
-- [ ] claim acquisition 使用 atomic exclusive create，不使用 `existsSync -> create`；
-- [ ] claim 不覆盖模型请求时间；
-- [ ] claim 不参与 Conversation Fingerprint；
-- [ ] claim 不做 TTL auto-steal；
-- [ ] append-user mismatch 不写 artifact；
-- [ ] root preflight mismatch 不调用模型；
-- [ ] post-model mismatch 不写本轮 assistant Conversation artifacts；
-- [ ] post-model mismatch 不执行 after-hook；
-- [ ] `--input --continue` 使用 post-input derived baseline；
-- [ ] Layered OCC 只绑定 writable output directory；
-- [ ] 两个 cooperative writers 从相同 expected state 竞争时最多一个 commit 成功；
-- [ ] conflict 使用稳定 exit code 3；
-- [ ] ordinary error 继续使用非 conflict exit semantics；
-- [ ] assistant multi-file write 仍明确不承诺 transaction；
-- [ ] 无 expected condition 时既有正常单 writer CLI 行为保持兼容；
+- [x] Fingerprint precondition 直接复用 Conversation Fingerprint v1 primitive；
+- [x] OCC 不复制 scanner / hash / canonicalization；
+- [x] Fingerprint token 有唯一 parser / validator；
+- [x] idx safe-integer 数值域已在 Conversation Protocol 冻结；
+- [x] next-index allocator 是 guard 与 writer 共用的唯一 primitive；
+- [x] OCC-enabled mutation 在 authoritative check 前先 acquire exclusive claim；
+- [x] claim acquisition 使用 atomic exclusive create，不使用 `existsSync -> create`；
+- [x] claim 不覆盖模型请求时间；
+- [x] claim 不参与 Conversation Fingerprint；
+- [x] claim 不做 TTL auto-steal；
+- [x] append-user mismatch 不写 artifact；
+- [x] root preflight mismatch 不调用模型；
+- [x] post-model mismatch 不写本轮 assistant Conversation artifacts；
+- [x] post-model mismatch 不执行 after-hook；
+- [x] `--input --continue` 使用 post-input derived baseline；
+- [x] Layered OCC 只绑定 writable output directory；
+- [x] 两个 cooperative writers 从相同 expected state 竞争时最多一个 commit 成功；
+- [x] conflict 使用稳定 exit code 3；
+- [x] ordinary error 继续使用非 conflict exit semantics；
+- [x] assistant multi-file write 仍明确不承诺 transaction；
+- [x] 无 expected condition 时既有正常单 writer CLI 行为保持兼容；
 - [ ] Windows / Linux real child-process contention tests 通过；
-- [ ] crash/stale claim 行为有确定性测试；
-- [ ] 文档明确 non-cooperative writer 不在强保证范围内。
+- [x] crash/stale claim 行为有确定性测试；
+- [x] 文档明确 non-cooperative writer 不在强保证范围内。
 
 ---
 

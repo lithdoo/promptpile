@@ -5,6 +5,7 @@ import type { FileInfo, FileKind } from './types';
 
 const DOMAIN_HEADER = Buffer.from('promptpile-conversation-fingerprint-v1\0', 'ascii');
 const TOKEN_PREFIX = 'promptpile-conversation-v1:sha256:';
+const TOKEN_PATTERN = /^promptpile-conversation-v1:sha256:[0-9a-f]{64}$/;
 const U32_MAX = 0xffff_ffff;
 const U64_MAX = 0xffff_ffff_ffff_ffffn;
 
@@ -58,6 +59,16 @@ export interface ConversationFingerprintResult {
 }
 
 export type ConversationFingerprintFormat = 'text' | 'json';
+
+/** Validate and return the one canonical Conversation Fingerprint v1 token form. */
+export const parseConversationFingerprintTokenV1 = (value: string): string => {
+  if (!TOKEN_PATTERN.test(value)) {
+    throw new Error(
+      'expected fingerprint must be promptpile-conversation-v1:sha256: followed by 64 lowercase hex characters'
+    );
+  }
+  return value;
+};
 
 export interface ConversationObservationHooks {
   afterScanStart?: (observationOrdinal: 1 | 2) => void | Promise<void>;

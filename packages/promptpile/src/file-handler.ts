@@ -12,6 +12,12 @@ import type {
 } from './types';
 import { atomicWriteFileSync } from './atomic-file';
 import { formatMissingToolResultContent } from './types';
+import {
+  allocateConversationMutationIndex,
+  MAX_CONVERSATION_INDEX,
+  parseConversationIndex
+} from './conversation-index';
+import { ConversationTargetCollisionError } from './conversation-conflict';
 
 const readUtf8FileFromDisk = (filePath: string): string =>
   fs.readFileSync(filePath, 'utf8');
@@ -21,13 +27,7 @@ const ASSISTANT_CALL_PATTERN = /^\[(\d+)\]assistant\.calls\.jsonl$/;
 const ASSISTANT_RESULT_PATTERN = /^\[(\d+)\]assistant\.result\.jsonl$/;
 const ASSISTANT_EXTRA_PATTERN = /^\[(\d+)\]assistant\.extra\.json$/;
 
-export const MAX_CONVERSATION_INDEX = Number.MAX_SAFE_INTEGER;
-
-/** Parse the protocol's frozen non-negative safe-integer index domain. */
-export const parseConversationIndex = (raw: string): number | undefined => {
-  const index = Number(raw);
-  return Number.isSafeInteger(index) && index >= 0 ? index : undefined;
-};
+export { MAX_CONVERSATION_INDEX, parseConversationIndex } from './conversation-index';
 
 export const stripBom = (s: string) => (s.charCodeAt(0) === 0xfeff ? s.slice(1) : s);
 
@@ -438,7 +438,8 @@ export const appendAssistantMessage = (
 };
 
 export const appendUserMessage = (directory: string, files: FileInfo[], content: string): string => {
-  return appendMessage(directory, files, 'user', content);
+  const idx = allocateConversationMutationIndex(directory, files, 'append_user');
+  return appendUserMessageAtIndex(directory, idx, content);
 };
 
 /**
@@ -448,23 +449,7 @@ export const appendUserMessage = (directory: string, files: FileInfo[], content:
  * companion sidecars (continue) always share the same `N`.
  */
 export const nextAssistantIdx = (directory: string, files: FileInfo[]): number => {
-  const maxIdx = files.reduce((max, file) => Math.max(max, file.idx), -1);
-  if (maxIdx >= MAX_CONVERSATION_INDEX) {
-    throw new Error(`Conversation index space is exhausted at ${MAX_CONVERSATION_INDEX}`);
-  }
-  let idx = maxIdx + 1;
-  while (
-    fs.existsSync(path.join(directory, `[${idx}]assistant.md`)) ||
-    fs.existsSync(path.join(directory, `[${idx}]assistant.calls.jsonl`)) ||
-    fs.existsSync(path.join(directory, `[${idx}]assistant.extra.json`)) ||
-    fs.existsSync(path.join(directory, `[${idx}]assistant.result.jsonl`))
-  ) {
-    if (idx >= MAX_CONVERSATION_INDEX) {
-      throw new Error(`Conversation index space is exhausted at ${MAX_CONVERSATION_INDEX}`);
-    }
-    idx += 1;
-  }
-  return idx;
+  return allocateConversationMutationIndex(directory, files, 'continue_assistant');
 };
 
 /**
@@ -484,11 +469,31 @@ export const appendAssistantTurn = (
   toolCalls: ToolCall[] | undefined,
   reasoningContent?: string
 ): { idx: number; mdPath?: string; callsPath?: string; extraPath?: string } => {
+  const idx = nextAssistantIdx(directory, files);
+  return appendAssistantTurnAtIndex(directory, idx, content, toolCalls, reasoningContent);
+};
+
+export const appendAssistantTurnAtIndex = (
+  directory: string,
+  idx: number,
+  content: string,
+  toolCalls: ToolCall[] | undefined,
+  reasoningContent?: string
+): { idx: number; mdPath?: string; callsPath?: string; extraPath?: string } => {
   const hasContent = content.length > 0;
   const hasCalls = !!(toolCalls && toolCalls.length > 0);
   const hasReasoning = !!(reasoningContent && reasoningContent.trim());
-  const idx = nextAssistantIdx(directory, files);
   if (!hasContent && !hasCalls && !hasReasoning) return { idx };
+
+  const intendedPaths = [
+    hasContent ? path.join(directory, `[${idx}]assistant.md`) : undefined,
+    hasCalls ? path.join(directory, `[${idx}]assistant.calls.jsonl`) : undefined,
+    hasReasoning ? path.join(directory, `[${idx}]assistant.extra.json`) : undefined
+  ].filter((candidate): candidate is string => candidate !== undefined);
+  const collision = intendedPaths.find(candidate => fs.existsSync(candidate));
+  if (collision !== undefined) {
+    throw new ConversationTargetCollisionError(collision);
+  }
 
   let mdPath: string | undefined;
   let callsPath: string | undefined;
@@ -512,22 +517,15 @@ export const appendAssistantTurn = (
   return { idx, mdPath, callsPath, extraPath };
 };
 
-const appendMessage = (directory: string, files: FileInfo[], role: string, content: string): string => {
-  const maxIdx = files.reduce((max, file) => Math.max(max, file.idx), -1);
-  if (maxIdx >= MAX_CONVERSATION_INDEX) {
-    throw new Error(`Conversation index space is exhausted at ${MAX_CONVERSATION_INDEX}`);
+export const appendUserMessageAtIndex = (
+  directory: string,
+  nextIdx: number,
+  content: string
+): string => {
+  const filePath = path.join(directory, `[${nextIdx}]user.md`);
+  if (fs.existsSync(filePath)) {
+    throw new ConversationTargetCollisionError(filePath);
   }
-  let nextIdx = maxIdx + 1;
-  let filePath = path.join(directory, `[${nextIdx}]${role}.md`);
-
-  while (fs.existsSync(filePath)) {
-    if (nextIdx >= MAX_CONVERSATION_INDEX) {
-      throw new Error(`Conversation index space is exhausted at ${MAX_CONVERSATION_INDEX}`);
-    }
-    nextIdx += 1;
-    filePath = path.join(directory, `[${nextIdx}]${role}.md`);
-  }
-
   atomicWriteFileSync(filePath, content);
   return filePath;
 };

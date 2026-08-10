@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { Command, InvalidArgumentError, Option } from 'commander';
-import { appendUserMessage, scanDirectory } from './file-handler';
+import { appendUserMessage, appendUserMessageAtIndex, scanDirectory } from './file-handler';
 import {
   formatConversationInspectionJson,
   formatConversationInspectionText,
@@ -14,10 +14,25 @@ import {
   formatConversationFingerprintText,
   type ConversationFingerprintFormat
 } from './conversation-fingerprint';
+import { parseConversationFingerprintTokenV1 } from './conversation-fingerprint';
+import { parseExpectedConversationIndex } from './conversation-index';
+import {
+  commitConversationMutation,
+  hasConversationMutationPrecondition,
+  preflightConversationMutation,
+  type ConversationMutationPrecondition
+} from './conversation-mutation-guard';
+import {
+  CONVERSATION_CONFLICT_EXIT_CODE,
+  formatConversationConflict,
+  isConversationConflictError
+} from './conversation-conflict';
 
 export interface AppendUserOptions {
   directory: string;
   quiet?: boolean;
+  expectFingerprint?: string;
+  expectedNextIndex?: number;
 }
 
 export interface InspectConversationOptions {
@@ -47,6 +62,16 @@ export const registerConversationCommand = (
     .command('append-user')
     .description('Append one user message without invoking an LLM')
     .requiredOption('-d, --directory <path>', 'Existing message directory')
+    .option(
+      '--expect-fingerprint <token>',
+      'Require the current Conversation Fingerprint v1 token',
+      parseConversationFingerprintTokenV1
+    )
+    .option(
+      '--expected-next-index <idx>',
+      'Require the next user mutation index',
+      parseExpectedConversationIndex
+    )
     .option('-q, --quiet', 'Suppress successful stdout output');
 
   if (handlers?.appendUser !== undefined) {
@@ -129,18 +154,37 @@ export const runAppendUserCommand = async (
 ): Promise<void> => {
   try {
     const directory = requireExistingDirectory(cwd, options.directory);
+    const precondition: ConversationMutationPrecondition = {
+      expectedFingerprint: options.expectFingerprint,
+      expectedNextIndex: options.expectedNextIndex
+    };
+    if (hasConversationMutationPrecondition(precondition)) {
+      await preflightConversationMutation(directory, 'append_user', precondition);
+    }
     const content = await readStdinUtf8();
     if (content.trim() === '') {
       throw new Error('user message is empty; nothing was written');
     }
 
-    const writtenPath = appendUserMessage(directory, scanDirectory(directory), content);
+    const writtenPath = hasConversationMutationPrecondition(precondition)
+      ? (await commitConversationMutation({
+          directory,
+          mutationKind: 'append_user',
+          precondition,
+          mutate: state => appendUserMessageAtIndex(directory, state.nextIndex, content)
+        })).value
+      : appendUserMessage(directory, scanDirectory(directory), content);
     if (!options.quiet) {
       process.stdout.write(`${writtenPath}\n`);
     }
   } catch (error) {
-    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
-    process.exitCode = 1;
+    if (isConversationConflictError(error)) {
+      console.error(formatConversationConflict(error));
+      process.exitCode = CONVERSATION_CONFLICT_EXIT_CODE;
+    } else {
+      console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+      process.exitCode = 1;
+    }
   }
 };
 

@@ -6,6 +6,7 @@
 
 ## 已完成
 
+- Conversation Optimistic Concurrency v1 已覆盖 `conversation append-user`、root `--input`、root `--continue` 与组合 derived baseline；使用 output-directory-scoped exclusive claim、commit-time recheck、稳定 exit code 3，并进入 Node 18/22 × Windows/Linux 并发矩阵。
 - React CLI-first architecture migration 已进入 main。
 - `conversation append-user` 已注册为正式 Commander command tree。
 - `conversation inspect` 已提供只读 text/JSON artifact discovery，且不进入 completion/config 路径。

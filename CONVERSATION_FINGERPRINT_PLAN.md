@@ -886,7 +886,7 @@ Fingerprint v1 本身稳定后，再推进：
 - [x] 命令不要求 completion config、API key、tools、LLM 或 hook；
 - [x] 算法内存使用不随全部正文总大小线性增长；
 - [x] Fingerprint 文档明确声明其不是锁、CAS、事务或线性化 snapshot；
-- [ ] OCC 只消费该 fingerprint primitive，不复制算法。
+- [x] OCC 只消费该 fingerprint primitive，不复制算法。
 
 ---
 

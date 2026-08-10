@@ -35,6 +35,8 @@ export const loadConfig = (options: Partial<Config>): Config => {
     extraBody: options.extraBody,
     continueMode: options.continueMode ?? false,
     inputMode: options.inputMode ?? false,
+    expectedOutputFingerprint: options.expectedOutputFingerprint,
+    expectedOutputNextIndex: options.expectedOutputNextIndex,
     output: options.output,
     outputPileFile: options.outputPileFile,
     outputPileFd: options.outputPileFd,

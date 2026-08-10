@@ -431,6 +431,16 @@ export const resolveConfig = (cwd: string, argv: string[]): Config => {
     false
   );
   if (
+    (cliPartial.expectedOutputFingerprint !== undefined ||
+      cliPartial.expectedOutputNextIndex !== undefined) &&
+    !requestedContinueMode &&
+    !requestedInputMode
+  ) {
+    throw new Error(
+      '--expect-output-fingerprint/--expected-output-next-index require --input or --continue'
+    );
+  }
+  if (
     inputDirectories.length > 1 &&
     (requestedContinueMode || requestedInputMode) &&
     resolvedExplicitOutputDirectory === undefined
@@ -586,6 +596,8 @@ export const resolveConfig = (cwd: string, argv: string[]): Config => {
     extraBody,
     continueMode,
     inputMode,
+    expectedOutputFingerprint: cliPartial.expectedOutputFingerprint,
+    expectedOutputNextIndex: cliPartial.expectedOutputNextIndex,
     output,
     outputPileFile,
     outputPileFd,

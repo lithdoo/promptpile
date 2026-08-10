@@ -84,7 +84,17 @@ promptpile conversation append-user -d <directory>
 
 ## 6. Atomicity 与并发
 
-单个完整文件采用临时文件 + rename 的原子提交。Protocol **不提供跨文件事务，也不保证多写入者 next-index 协调**。
+单个完整文件采用临时文件 + rename 的原子提交。assistant 正文及 calls/extra sidecar 仍是多个独立文件，Protocol 不承诺跨文件事务。
+
+遵守 Conversation OCC v1 的 cooperative writer 在修改同一个 physical writable directory 前，使用保留控制文件：
+
+```text
+.promptpile.occ.claim
+```
+
+通过 exclusive create 获取短临界区所有权，并在 claim 内重新验证调用方提供的 fingerprint/next-index condition 后才执行 mutation。claim 不参与 scanner、Fingerprint、消息组装或 idx namespace；不得使用 TTL 自动偷取残留 claim。模型请求、stdin 等待、普通 `-o` 输出和 after-hook 不在 claim 临界区内。
+
+该协议保证 cooperative writers 不会同时从同一个 expected state commit；手工编辑、旧版本或绕过 claim 的 non-cooperative writer 不在此保证范围。普通 rename 也不被声明为跨平台 atomic no-replace CAS。
 
 ## 7. Artifact identity 与 diagnostics
 

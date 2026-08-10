@@ -57,6 +57,18 @@ interface OutputArtifactPolicy {
 - `--output-dir` 只改变 Conversation artifacts 的写入位置，不改变 `-o` 和 output pile 路径。
 - after-hook 在模型输出和 Conversation artifacts 写入后执行。
 
+### Post-model OCC conflict
+
+`--continue` 使用 expected output condition 时，模型返回后仍可能因为 Conversation 已变化而以 exit code `3` 冲突。各通道语义固定为：
+
+- stdout 和 output pile 是实时通道，已经发送的内容不撤回；output pile 的模型完成事件仍表示模型流已完成，不表示 Conversation commit 成功；
+- 已成功写入的 `-o` 主输出及其 calls/extra sidecar 不回滚；
+- 本轮 assistant Conversation artifacts 不写入；
+- after-hook 不执行；
+- `--input --continue` 中此前已 commit 的 user artifact 保留。
+
+需要同时判断模型结果与 Conversation commit 的机器调用方，后续应消费 Completion Receipt；OCC v1 不把 receipt 作为正确性前置条件。
+
 ## 5. 诊断能力
 
 可以增加只解析配置、不调用模型的命令：

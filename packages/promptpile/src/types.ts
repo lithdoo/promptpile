@@ -113,6 +113,10 @@ export interface Config {
   extraBody?: Record<string, unknown>;
   continueMode: boolean;
   inputMode: boolean;
+  /** CLI-only OCC precondition for the writable output Conversation directory. */
+  expectedOutputFingerprint?: string;
+  /** CLI-only OCC precondition for the next output Conversation mutation index. */
+  expectedOutputNextIndex?: number;
   output?: string;
   /** Optional file/pipe path that receives streamed assistant output even when quiet is true. */
   outputPileFile?: string;
