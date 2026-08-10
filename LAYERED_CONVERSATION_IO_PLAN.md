@@ -1,6 +1,6 @@
 # Promptpile Layered Conversation I/O 初步设计计划
 
-> 状态：Phase 4 已完成
+> 状态：功能实现及专项 contract matrix 已完成；全生态 Windows lifecycle matrix 尚有失败待归因
 > 日期：2026-08-07  
 > 目标组件：`promptpile`、`promptpile-react`，以及依赖 Conversation Protocol 的 MCP/Compress 工具  
 > 核心提案：允许重复使用 `-d/--directory` 提供有序输入目录，并以 `--output-dir` 指定唯一可写 Conversation 目录
@@ -417,13 +417,15 @@ Dayloom 仍应把一个稳定 output directory 作为该 Session 的主要 Conve
 - 验证多 step calls/results 始终落在 output directory；
 - 增加 fake Promptpile argv contract 和真实 Promptpile parser 集成测试。
 
-### Phase 4：生态验证和文档（已完成，2026-08-10）
+### Phase 4：生态验证和文档（功能与专项验证已完成；全生态 Windows matrix 待归因，2026-08-10）
 
 - 验证 `promptpile-mcp exec-calls/check` 对 output artifacts 的兼容性；
 - 验证 `promptpile-compress` 只处理 output directory 的生命周期；
 - 验证 grep-search 能按明确 Conversation Directory 检索 archive；
 - 更新生态总览、CLI Contract、Conversation Protocol、Tool Artifacts、README 和示例；
 - 增加 Windows/POSIX 路径、符号链接和只读权限测试。
+
+Layered 专项 workflow 已在 Ubuntu/Windows Node 22 覆盖 Promptpile、React、MCP 和 Compress contracts。全生态 `Context lifecycle quality` matrix 同一 HEAD 仍有 Windows 失败：Node 18 的 archive consumer 失败在上一提交已存在，Node 22 的 producer/restore 测试阶段失败尚未稳定复现或完成归因。因此这里不把全生态 matrix 记为 Phase 4 已完整验收，也不把该失败归因于 Layered runtime。
 
 ## 12. 测试计划
 

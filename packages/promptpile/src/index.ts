@@ -110,16 +110,17 @@ async function runCompletion(cwd: string): Promise<void> {
     }
 
     const quiet = config.quiet;
+    const { inputDirectories, outputDirectory, anchorDirectory } = config.conversationIo;
 
     const scanInputLayers = () =>
-      config.inputDirectories.flatMap((directory, directoryIndex) =>
+      inputDirectories.flatMap((directory, directoryIndex) =>
         scanDirectory(directory, directoryIndex)
       );
     let files = scanInputLayers();
-    const outputDirectoryIndex = config.outputDirectory === undefined
+    const outputDirectoryIndex = outputDirectory === undefined
       ? undefined
-      : config.inputDirectories.indexOf(config.outputDirectory);
-    if (config.outputDirectory !== undefined && outputDirectoryIndex === -1) {
+      : inputDirectories.indexOf(outputDirectory);
+    if (outputDirectory !== undefined && outputDirectoryIndex === -1) {
       throw new Error('resolved conversation output directory is not an input layer');
     }
     const outputFiles = () => outputDirectoryIndex === undefined
@@ -133,7 +134,7 @@ async function runCompletion(cwd: string): Promise<void> {
         process.exit(1);
       }
 
-      appendUserMessage(config.outputDirectory!, outputFiles(), userContent);
+      appendUserMessage(outputDirectory!, outputFiles(), userContent);
       files = scanInputLayers();
     }
     const hasInsertFiles = (config.insertFilesCli?.trim() ?? '') !== '';
@@ -153,7 +154,7 @@ async function runCompletion(cwd: string): Promise<void> {
     } else {
       try {
         tools = loadTools({
-          directory: config.directory,
+          directory: anchorDirectory,
           cwd,
           toolsFileCli: config.toolsFileCli,
           toolsFileConfig: config.toolsFileConfig
@@ -254,7 +255,7 @@ async function runCompletion(cwd: string): Promise<void> {
     let continueExtraPath: string | undefined;
     if (config.continueMode) {
       const saved = appendAssistantTurn(
-        config.outputDirectory!,
+        outputDirectory!,
         outputFiles(),
         response,
         toolCalls,
@@ -265,7 +266,7 @@ async function runCompletion(cwd: string): Promise<void> {
       continueExtraPath = saved.extraPath;
     }
 
-    const scanAbs = path.resolve(cwd, config.directory);
+    const scanAbs = path.resolve(cwd, anchorDirectory);
     const hookResolution = resolveAfterHookScript({
       cwd,
       scanAbs,
@@ -283,8 +284,8 @@ async function runCompletion(cwd: string): Promise<void> {
     } else if (hookResolution.status === 'run') {
       const hookEnv = buildPromptpileHookEnv({
         scanAbs,
-        inputDirectories: config.inputDirectories,
-        outputDirectory: config.outputDirectory,
+        inputDirectories,
+        outputDirectory,
         resolvedOutput,
         toolCalls,
         model: config.model,

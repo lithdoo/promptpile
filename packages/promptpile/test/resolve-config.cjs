@@ -39,7 +39,11 @@ try {
   fs.writeFileSync(fakeScript, '');
   const cfg = resolveConfig(tmp, ['node', fakeScript, '-k', 'key']);
   assert.strictEqual(cfg.model, 'gpt-3.5-turbo', 'ordinary process.env and .env model config are ignored');
-  assert.strictEqual(cfg.directory, msgAbs, 'default directory is used when CLI and TOML omit it');
+  assert.strictEqual(
+    cfg.conversationIo.anchorDirectory,
+    msgAbs,
+    'default directory is used when CLI and TOML omit it'
+  );
 
   const tomlPath = path.join(tmp, 'app.toml');
   fs.writeFileSync(tomlPath, '[promptpile]\nllm_api_model = "m-toml"\n');
@@ -142,7 +146,11 @@ try {
     '--config', 'runtime.toml',
     '--llm-config', 'profiles.toml'
   ]);
-  assert.strictEqual(cfgSeparateProfiles.directory, msgAbs, '--config remains the runtime config source');
+  assert.strictEqual(
+    cfgSeparateProfiles.conversationIo.anchorDirectory,
+    msgAbs,
+    '--config remains the runtime config source'
+  );
   assert.strictEqual(cfgSeparateProfiles.model, 'profile-db-reasoning', '--llm-config replaces the profile source');
   assert.strictEqual(cfgSeparateProfiles.apiBaseUrl, 'https://reasoning.example/v1');
   assert.strictEqual(cfgSeparateProfiles.apiKey, 'reasoning-profile-key');
@@ -164,7 +172,11 @@ try {
     '--llm-config', 'profiles.toml',
     '--llm-api', 'reasoning'
   ]);
-  assert.strictEqual(cfgProfileOnly.directory, msgAbs, 'runtime fields in --llm-config are ignored');
+  assert.strictEqual(
+    cfgProfileOnly.conversationIo.anchorDirectory,
+    msgAbs,
+    'runtime fields in --llm-config are ignored'
+  );
   assert.strictEqual(cfgProfileOnly.model, 'profile-db-reasoning');
   assert.strictEqual(cfgProfileOnly.temperature, 0.7);
   assert.deepStrictEqual(cfgProfileOnly.extraBody, { source: 'reasoning-profile' });

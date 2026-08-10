@@ -567,7 +567,15 @@ export const resolveConfig = (cwd: string, argv: string[]): Config => {
   const missingToolResults =
     cliLayer.missingToolResults ?? tomlLayer.missingToolResults ?? 'warn';
 
+  const conversationIo = {
+    inputDirectories,
+    outputDirectory,
+    anchorDirectory: resolvedDirAbs
+  };
+
   return {
+    conversationIo,
+    // Compatibility aliases for callers consuming the pre-layered Config shape.
     inputDirectories,
     directory: resolvedDirAbs,
     outputDirectory,

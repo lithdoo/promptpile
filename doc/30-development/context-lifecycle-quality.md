@@ -2,7 +2,7 @@
 
 > 类型：Development policy
 > 适用范围：`promptpile-compress` 与 Archive Protocol consumers
-> 最近复核：2026-08-06
+> 最近复核：2026-08-10
 
 ## 支持矩阵
 
@@ -10,6 +10,8 @@ Context lifecycle filesystem gate 支持 Node 18 与 Node 22，并在
 `ubuntu-latest`、`windows-latest` 上运行。矩阵覆盖 lock、same-host stale
 lock recovery、唯一锁并发清理、atomic rename、POSIX directory fsync 分支、Windows
 same-directory rename、故障注入恢复、producer/consumer integration。
+
+截至 2026-08-10，同一 Layered I/O HEAD 的 Ubuntu Node 18/22 通过，Windows Node 18/22 仍有失败待归因。Node 18 失败位于独立 Archive Protocol consumer 且在上一提交已存在；Node 22 失败位于 producer/restore/lock/recovery 测试阶段，本地 Windows Node 22 尚未稳定复现。该状态既不应表述为全矩阵验收通过，也不足以证明是 Layered runtime 回归。
 
 ## 必须通过的命令
 

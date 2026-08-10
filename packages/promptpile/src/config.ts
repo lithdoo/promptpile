@@ -5,18 +5,29 @@ import { Config } from './types';
  * @deprecated Prefer {@link resolveConfig} in resolve-config.ts; kept for callers that merge manually.
  */
 export const loadConfig = (options: Partial<Config>): Config => {
-  const selectedInputs = options.inputDirectories ?? [options.directory ?? './messages'];
-  const inputDirectories = options.outputDirectory === undefined
+  const selectedInputs = options.conversationIo?.inputDirectories
+    ?? options.inputDirectories
+    ?? [options.conversationIo?.anchorDirectory ?? options.directory ?? './messages'];
+  const outputDirectory = options.conversationIo?.outputDirectory ?? options.outputDirectory;
+  const inputDirectories = outputDirectory === undefined
     ? selectedInputs
     : [
-        ...selectedInputs.filter(directory => directory !== options.outputDirectory),
-        options.outputDirectory
+        ...selectedInputs.filter(directory => directory !== outputDirectory),
+        outputDirectory
       ];
-  const directory = inputDirectories[inputDirectories.length - 1] ?? './messages';
+  const anchorDirectory = options.conversationIo?.anchorDirectory
+    ?? inputDirectories[inputDirectories.length - 1]
+    ?? './messages';
   return {
+    conversationIo: {
+      inputDirectories,
+      outputDirectory,
+      anchorDirectory
+    },
+    // Compatibility aliases for callers consuming the pre-layered Config shape.
     inputDirectories,
-    directory,
-    outputDirectory: options.outputDirectory,
+    directory: anchorDirectory,
+    outputDirectory,
     model: options.model ?? 'gpt-3.5-turbo',
     apiKey: options.apiKey ?? '',
     apiBaseUrl: options.apiBaseUrl ?? 'https://api.openai.com/v1',

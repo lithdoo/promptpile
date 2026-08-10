@@ -19,6 +19,17 @@ const {
   loadSidecarMessages
 } = require(path.join(root, 'dist', 'message-sidecar-files.js'));
 
+const deprecatedConfigIoConsumers = fs.readdirSync(path.join(root, 'src'))
+  .filter(file => file.endsWith('.ts'))
+  .filter(file => /\bconfig\.(?:directory|inputDirectories|outputDirectory)\b/.test(
+    fs.readFileSync(path.join(root, 'src', file), 'utf8')
+  ));
+assert.deepStrictEqual(
+  deprecatedConfigIoConsumers,
+  [],
+  'core source must consume resolved Conversation I/O through config.conversationIo'
+);
+
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-layered-'));
 try {
   const base = path.join(tmp, 'base');
@@ -68,8 +79,16 @@ try {
     inputDirectories: [base, shared],
     outputDirectory: base
   });
-  assert.deepStrictEqual(manuallyLoaded.inputDirectories, [shared, base]);
-  assert.strictEqual(manuallyLoaded.directory, base);
+  assert.deepStrictEqual(manuallyLoaded.conversationIo, {
+    inputDirectories: [shared, base],
+    outputDirectory: base,
+    anchorDirectory: base
+  });
+  assert.deepStrictEqual(
+    [manuallyLoaded.inputDirectories, manuallyLoaded.outputDirectory, manuallyLoaded.directory],
+    [[shared, base], base, base],
+    'legacy Config I/O fields remain synchronized compatibility aliases'
+  );
 
   const cliConfig = resolveConfig(tmp, [
     'node',
@@ -83,12 +102,12 @@ try {
     '--disable-tool'
   ]);
   assert.deepStrictEqual(
-    cliConfig.inputDirectories,
+    cliConfig.conversationIo.inputDirectories,
     [fs.realpathSync(base), fs.realpathSync(shared)],
     'canonical duplicate inputs are removed while first occurrence order is retained'
   );
   assert.strictEqual(
-    cliConfig.directory,
+    cliConfig.conversationIo.anchorDirectory,
     fs.realpathSync(shared),
     'compatibility anchor is the final effective input layer'
   );
@@ -114,7 +133,7 @@ try {
       '--continue'
     ]);
     assert.deepStrictEqual(
-      symlinkConfig.inputDirectories,
+      symlinkConfig.conversationIo.inputDirectories,
       [fs.realpathSync(base), fs.realpathSync(shared)],
       'directory symlink aliases collapse to one canonical input identity'
     );
@@ -133,7 +152,7 @@ try {
     '--disable-tool'
   ]);
   assert.deepStrictEqual(
-    relativeConfig.inputDirectories,
+    relativeConfig.conversationIo.inputDirectories,
     [fs.realpathSync(base), fs.realpathSync(shared)],
     `${process.platform} relative path segments resolve to stable layer identities`
   );
@@ -149,7 +168,7 @@ try {
       '--disable-tool'
     ]);
     assert.deepStrictEqual(
-      caseAliasConfig.inputDirectories,
+      caseAliasConfig.conversationIo.inputDirectories,
       [fs.realpathSync(base)],
       'Windows directory identity comparison is case-insensitive'
     );
@@ -164,9 +183,9 @@ try {
     '--disable-tool'
   ]);
   assert.ok(fs.statSync(outputOnly).isDirectory(), 'a missing output directory is created');
-  assert.strictEqual(outputOnlyConfig.outputDirectory, fs.realpathSync(outputOnly));
+  assert.strictEqual(outputOnlyConfig.conversationIo.outputDirectory, fs.realpathSync(outputOnly));
   assert.deepStrictEqual(
-    outputOnlyConfig.inputDirectories,
+    outputOnlyConfig.conversationIo.inputDirectories,
     [fs.realpathSync(outputOnly)],
     'output-only configuration does not synthesize the default messages directory'
   );
@@ -183,12 +202,12 @@ try {
     '--continue'
   ]);
   assert.deepStrictEqual(
-    movedOutputConfig.inputDirectories,
+    movedOutputConfig.conversationIo.inputDirectories,
     [fs.realpathSync(base), fs.realpathSync(shared)],
     'an output alias is removed from its old position and appended exactly once'
   );
-  assert.strictEqual(movedOutputConfig.outputDirectory, fs.realpathSync(shared));
-  assert.strictEqual(movedOutputConfig.directory, fs.realpathSync(shared));
+  assert.strictEqual(movedOutputConfig.conversationIo.outputDirectory, fs.realpathSync(shared));
+  assert.strictEqual(movedOutputConfig.conversationIo.anchorDirectory, fs.realpathSync(shared));
 
   const singleMutation = resolveConfig(tmp, [
     'node',
@@ -198,7 +217,7 @@ try {
     '--continue'
   ]);
   assert.strictEqual(
-    singleMutation.outputDirectory,
+    singleMutation.conversationIo.outputDirectory,
     fs.realpathSync(base),
     'single-directory mutation keeps the legacy implicit write target'
   );
@@ -215,7 +234,7 @@ try {
     configPath
   ]);
   assert.deepStrictEqual(
-    tomlConfig.inputDirectories,
+    tomlConfig.conversationIo.inputDirectories,
     [fs.realpathSync(base), fs.realpathSync(shared)],
     'TOML dirs preserve declared order'
   );
@@ -231,9 +250,9 @@ try {
     '--config',
     configPath
   ]);
-  assert.strictEqual(tomlOutputConfig.outputDirectory, fs.realpathSync(tomlOutput));
+  assert.strictEqual(tomlOutputConfig.conversationIo.outputDirectory, fs.realpathSync(tomlOutput));
   assert.deepStrictEqual(
-    tomlOutputConfig.inputDirectories,
+    tomlOutputConfig.conversationIo.inputDirectories,
     [fs.realpathSync(base), fs.realpathSync(tomlOutput)]
   );
   const cliOutput = path.join(tmp, 'cli-output');
@@ -246,12 +265,12 @@ try {
     cliOutput
   ]);
   assert.strictEqual(
-    cliOutputOverride.outputDirectory,
+    cliOutputOverride.conversationIo.outputDirectory,
     fs.realpathSync(cliOutput),
     'CLI output directory overrides TOML output_dir'
   );
   assert.deepStrictEqual(
-    cliOutputOverride.inputDirectories,
+    cliOutputOverride.conversationIo.inputDirectories,
     [fs.realpathSync(base), fs.realpathSync(cliOutput)]
   );
 
@@ -268,7 +287,7 @@ try {
     shared
   ]);
   assert.deepStrictEqual(
-    cliOverride.inputDirectories,
+    cliOverride.conversationIo.inputDirectories,
     [fs.realpathSync(shared)],
     'CLI directory array replaces the TOML array as one precedence layer'
   );

@@ -57,6 +57,16 @@ export interface BuildMessagesResult {
   diagnostics: MessageDiagnostic[];
 }
 
+/** Resolved layered Conversation inputs, optional mutation target, and compatibility anchor. */
+export interface ResolvedConversationIo {
+  /** Canonical, de-duplicated conversation input directories in layer order. */
+  inputDirectories: string[];
+  /** Canonical unique Conversation mutation target, explicit or single-layer fallback. */
+  outputDirectory?: string;
+  /** Anchor for legacy relative config, tool discovery, and after-hook resolution. */
+  anchorDirectory: string;
+}
+
 /** Single element of the API `tools` array (from tools `.toml` `[[tools]]` rows). */
 export type ToolDefinition = Record<string, unknown>;
 
@@ -84,14 +94,15 @@ export interface FileInfo {
 }
 
 export interface Config {
-  /** Canonical, de-duplicated conversation input directories in layer order. */
+  /** Unambiguous internal model for resolved layered Conversation I/O. */
+  conversationIo: ResolvedConversationIo;
+  /** @deprecated Use `conversationIo.inputDirectories`. */
   inputDirectories: string[];
   /**
-   * Compatibility conversation anchor. Equal to the sole input in legacy mode,
-   * and to the final effective input in read-only layered mode.
+   * @deprecated Use `conversationIo.anchorDirectory`. Retained as a compatibility alias.
    */
   directory: string;
-  /** Canonical unique Conversation mutation target, explicit or single-layer fallback. */
+  /** @deprecated Use `conversationIo.outputDirectory`. */
   outputDirectory?: string;
   model: string;
   apiKey: string;
