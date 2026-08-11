@@ -170,6 +170,17 @@ try {
   assert.strictEqual(receiptLedger.find('receipt', 'receipt'), undefined,
     'a failed atomic publication must not enter the ledger');
   assert.ok(!fs.readdirSync(root).some(name => name.includes('.receipt-target-directory.tmp-')));
+
+  const duplicateReceiptTarget = path.join(root, 'must-not-be-published.json');
+  receiptLedger.record({
+    namespace: 'receipt', kind: 'receipt', absolutePath: path.join(root, 'historical-receipt.json')
+  });
+  assert.throws(() => commitCompletionReceiptV1({
+    targetPath: duplicateReceiptTarget, receipt: receiptDoc, ledger: receiptLedger
+  }), /duplicate completion artifact ledger key: receipt\/receipt/);
+  assert.strictEqual(fs.existsSync(duplicateReceiptTarget), false,
+    'a duplicate receipt ledger slot must fail before atomic publication');
+  assert.ok(!fs.readdirSync(root).some(name => name.includes('.must-not-be-published.json.tmp-')));
   console.log('output artifact policy tests ok');
 } finally {
   fs.rmSync(root, { recursive: true, force: true });

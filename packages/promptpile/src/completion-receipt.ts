@@ -89,6 +89,11 @@ export const commitCompletionReceiptV1 = (options: {
   receipt: CompletionReceiptV1;
   ledger: CompletionArtifactLedger;
 }): void => {
+  // Resolve the ledger's predictable failure before the Receipt becomes externally visible.
+  // This check, publication, and record operation form one synchronous, await-free section.
+  if (options.ledger.find('receipt', 'receipt')) {
+    throw new Error('duplicate completion artifact ledger key: receipt/receipt');
+  }
   atomicWriteFileSync(options.targetPath, `${JSON.stringify(options.receipt, null, 2)}\n`);
   options.ledger.record({ namespace: 'receipt', kind: 'receipt', absolutePath: options.targetPath });
 };

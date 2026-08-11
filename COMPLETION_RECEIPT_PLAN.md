@@ -827,6 +827,8 @@ namespace = receipt
 kind = receipt
 ```
 
+Receipt stage 必须在 publication 前验证 `receipt/receipt` ledger slot 尚未占用。该 precheck、atomic writer 与随后的 ledger record 位于同一个无 `await` 的同步区间，使可预期的 duplicate failure 发生在 Receipt 对外可见之前；publication 成功后，record 满足已验证的不变量。
+
 失败的 Receipt 不得进入 ledger。
 
 ---
@@ -836,7 +838,8 @@ kind = receipt
 Receipt 使用现有 atomic file primitive：
 
 ```text
-same-directory temp
+receipt ledger slot precheck
+→ same-directory temp
 → exclusive temp create
 → write UTF-8 JSON
 → fsync temp file

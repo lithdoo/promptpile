@@ -99,6 +99,7 @@ const makeMessages = (root, name) => {
       "  receiptExistsDuringHook: fs.existsSync(process.env.RECEIPT_PATH),",
       "  assistantExists: !process.env.PROMPTPILE_ASSISTANT_MD_FILE || fs.existsSync(process.env.PROMPTPILE_ASSISTANT_MD_FILE)",
       "}));",
+      "if (process.env.HOOK_COUNTER) fs.appendFileSync(process.env.HOOK_COUNTER, 'run\\n');",
       "if (process.env.HOOK_STDERR) process.stderr.write(process.env.HOOK_STDERR);",
       "process.exit(Number(process.env.HOOK_EXIT_CODE || 0));",
       ''
@@ -358,6 +359,44 @@ const makeMessages = (root, name) => {
     assert.strictEqual(staleDoc.invocationId, 'historical-run');
     assert.notStrictEqual(staleDoc.invocationId, 'current-failed-run',
       'receipt existence alone must not correlate a historical receipt to the failed invocation');
+
+    const messagesReceiptWriteFailure = makeMessages(root, 'messages-receipt-write-failure');
+    const receiptDirectoryTarget = path.join(root, 'receipt-publication-directory');
+    const receiptFailureOutput = path.join(root, 'outputs', 'receipt-write-failure.md');
+    const receiptFailureCapture = path.join(root, 'capture-receipt-write-failure.json');
+    const receiptFailureHookCounter = path.join(root, 'receipt-write-failure-hook-count.txt');
+    fs.mkdirSync(receiptDirectoryTarget);
+    const receiptWriteFailure = await run(root, [
+      '-d', messagesReceiptWriteFailure, ...apiArgs,
+      '--continue',
+      '-o', receiptFailureOutput,
+      '--receipt', receiptDirectoryTarget,
+      '--after-hook-path', hook
+    ], {
+      HOOK_HELPER: hookHelper,
+      HOOK_CAPTURE: receiptFailureCapture,
+      HOOK_COUNTER: receiptFailureHookCounter,
+      RECEIPT_PATH: receiptDirectoryTarget
+    });
+    assert.strictEqual(receiptWriteFailure.code, 1,
+      'root completion must fail when Receipt atomic publication fails');
+    assert.strictEqual(fs.statSync(receiptDirectoryTarget).isDirectory(), true,
+      'the invalid Receipt directory target must not be replaced');
+    assert.strictEqual(fs.readFileSync(receiptFailureOutput, 'utf8'), 'answer',
+      'main output committed before Receipt failure must be preserved');
+    assert.strictEqual(
+      fs.readFileSync(path.join(messagesReceiptWriteFailure, '[1]assistant.md'), 'utf8'),
+      'answer',
+      'Conversation output committed before Receipt failure must be preserved'
+    );
+    const receiptFailureHook = JSON.parse(fs.readFileSync(receiptFailureCapture, 'utf8'));
+    assert.strictEqual(receiptFailureHook.hasInvocationId, false);
+    assert.strictEqual(receiptFailureHook.assistantExists, true,
+      'the after-hook must observe already committed Conversation output');
+    assert.strictEqual(fs.readFileSync(receiptFailureHookCounter, 'utf8'), 'run\n',
+      'Receipt failure must not rerun the completed after-hook');
+    assert.ok(!fs.readdirSync(root).some(name => name.includes('.receipt-publication-directory.tmp-')),
+      'Receipt publication failure must not leak same-directory temp files');
 
     console.log('invocation-id-receipt.cjs: ok');
   } finally {
