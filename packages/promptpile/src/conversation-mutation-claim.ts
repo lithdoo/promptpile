@@ -4,6 +4,7 @@ import os from 'os';
 import path from 'path';
 import { ConversationConflictError } from './conversation-conflict';
 import type { ConversationMutationKind } from './conversation-index';
+import { recordSecondaryFailure } from './primary-failure';
 
 export const CONVERSATION_CLAIM_FILENAME = '.promptpile.occ.claim';
 
@@ -115,20 +116,27 @@ export const withConversationMutationClaim = async <T>(
 ): Promise<T> => {
   const claim = acquireConversationMutationClaim(directory, operation, dependencies);
   let callbackCompleted = false;
+  let hasPrimaryFailure = false;
+  let primaryFailure: unknown;
+  let value!: T;
   try {
-    const value = await callback(claim);
+    value = await callback(claim);
     callbackCompleted = true;
-    return value;
-  } finally {
-    try {
-      releaseConversationMutationClaim(claim, dependencies);
-    } catch (cleanupError) {
-      const qualifier = callbackCompleted ? 'mutation committed; ' : '';
-      throw new Error(
-        `${qualifier}Conversation claim cleanup failed: ${
-          cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
-        }`
-      );
-    }
+  } catch (error) {
+    hasPrimaryFailure = true;
+    primaryFailure = error;
   }
+  try {
+    releaseConversationMutationClaim(claim, dependencies);
+  } catch (cleanupError) {
+    const cleanupFailure = new Error(
+      `${callbackCompleted ? 'mutation committed; ' : ''}Conversation claim cleanup failed: ${
+        cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
+      }`
+    );
+    if (hasPrimaryFailure) recordSecondaryFailure(primaryFailure, cleanupFailure);
+    else throw cleanupFailure;
+  }
+  if (hasPrimaryFailure) throw primaryFailure;
+  return value;
 };

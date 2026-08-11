@@ -515,6 +515,27 @@ export const resolveConfig = (cwd: string, argv: string[]): Config => {
     tomlLayer.outputPileFd,
   );
 
+  const outputPileSource =
+    cliLayer.outputPileFile !== undefined || cliLayer.outputPileFd !== undefined
+      ? { layer: cliLayer, source: 'cli' as const }
+      : tomlLayer.outputPileFile !== undefined || tomlLayer.outputPileFd !== undefined
+        ? { layer: tomlLayer, source: 'toml' as const }
+        : undefined;
+  const outputPileTarget = outputPileSource === undefined
+    ? undefined
+    : outputPileSource.layer.outputPileFd !== undefined
+      ? {
+          kind: 'fd' as const,
+          fd: outputPileSource.layer.outputPileFd,
+          source: outputPileSource.source,
+          shadowedFile: outputPileSource.layer.outputPileFile
+        }
+      : {
+          kind: 'file' as const,
+          path: outputPileSource.layer.outputPileFile!,
+          source: outputPileSource.source
+        };
+
   const outputPileFormat = pickOptStr(
     cliLayer.outputPileFormat,
     tomlLayer.outputPileFormat,
@@ -601,6 +622,7 @@ export const resolveConfig = (cwd: string, argv: string[]): Config => {
     output,
     outputPileFile,
     outputPileFd,
+    outputPileTarget,
     outputPileFormat,
     quiet,
     toolsFileCli: cliPartial.toolsFileCli,

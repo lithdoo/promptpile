@@ -40,6 +40,13 @@ export const loadConfig = (options: Partial<Config>): Config => {
     output: options.output,
     outputPileFile: options.outputPileFile,
     outputPileFd: options.outputPileFd,
+    outputPileTarget: options.outputPileTarget ?? (
+      options.outputPileFd !== undefined
+        ? { kind: 'fd', fd: options.outputPileFd, source: 'cli', shadowedFile: options.outputPileFile }
+        : options.outputPileFile !== undefined
+          ? { kind: 'file', path: options.outputPileFile, source: 'cli' }
+          : undefined
+    ),
     outputPileFormat: options.outputPileFormat,
     quiet: options.quiet ?? false,
     toolsFileCli: options.toolsFileCli,

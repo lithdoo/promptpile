@@ -10,6 +10,7 @@ const {
   withConversationMutationClaim,
   CONVERSATION_CLAIM_FILENAME
 } = require(path.join(dist, 'conversation-mutation-claim.js'));
+const { secondaryFailuresOf } = require(path.join(dist, 'primary-failure.js'));
 const {
   parseConversationFingerprintTokenV1,
   fingerprintConversationDirectory
@@ -96,6 +97,22 @@ const {
       /mutation failure/
     );
     assert.ok(!fs.existsSync(path.join(root, CONVERSATION_CLAIM_FILENAME)));
+
+    const primary = new Error('primary mutation failure');
+    let observed;
+    try {
+      await withConversationMutationClaim(
+        root,
+        'append_user',
+        async () => { throw primary; },
+        { unlink: () => { throw new Error('secondary cleanup failure'); } }
+      );
+    } catch (error) {
+      observed = error;
+    }
+    assert.strictEqual(observed, primary, 'cleanup must not replace the first primary failure');
+    assert.match(String(secondaryFailuresOf(observed)[0]), /secondary cleanup failure/);
+    fs.unlinkSync(path.join(root, CONVERSATION_CLAIM_FILENAME));
 
     const crash = require('child_process').spawnSync(process.execPath, [
       '-e',

@@ -319,6 +319,9 @@ try {
   assert.strictEqual(cfgTomlPile.outputPileFile, 'toml-new.jsonl', 'toml output_pile_file overrides old toml alias');
   assert.strictEqual(cfgTomlPile.outputPileFd, 3, 'toml output_pile_fd');
   assert.strictEqual(cfgTomlPile.outputPileFormat, 'json', 'toml output_pile_format');
+  assert.deepStrictEqual(cfgTomlPile.outputPileTarget, {
+    kind: 'fd', fd: 3, source: 'toml', shadowedFile: 'toml-new.jsonl'
+  }, 'same-source fd wins while retaining the shadowed file diagnostic');
 
   fs.writeFileSync(tomlPath, '[promptpile]\noutput_pipe = "toml-old-only.jsonl"\noutput_pipe_format = "json"\n');
   const cfgOldTomlPile = resolveConfig(tmp, ['node', fakeScript, '--config', 'app.toml', '-k', 'key']);
@@ -354,6 +357,27 @@ try {
   assert.strictEqual(cfgCliPile.outputPileFile, 'cli-stream.jsonl', 'cli output pile file');
   assert.strictEqual(cfgCliPile.outputPileFd, 4, 'cli output pile fd');
   assert.strictEqual(cfgCliPile.outputPileFormat, 'text', 'cli output pile format');
+  assert.deepStrictEqual(cfgCliPile.outputPileTarget, {
+    kind: 'fd', fd: 4, source: 'cli', shadowedFile: 'cli-stream.jsonl'
+  }, 'same-source CLI fd wins');
+
+  fs.writeFileSync(tomlPath, '[promptpile]\noutput_pile_fd = 3\n');
+  const cfgCliFileTomlFd = resolveConfig(tmp, [
+    'node', fakeScript, '--config', 'app.toml', '-k', 'key',
+    '--output-pile-file', 'cli-wins.txt'
+  ]);
+  assert.deepStrictEqual(cfgCliFileTomlFd.outputPileTarget, {
+    kind: 'file', path: 'cli-wins.txt', source: 'cli'
+  }, 'CLI file target group wins over TOML fd');
+
+  fs.writeFileSync(tomlPath, '[promptpile]\noutput_pile_file = "toml-loses.txt"\n');
+  const cfgCliFdTomlFile = resolveConfig(tmp, [
+    'node', fakeScript, '--config', 'app.toml', '-k', 'key',
+    '--output-pile-fd', '4'
+  ]);
+  assert.deepStrictEqual(cfgCliFdTomlFile.outputPileTarget, {
+    kind: 'fd', fd: 4, source: 'cli', shadowedFile: undefined
+  }, 'CLI fd target group wins over TOML file');
 
   const cfgCliAliasPile = resolveConfig(tmp, [
     'node',

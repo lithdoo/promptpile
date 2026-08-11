@@ -1,9 +1,11 @@
 import fs from 'fs';
 import path from 'path';
+import type { ResolvedOutputPileTarget } from './output-artifact-policy';
 
 export type OutputPileFormat = 'text' | 'json';
 
 export interface OutputPileWriter {
+  ready(): Promise<void>;
   writeDelta(chunk: string): void;
   writeDone(): void;
   writeError(error: unknown): void;
@@ -11,6 +13,7 @@ export interface OutputPileWriter {
 }
 
 const noopWriter: OutputPileWriter = {
+  ready: async () => undefined,
   writeDelta: () => undefined,
   writeDone: () => undefined,
   writeError: () => undefined,
@@ -52,15 +55,13 @@ export const parseOutputPileFd = (value: unknown): number | undefined => {
   return fd;
 };
 
-const resolvePileFile = (pileFile: string): string =>
-  path.isAbsolute(pileFile) ? pileFile : path.resolve(process.cwd(), pileFile);
-
 const messageFromError = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
 const createStreamWriter = (
   stream: fs.WriteStream,
-  format: OutputPileFormat
+  format: OutputPileFormat,
+  readyPromise: Promise<void>
 ): OutputPileWriter => {
   let closed = false;
   let streamError: Error | undefined;
@@ -82,6 +83,7 @@ const createStreamWriter = (
   };
 
   return {
+    ready: () => readyPromise,
     writeDelta: (chunk: string): void => {
       if (format === 'json') {
         writeJsonLine({ type: 'assistant_delta', content: chunk });
@@ -104,42 +106,76 @@ const createStreamWriter = (
         return;
       }
       closed = true;
+      if (streamError) {
+        stream.destroy();
+        throw streamError;
+      }
       await new Promise<void>((resolve, reject) => {
-        stream.end(() => {
-          if (streamError) {
-            reject(streamError);
-          } else {
-            resolve();
-          }
-        });
+        const onClose = (): void => {
+          stream.off('error', onError);
+          if (streamError) reject(streamError);
+          else resolve();
+        };
+        const onError = (error: Error): void => {
+          stream.off('close', onClose);
+          reject(error);
+        };
+        stream.once('close', onClose);
+        stream.once('error', onError);
+        stream.end();
       });
     }
   };
 };
 
 export const createOutputPileWriter = (options: {
+  target?: ResolvedOutputPileTarget;
+  /** @deprecated Compatibility input; must already be absolute. */
   pileFile?: string;
+  /** @deprecated Compatibility input. */
   pileFd?: number;
   format?: OutputPileFormat;
+  dependencies?: {
+    createFileStream?: (absolutePath: string) => fs.WriteStream;
+    createFdStream?: (fd: number) => fs.WriteStream;
+  };
 }): OutputPileWriter => {
   const format = options.format ?? 'text';
 
-  if (options.pileFd !== undefined) {
-    return createStreamWriter(
-      fs.createWriteStream('', { fd: options.pileFd, encoding: 'utf8' }),
-      format
-    );
+  const target = options.target ?? (
+    options.pileFd !== undefined
+      ? { kind: 'fd' as const, fd: options.pileFd }
+      : options.pileFile
+        ? (() => {
+            if (!path.isAbsolute(options.pileFile!)) {
+              throw new Error('output pile writer requires an already-resolved absolute file path');
+            }
+            return {
+              kind: 'file' as const,
+              file: { absolutePath: path.normalize(options.pileFile!), identity: '' }
+            };
+          })()
+        : undefined
+  );
+
+  if (target?.kind === 'fd') {
+    if (!options.dependencies?.createFdStream) {
+      fs.fstatSync(target.fd);
+    }
+    const stream = options.dependencies?.createFdStream?.(target.fd) ??
+      fs.createWriteStream('', { fd: target.fd, encoding: 'utf8' });
+    return createStreamWriter(stream, format, Promise.resolve());
   }
 
-  const rawFile = options.pileFile?.trim();
-  if (!rawFile) {
+  if (target?.kind !== 'file') {
     return noopWriter;
   }
 
-  const resolvedFile = resolvePileFile(rawFile);
-  fs.mkdirSync(path.dirname(resolvedFile), { recursive: true });
-  return createStreamWriter(
-    fs.createWriteStream(resolvedFile, { flags: 'w', encoding: 'utf8' }),
-    format
-  );
+  const stream = options.dependencies?.createFileStream?.(target.file.absolutePath) ??
+    fs.createWriteStream(target.file.absolutePath, { flags: 'w', encoding: 'utf8' });
+  const readyPromise = new Promise<void>((resolve, reject) => {
+    stream.once('open', () => resolve());
+    stream.once('error', reject);
+  });
+  return createStreamWriter(stream, format, readyPromise);
 };

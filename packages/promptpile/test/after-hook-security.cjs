@@ -3,6 +3,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { buildPromptpileHookEnv, resolveAfterHookScript } = require('../dist/after-hook.js');
+const { CompletionArtifactLedger } = require('../dist/completion-artifact-ledger.js');
 const { resolveConfig } = require('../dist/resolve-config.js');
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'promptpile-hook-security-'));
@@ -84,15 +85,21 @@ try {
   assert.strictEqual(fromCli.allowDefaultAfterHook, true);
 
   const outputAbs = path.join(root, 'output');
+  const layeredLedger = new CompletionArtifactLedger();
+  layeredLedger.record({
+    namespace: 'conversation',
+    kind: 'body',
+    absolutePath: path.join(outputAbs, '[1]assistant.md')
+  });
   const layeredEnv = buildPromptpileHookEnv({
     scanAbs: outputAbs,
     inputDirectories: [scanAbs, outputAbs],
     outputDirectory: outputAbs,
+    ledger: layeredLedger,
     toolCalls: undefined,
     model: 'test-model',
     quiet: true,
-    responseLength: 2,
-    continueMdPath: path.join(outputAbs, '[1]assistant.md')
+    responseLength: 2
   });
   assert.strictEqual(layeredEnv.PROMPTPILE_SCAN_DIRECTORY, '');
   assert.deepStrictEqual(
@@ -105,10 +112,12 @@ try {
     path.join(outputAbs, '[1]assistant.md')
   );
 
+  const singleLedger = new CompletionArtifactLedger();
   const singleEnv = buildPromptpileHookEnv({
     scanAbs,
     inputDirectories: [scanAbs],
     outputDirectory: scanAbs,
+    ledger: singleLedger,
     toolCalls: undefined,
     model: 'test-model',
     quiet: false,

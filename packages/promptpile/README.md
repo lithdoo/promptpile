@@ -728,7 +728,7 @@ output_pile_fd = 3
 output_pile_format = "json"
 ```
 
-当同时设置 `output_pile_fd` 与 `output_pile_file` 时，优先写 fd。fd 适合由父进程通过 `spawn(..., { stdio: ['pipe', 'pipe', 'pipe', 'pipe'] })` 传入。
+output pile destination 是一个逻辑槽位，按 **CLI target group > TOML target group** 选择；不会把 CLI file 与 TOML fd 混合后再让 fd 反向覆盖 CLI。同一来源同时设置 `output_pile_fd` 与 `output_pile_file` 时，为兼容 v1 行为仍由 fd 胜出，file 不会被创建或截断。fd 适合由父进程通过 `spawn(..., { stdio: ['pipe', 'pipe', 'pipe', 'pipe'] })` 传入。
 
 `text` 格式只写正文 chunk；`json` 格式写 JSONL 事件：
 
@@ -739,6 +739,12 @@ output_pile_format = "json"
 ```
 
 旧名 `--output-pipe` / `output_pipe` 仍可用作兼容别名，但新配置优先。
+
+所有 caller-managed 相对输出路径只相对 invocation cwd 解析一次。模型调用前会预留 `-o` 的 body、`.calls.jsonl`、`.extra.json` potential targets，并检查它们与 pile file、Conversation namespace、`.promptpile.occ.claim` 和 resolved after-hook script 的冲突；已知冲突会在 API 调用及任何 output truncate 之前失败。
+
+执行顺序固定为：prepare sinks → model stream → finalize pile → `-o` body/calls/extra → terminal tool-call postlude → Conversation commit → after-hook。`assistant_done` **只表示模型 stream 已结束**，不表示后续 durable artifacts 或 hook 已成功。显式配置的 pile 是 required sink；其 open/write/done/close 任一失败都会以 exit `1` 停止后续 durable stages。
+
+每个 durable 文件独立原子替换，并在成功后进入内部 artifact ledger；多文件 group 及不同 output channel 之间不存在 transaction 或 rollback。后续失败不会删除已经成功写入或已经流出的内容。
 
 ---
 
@@ -779,7 +785,7 @@ Windows **默认链**不包含 `.sh`；若要在 Windows 上跑 shell 脚本，�
 | `PROMPTPILE_SCAN_DIRECTORY` | 单 layer 时为其绝对路径；多 layer 时为空字符串（deprecated） |
 | `PROMPTPILE_INPUT_DIRECTORIES_JSON` | canonical、去重后的有效输入层绝对路径 JSON 数组，包含末尾 output layer |
 | `PROMPTPILE_OUTPUT_DIRECTORY` | 显式或单目录兼容 mutation 的 Conversation output directory，否则为空字符串 |
-| `PROMPTPILE_OUTPUT_FILE` | 主输出文件绝对路径；未使用 `-o` 则为空字符串 |
+| `PROMPTPILE_OUTPUT_FILE` | 本轮实际成功写入的主输出文件绝对路径；未写入则为空字符串 |
 | `PROMPTPILE_CALLS_FILE` | 若本轮写入了 `{basename}.calls.jsonl`（由 `-o` / TOML `output` 决定）则为该文件绝对路径，否则空字符串 |
 | `PROMPTPILE_ASSISTANT_MD_FILE` | 若启用了 `--continue` 且本轮有正文（`response.length > 0`）写入了 `[N]assistant.md` 则为该文件绝对路径，否则空字符串 |
 | `PROMPTPILE_ASSISTANT_CALL_FILE` | 若启用了 `--continue` 且本轮含 `tool_calls`、写入了 `[N]assistant.calls.jsonl` 则为该文件绝对路径，否则空字符串。与 `PROMPTPILE_ASSISTANT_MD_FILE` / `PROMPTPILE_ASSISTANT_EXTRA_FILE` **可同时非空**：下一轮拼请求时合并为单条 assistant 消息 |
@@ -789,6 +795,8 @@ Windows **默认链**不包含 `.sh`；若要在 Windows 上跑 shell 脚本，�
 | `PROMPTPILE_HAS_TOOL_CALLS` | `0` 或 `1` |
 | `PROMPTPILE_HAS_REASONING` | 本轮 API 是否返回非空 `reasoning_content`：`0` 或 `1` |
 | `PROMPTPILE_RESPONSE_LENGTH` | 本轮正文字符串长度（数字字符串） |
+
+所有精确 artifact path 都来自本轮实际成功写入后的内部 ledger；hook 不会根据 `tool_calls`、`reasoning_content` 或配置路径重新推导某个文件“应该存在”。
 
 子进程 **stdout / stderr** 被管道收集：**非 0 退出码** 时向主进程 **stderr** 打印退出码与子进程 stderr；**成功（退出码 0）时不回显**子进程 stdout/stderr，以免干扰父进程终端输出。
 

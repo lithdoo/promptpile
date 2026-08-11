@@ -122,6 +122,10 @@ export interface Config {
   outputPileFile?: string;
   /** Optional inherited fd that receives streamed assistant output even when quiet is true. */
   outputPileFd?: number;
+  /** The sole resolved destination used by the runtime. CLI destination group wins over TOML. */
+  outputPileTarget?:
+    | { kind: 'file'; path: string; source: 'cli' | 'toml'; shadowedFile?: string }
+    | { kind: 'fd'; fd: number; source: 'cli' | 'toml'; shadowedFile?: string };
   /** Stream output format for output pile; defaults to text when unset. */
   outputPileFormat?: 'text' | 'json';
   quiet: boolean;

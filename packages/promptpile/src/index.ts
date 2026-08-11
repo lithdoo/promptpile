@@ -1,7 +1,5 @@
 #!/usr/bin/env node
 import readline from 'readline';
-import fs from 'fs';
-import { atomicWriteFileSync } from './atomic-file';
 import path from 'path';
 import { resolveConfig } from './resolve-config';
 import {
@@ -23,7 +21,13 @@ import {
 } from './message-sidecar-files';
 import { isPromptpileDiagnostic } from './diagnostic-log';
 import { createOutputPileWriter } from './output-pile';
-import type { AssistantExtraPayload, ChatApiToolChoice, FileInfo, ToolCall } from './types';
+import type { ChatApiToolChoice, FileInfo, ToolCall } from './types';
+import { CompletionArtifactLedger } from './completion-artifact-ledger';
+import { commitMainOutput } from './main-output';
+import {
+  prepareOutputArtifactPolicy,
+  resolveOutputArtifactPolicy
+} from './output-artifact-policy';
 import { applyMissingToolResultsPolicy } from './tool-result-policy';
 import {
   runAppendUserCommand,
@@ -42,6 +46,7 @@ import {
   formatConversationConflict,
   isConversationConflictError
 } from './conversation-conflict';
+import { secondaryFailuresOf } from './primary-failure';
 
 const readUserInputFromTerminal = async (): Promise<string> => {
   console.log('Enter user message. Finish with Ctrl+Z then Enter (Windows), or Ctrl+D (macOS/Linux).');
@@ -57,55 +62,6 @@ const readUserInputFromTerminal = async (): Promise<string> => {
 
   rl.close();
   return lines.join('\n').trim();
-};
-
-const resolveOutputPath = (outputPath: string): string =>
-  path.isAbsolute(outputPath) ? outputPath : path.resolve(process.cwd(), outputPath);
-
-/**
- * Ensure parent directory exists and is writable before calling the API.
- */
-const ensureOutputPaths = (outputPath: string): string => {
-  const resolvedPath = resolveOutputPath(outputPath);
-  const dir = path.dirname(resolvedPath);
-  try {
-    fs.mkdirSync(dir, { recursive: true });
-    fs.accessSync(dir, fs.constants.W_OK);
-  } catch {
-    console.error(`Error: Cannot create or write to output directory: ${dir}`);
-    process.exit(1);
-  }
-  return resolvedPath;
-};
-
-const callsPathForMainOutput = (resolvedMainPath: string): string => {
-  const { dir, name } = path.parse(resolvedMainPath);
-  return path.join(dir, `${name}.calls.jsonl`);
-};
-
-const writeCallsFile = (resolvedMainPath: string, toolCalls: ToolCall[] | undefined): void => {
-  if (!toolCalls || toolCalls.length === 0) {
-    return;
-  }
-  const callsPath = callsPathForMainOutput(resolvedMainPath);
-  const body = toolCalls.map(tc => JSON.stringify(tc)).join('\n') + '\n';
-  atomicWriteFileSync(callsPath, body);
-};
-
-const extraPathForMainOutput = (resolvedMainPath: string): string => {
-  const { dir, name } = path.parse(resolvedMainPath);
-  return path.join(dir, `${name}.extra.json`);
-};
-
-const writeExtraFile = (resolvedMainPath: string, reasoningContent: string | undefined): void => {
-  if (!reasoningContent) {
-    return;
-  }
-  const payload: AssistantExtraPayload = { reasoning_content: reasoningContent };
-  atomicWriteFileSync(
-    extraPathForMainOutput(resolvedMainPath),
-    `${JSON.stringify(payload, null, 2)}\n`
-  );
 };
 
 const printToolCallsLines = (toolCalls: ToolCall[] | undefined, quiet: boolean): void => {
@@ -128,6 +84,20 @@ async function runCompletion(cwd: string): Promise<void> {
 
     const quiet = config.quiet;
     const { inputDirectories, outputDirectory, anchorDirectory } = config.conversationIo;
+    const scanAbs = path.resolve(cwd, anchorDirectory);
+    const hookResolution = resolveAfterHookScript({
+      cwd,
+      scanAbs,
+      afterHookCli: config.afterHookCli,
+      afterHookConfig: config.afterHookConfig,
+      allowDefaultAfterHook: config.allowDefaultAfterHook
+    });
+    const outputPolicy = prepareOutputArtifactPolicy(resolveOutputArtifactPolicy({
+      cwd,
+      config,
+      hook: hookResolution
+    }));
+    const artifactLedger = new CompletionArtifactLedger();
 
     const scanInputLayers = () =>
       inputDirectories.flatMap((directory, directoryIndex) =>
@@ -250,21 +220,18 @@ async function runCompletion(cwd: string): Promise<void> {
       process.exit(1);
     }
 
-    let resolvedOutput: string | undefined;
-    if (config.output) {
-      resolvedOutput = ensureOutputPaths(config.output);
-    }
-
     let response = '';
     let toolCalls: ToolCall[] | undefined;
     let reasoningContent: string | undefined;
 
     const outputPile = createOutputPileWriter({
-      pileFile: config.outputPileFile,
-      pileFd: config.outputPileFd,
-      format: config.outputPileFormat
+      target: outputPolicy.outputPile?.target,
+      format: outputPolicy.outputPile?.format
     });
 
+    await outputPile.ready();
+    let hasPrimaryStreamFailure = false;
+    let primaryStreamFailure: unknown;
     try {
       const result = await callAIStream(
         config.apiKey,
@@ -287,23 +254,44 @@ async function runCompletion(cwd: string): Promise<void> {
       reasoningContent = result.reasoningContent;
       outputPile.writeDone();
     } catch (e) {
-      outputPile.writeError(e);
-      throw e;
+      hasPrimaryStreamFailure = true;
+      primaryStreamFailure = e;
+      try {
+        outputPile.writeError(e);
+      } catch (secondary) {
+        console.error('Secondary output pile error:', secondary);
+      }
     } finally {
-      await outputPile.close();
+      try {
+        await outputPile.close();
+      } catch (closeError) {
+        if (!hasPrimaryStreamFailure) {
+          hasPrimaryStreamFailure = true;
+          primaryStreamFailure = closeError;
+        } else {
+          console.error('Secondary output pile close error:', closeError);
+        }
+      }
     }
+    if (hasPrimaryStreamFailure) throw primaryStreamFailure;
 
-    if (resolvedOutput) {
-      atomicWriteFileSync(resolvedOutput, response);
-      writeCallsFile(resolvedOutput, toolCalls);
-      writeExtraFile(resolvedOutput, reasoningContent);
+    if (outputPolicy.mainOutput) {
+      commitMainOutput({
+        targets: outputPolicy.mainOutput,
+        response,
+        toolCalls,
+        reasoningContent,
+        ledger: artifactLedger
+      });
     }
     printToolCallsLines(toolCalls, quiet);
 
-    let continueMdPath: string | undefined;
-    let continueCallsPath: string | undefined;
-    let continueExtraPath: string | undefined;
     if (config.continueMode) {
+      const conversationWriteOptions = {
+        onArtifactCommitted: (artifact: { kind: 'body' | 'calls' | 'extra'; absolutePath: string }) => {
+          artifactLedger.record({ namespace: 'conversation', ...artifact });
+        }
+      };
       const saved = occEnabled
         ? (await commitConversationMutation({
             directory: outputDirectory!,
@@ -314,7 +302,8 @@ async function runCompletion(cwd: string): Promise<void> {
               state.nextIndex,
               response,
               toolCalls,
-              reasoningContent
+              reasoningContent,
+              conversationWriteOptions
             )
           })).value
         : appendAssistantTurn(
@@ -322,21 +311,12 @@ async function runCompletion(cwd: string): Promise<void> {
             outputFiles(),
             response,
             toolCalls,
-            reasoningContent
+            reasoningContent,
+            conversationWriteOptions
           );
-      continueMdPath = saved.mdPath;
-      continueCallsPath = saved.callsPath;
-      continueExtraPath = saved.extraPath;
+      void saved;
     }
 
-    const scanAbs = path.resolve(cwd, anchorDirectory);
-    const hookResolution = resolveAfterHookScript({
-      cwd,
-      scanAbs,
-      afterHookCli: config.afterHookCli,
-      afterHookConfig: config.afterHookConfig,
-      allowDefaultAfterHook: config.allowDefaultAfterHook
-    });
     if (hookResolution.status === 'skip' && isPromptpileDiagnostic()) {
       console.error('[promptpile] after-hook: skipped (no script resolved)');
     }
@@ -349,14 +329,11 @@ async function runCompletion(cwd: string): Promise<void> {
         scanAbs,
         inputDirectories,
         outputDirectory,
-        resolvedOutput,
+        ledger: artifactLedger,
         toolCalls,
         model: config.model,
         quiet,
         responseLength: response.length,
-        continueMdPath,
-        continueCallsPath,
-        continueExtraPath,
         reasoningContent
       });
       await runAfterHook({
@@ -367,6 +344,9 @@ async function runCompletion(cwd: string): Promise<void> {
       });
     }
   } catch (error) {
+    for (const secondary of secondaryFailuresOf(error)) {
+      console.error('Secondary cleanup error:', secondary);
+    }
     if (isConversationConflictError(error)) {
       console.error(formatConversationConflict(error));
       process.exitCode = CONVERSATION_CONFLICT_EXIT_CODE;

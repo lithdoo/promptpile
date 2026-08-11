@@ -1,0 +1,94 @@
+'use strict';
+const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { prepareOutputArtifactPolicy, resolveMainOutputTargets, resolveOutputArtifactPolicy } = require('../dist/output-artifact-policy.js');
+const { CompletionArtifactLedger } = require('../dist/completion-artifact-ledger.js');
+const { commitMainOutput } = require('../dist/main-output.js');
+const { appendAssistantTurnAtIndex } = require('../dist/file-handler.js');
+const { atomicWriteFileSync } = require('../dist/atomic-file.js');
+
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'promptpile-output-policy-'));
+const messages = path.join(root, 'messages');
+fs.mkdirSync(messages);
+const configFor = (o = {}) => ({
+  conversationIo: { inputDirectories: [messages], outputDirectory: o.outputDirectory, anchorDirectory: messages },
+  inputDirectories: [messages], directory: messages, outputDirectory: o.outputDirectory,
+  model: 'test', apiKey: 'key', apiBaseUrl: 'http://invalid.test', temperature: 0,
+  continueMode: o.continueMode ?? false, inputMode: o.inputMode ?? false,
+  output: o.output, outputPileTarget: o.outputPileTarget, outputPileFormat: o.outputPileFormat,
+  quiet: false, allowDefaultAfterHook: false, missingToolResults: 'warn'
+});
+
+try {
+  const targets = resolveMainOutputTargets(root, './run/result.md');
+  assert.strictEqual(targets.body.absolutePath, path.join(root, 'run', 'result.md'));
+  assert.strictEqual(targets.calls.absolutePath, path.join(root, 'run', 'result.calls.jsonl'));
+  assert.strictEqual(targets.extra.absolutePath, path.join(root, 'run', 'result.extra.json'));
+
+  const collisionParent = path.join(root, 'collision-parent');
+  assert.throws(() => resolveOutputArtifactPolicy({ cwd: root, config: configFor({
+    output: './collision-parent/result.md',
+    outputPileTarget: { kind: 'file', path: './collision-parent/result.calls.jsonl', source: 'cli' }
+  }), hook: { status: 'skip' } }), /target collision/);
+  assert.strictEqual(fs.existsSync(collisionParent), false, 'lexical collision fails before mkdir');
+
+  assert.throws(() => resolveOutputArtifactPolicy({ cwd: root, config: configFor({
+    outputDirectory: messages, continueMode: true, output: path.join(messages, '[4]assistant.md')
+  }), hook: { status: 'skip' } }), /Conversation namespace/);
+  assert.throws(() => resolveOutputArtifactPolicy({ cwd: root, config: configFor({
+    outputDirectory: messages,
+    outputPileTarget: { kind: 'file', path: path.join(messages, '.promptpile.occ.claim'), source: 'cli' }
+  }), hook: { status: 'skip' } }), /reserved Conversation control path/);
+
+  const hookPath = path.join(root, 'hook.sh');
+  fs.writeFileSync(hookPath, 'echo ok\n');
+  assert.throws(() => resolveOutputArtifactPolicy({ cwd: root,
+    config: configFor({ output: hookPath }), hook: { status: 'run', path: fs.realpathSync(hookPath) }
+  }), /overwrite resolved after-hook/);
+  assert.strictEqual(fs.readFileSync(hookPath, 'utf8'), 'echo ok\n');
+
+  const policy = prepareOutputArtifactPolicy(resolveOutputArtifactPolicy({ cwd: root,
+    config: configFor({ output: './main/result.md' }), hook: { status: 'skip' } }));
+  const ledger = new CompletionArtifactLedger();
+  commitMainOutput({ targets: policy.mainOutput, response: 'answer',
+    toolCalls: [{ id: 'c1', type: 'function', function: { name: 'f', arguments: '{}' } }],
+    reasoningContent: 'reason', ledger });
+  assert.deepStrictEqual(ledger.entries().map(ref => [ref.namespace, ref.kind]), [
+    ['main', 'body'], ['main', 'calls'], ['main', 'extra']
+  ]);
+
+  const partialTargets = resolveMainOutputTargets(root, './partial/result.md');
+  fs.mkdirSync(path.dirname(partialTargets.body.absolutePath), { recursive: true });
+  const partialLedger = new CompletionArtifactLedger();
+  let writes = 0;
+  assert.throws(() => commitMainOutput({ targets: partialTargets, response: 'kept',
+    toolCalls: [{ id: 'c2', type: 'function', function: { name: 'f', arguments: '{}' } }],
+    reasoningContent: 'must not be attempted', ledger: partialLedger,
+    writeFile(target, content) { writes += 1; if (writes === 2) throw new Error('injected calls failure'); atomicWriteFileSync(target, content); }
+  }), /injected calls failure/);
+  assert.strictEqual(fs.readFileSync(partialTargets.body.absolutePath, 'utf8'), 'kept');
+  assert.deepStrictEqual(partialLedger.entries().map(ref => ref.kind), ['body']);
+  assert.strictEqual(writes, 2, 'extra is not attempted after calls failure');
+
+  const conversationLedger = new CompletionArtifactLedger();
+  let conversationWrites = 0;
+  assert.throws(() => appendAssistantTurnAtIndex(messages, 10, 'conversation body',
+    [{ id: 'c3', type: 'function', function: { name: 'f', arguments: '{}' } }], 'must not be attempted', {
+      onArtifactCommitted(artifact) { conversationLedger.record({ namespace: 'conversation', ...artifact }); },
+      writeFile(target, content) { conversationWrites += 1; if (conversationWrites === 2) throw new Error('injected conversation calls failure'); atomicWriteFileSync(target, content); }
+    }), /injected conversation calls failure/);
+  assert.deepStrictEqual(conversationLedger.entries().map(ref => ref.kind), ['body']);
+  assert.strictEqual(conversationWrites, 2);
+
+  const emptyTargets = resolveMainOutputTargets(root, './empty/result.md');
+  fs.mkdirSync(path.dirname(emptyTargets.body.absolutePath), { recursive: true });
+  const emptyLedger = new CompletionArtifactLedger();
+  commitMainOutput({ targets: emptyTargets, response: '', toolCalls: undefined, reasoningContent: undefined, ledger: emptyLedger });
+  assert.strictEqual(fs.statSync(emptyTargets.body.absolutePath).size, 0);
+  assert.deepStrictEqual(emptyLedger.entries().map(ref => ref.kind), ['body']);
+  console.log('output artifact policy tests ok');
+} finally {
+  fs.rmSync(root, { recursive: true, force: true });
+}

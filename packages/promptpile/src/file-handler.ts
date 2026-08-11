@@ -18,14 +18,10 @@ import {
   parseConversationIndex
 } from './conversation-index';
 import { ConversationTargetCollisionError } from './conversation-conflict';
+import { classifyConversationArtifactName } from './conversation-artifact-name';
 
 const readUtf8FileFromDisk = (filePath: string): string =>
   fs.readFileSync(filePath, 'utf8');
-
-const FILE_PATTERN = /^\[(\d+)\](.+?)\.(md|json)$/;
-const ASSISTANT_CALL_PATTERN = /^\[(\d+)\]assistant\.calls\.jsonl$/;
-const ASSISTANT_RESULT_PATTERN = /^\[(\d+)\]assistant\.result\.jsonl$/;
-const ASSISTANT_EXTRA_PATTERN = /^\[(\d+)\]assistant\.extra\.json$/;
 
 export { MAX_CONVERSATION_INDEX, parseConversationIndex } from './conversation-index';
 
@@ -89,65 +85,14 @@ export const scanDirectory = (directory: string, directoryIndex = 0): FileInfo[]
     if (!entry.isFile()) continue;
 
     const fullPath = path.join(directory, entry.name);
-    let m = entry.name.match(ASSISTANT_CALL_PATTERN);
-    if (m) {
-      const idx = parseConversationIndex(m[1]);
-      if (idx === undefined) continue;
-      files.push({
-        path: fullPath,
-        directoryIndex,
-        relativePath: entry.name,
-        idx,
-        role: 'assistant',
-        extension: 'jsonl',
-        fileKind: 'assistant_call'
-      });
-      continue;
-    }
-    m = entry.name.match(ASSISTANT_RESULT_PATTERN);
-    if (m) {
-      const idx = parseConversationIndex(m[1]);
-      if (idx === undefined) continue;
-      files.push({
-        path: fullPath,
-        directoryIndex,
-        relativePath: entry.name,
-        idx,
-        role: 'assistant',
-        extension: 'jsonl',
-        fileKind: 'assistant_result'
-      });
-      continue;
-    }
-    m = entry.name.match(ASSISTANT_EXTRA_PATTERN);
-    if (m) {
-      const idx = parseConversationIndex(m[1]);
-      if (idx === undefined) continue;
-      files.push({
-        path: fullPath,
-        directoryIndex,
-        relativePath: entry.name,
-        idx,
-        role: 'assistant',
-        extension: 'json',
-        fileKind: 'assistant_extra'
-      });
-      continue;
-    }
-    m = entry.name.match(FILE_PATTERN);
-    if (m) {
-      const idx = parseConversationIndex(m[1]);
-      if (idx === undefined) continue;
-      files.push({
-        path: fullPath,
-        directoryIndex,
-        relativePath: entry.name,
-        idx,
-        role: m[2],
-        extension: m[3] as 'md' | 'json',
-        fileKind: 'message'
-      });
-    }
+    const recognized = classifyConversationArtifactName(entry.name);
+    if (!recognized) continue;
+    files.push({
+      path: fullPath,
+      directoryIndex,
+      relativePath: entry.name,
+      ...recognized
+    });
   }
   return files.sort(compareConversationArtifacts);
 };
@@ -467,18 +412,29 @@ export const appendAssistantTurn = (
   files: FileInfo[],
   content: string,
   toolCalls: ToolCall[] | undefined,
-  reasoningContent?: string
+  reasoningContent?: string,
+  options: AssistantTurnWriteOptions = {}
 ): { idx: number; mdPath?: string; callsPath?: string; extraPath?: string } => {
   const idx = nextAssistantIdx(directory, files);
-  return appendAssistantTurnAtIndex(directory, idx, content, toolCalls, reasoningContent);
+  return appendAssistantTurnAtIndex(directory, idx, content, toolCalls, reasoningContent, options);
 };
+
+export interface AssistantTurnWriteOptions {
+  onArtifactCommitted?: (artifact: {
+    kind: 'body' | 'calls' | 'extra';
+    absolutePath: string;
+  }) => void;
+  /** Deterministic fault-injection seam; production uses the atomic writer. */
+  writeFile?: typeof atomicWriteFileSync;
+}
 
 export const appendAssistantTurnAtIndex = (
   directory: string,
   idx: number,
   content: string,
   toolCalls: ToolCall[] | undefined,
-  reasoningContent?: string
+  reasoningContent?: string,
+  options: AssistantTurnWriteOptions = {}
 ): { idx: number; mdPath?: string; callsPath?: string; extraPath?: string } => {
   const hasContent = content.length > 0;
   const hasCalls = !!(toolCalls && toolCalls.length > 0);
@@ -499,19 +455,23 @@ export const appendAssistantTurnAtIndex = (
   let callsPath: string | undefined;
   let extraPath: string | undefined;
 
+  const writeFile = options.writeFile ?? atomicWriteFileSync;
   if (hasContent) {
     mdPath = path.join(directory, `[${idx}]assistant.md`);
-    atomicWriteFileSync(mdPath, content);
+    writeFile(mdPath, content);
+    options.onArtifactCommitted?.({ kind: 'body', absolutePath: mdPath });
   }
   if (hasCalls) {
     callsPath = path.join(directory, `[${idx}]assistant.calls.jsonl`);
     const body = toolCalls!.map(tc => JSON.stringify(tc)).join('\n') + '\n';
-    atomicWriteFileSync(callsPath, body);
+    writeFile(callsPath, body);
+    options.onArtifactCommitted?.({ kind: 'calls', absolutePath: callsPath });
   }
   if (hasReasoning) {
     extraPath = path.join(directory, `[${idx}]assistant.extra.json`);
     const payload: AssistantExtraPayload = { reasoning_content: reasoningContent!.trim() };
-    atomicWriteFileSync(extraPath, `${JSON.stringify(payload, null, 2)}\n`);
+    writeFile(extraPath, `${JSON.stringify(payload, null, 2)}\n`);
+    options.onArtifactCommitted?.({ kind: 'extra', absolutePath: extraPath });
   }
 
   return { idx, mdPath, callsPath, extraPath };

@@ -5,7 +5,7 @@
 > 稳定程度：Evolving  
 > 主要定义：orchestrator / shell automation 使用的 machine-facing CLI 边界  
 > 被以下组件实现：`promptpile`；被 `promptpile-react` 使用  
-> 最近复核：2026-08-10
+> 最近复核：2026-08-11
 
 ## Root completion
 
@@ -48,6 +48,24 @@ Root mutation 可选声明 writable output physical directory 的 expected condi
 实现可以在模型调用前 preflight 以尽早失败，但只有获取 `.promptpile.occ.claim` 后的 fresh recheck 才是权威 commit 判断。模型请求期间不持 claim。仅 `--continue` 时 caller condition 在模型返回后重新验证；`--input --continue` 时 user commit 后在同一 claim 内派生内部 baseline，assistant commit 验证该 baseline。
 
 退出码固定为：`0` success、`1` ordinary/config/runtime failure、`3` Conversation conflict。post-model conflict 不写本轮 assistant Conversation artifacts，也不执行 after-hook；此前已经流向 stdout/output pile 或写入 `-o` 的独立结果不回滚。组合模式已经提交的 user artifact同样不回滚。
+
+### Output Artifact Policy v1
+
+Root completion 的唯一执行顺序为：
+
+```text
+resolve/preflight → prepare configured sinks → model stream → finalize output pile
+→ commit -o body/calls/extra → terminal tool-call postlude
+→ commit Conversation assistant artifacts → after-hook → final status
+```
+
+output pile destination 是单一 logical slot：CLI file/fd target group 整体优先于 TOML target group；同一来源同时给出 file 与 fd 时保持 v1 `fd wins`。caller-managed 相对路径只相对 invocation cwd resolve 一次，下游 writer 不得重新读取 `process.cwd()` 解释路径。
+
+`-o` 的 body、calls 与 extra potential targets 必须在调用模型前全部进入 collision set。它们不得与 pile file、writable Conversation directory 中可识别的 protocol filename、`.promptpile.occ.claim` 或本轮 resolved after-hook script 冲突。静态冲突是 exit `1`，不调用模型，也不打开或 truncate output sink。
+
+output pile 是 required live transport，但不是 durable body authority，也不进入 artifact ledger。JSON pile 的 `assistant_done` 只表示 model stream done。pile open/write/done/close failure 是 ordinary failure，并阻止 main、Conversation 和 hook stages。
+
+durable commit 顺序固定为 main body → calls → extra，再进入 Conversation。每个文件独立 atomic；group 和跨 channel 都不 transactional。ledger 只在单个 durable write 成功后记录事实。后续失败不 rollback 已写 artifact。after-hook 的精确 artifact path 只能来自 ledger，不能根据模型结果、配置或目录扫描推导。cleanup/finalizer 的 secondary failure 不得覆盖更早的 primary failure。
 
 ### TOML keys 与优先级
 

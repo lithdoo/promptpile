@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const assert = require('assert');
+const { Writable } = require('stream');
 
 const root = path.join(__dirname, '..');
 const {
@@ -71,6 +72,33 @@ const {
     await fdWinsWriter.close();
     assert.strictEqual(fs.readFileSync(fdWinsPath, 'utf8'), 'fd wins');
     assert.strictEqual(fs.existsSync(ignoredPath), false, 'fd target wins over file target');
+
+    const writeFailure = createOutputPileWriter({
+      target: { kind: 'fd', fd: 99 },
+      dependencies: {
+        createFdStream: () => new Writable({
+          emitClose: true,
+          write(_chunk, _encoding, callback) { callback(new Error('injected pile write failure')); }
+        })
+      }
+    });
+    await writeFailure.ready();
+    writeFailure.writeDelta('fails asynchronously');
+    await assert.rejects(writeFailure.close(), /injected pile write failure/);
+
+    const closeFailure = createOutputPileWriter({
+      target: { kind: 'fd', fd: 100 },
+      dependencies: {
+        createFdStream: () => new Writable({
+          emitClose: true,
+          write(_chunk, _encoding, callback) { callback(); },
+          final(callback) { callback(new Error('injected pile close failure')); }
+        })
+      }
+    });
+    await closeFailure.ready();
+    closeFailure.writeDelta('written');
+    await assert.rejects(closeFailure.close(), /injected pile close failure/);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

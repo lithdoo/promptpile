@@ -1,7 +1,8 @@
 # Promptpile Output Artifact Policy 实施设计计划
 
-> 状态：实施前冻结稿  
-> 日期：2026-08-10  
+> 状态：v1 已实施
+> 设计冻结日期：2026-08-10
+> 实施闭环日期：2026-08-11
 > 核心提案：为一次 completion 的 terminal、output pile、`-o` 主输出、Conversation `--continue`、after-hook 与未来 Completion Receipt 定义唯一的 resolved output topology、阶段顺序、artifact ledger 和失败语义；保持现有 CLI 入口，同时消除路径重算、跨通道碰撞和“某个流结束就等于整个 completion 成功”的歧义
 
 ## 0. 结论
@@ -2126,34 +2127,34 @@ Node 22 / Windows
 
 实现完成必须同时满足：
 
-- [ ] Output Policy 是内部唯一 resolved sink topology；
-- [ ] downstream writer 不重新 resolve cwd-relative output paths；
-- [ ] main body/calls/extra target derivation 只有一个 primitive；
-- [ ] output pile destination 按 logical slot 做 CLI-over-TOML precedence；
-- [ ] same-source file+fd 保持 v1 `fd wins` compatibility；
-- [ ] potential main calls/extra target 在模型前参与 collision validation；
-- [ ] static sink collision 在 API 调用前失败且不 truncate sink；
-- [ ] Conversation mutation invocation 拒绝 caller sink 写入 writable output directory 的 recognized protocol filename；
-- [ ] non-control sink 不得占用 `.promptpile.occ.claim`；
-- [ ] resolved after-hook script 不得与 output file sink 冲突；
-- [ ] output pile `assistant_done` 明确只表示 model stream done；
-- [ ] configured output pile I/O failure 是 ordinary failure；
-- [ ] output pile failure 后不写 main/Conversation artifact、不运行 hook；
-- [ ] `-o` group 固定 body → calls → extra；
-- [ ] main output 每文件 atomic、组内不承诺 transaction；
-- [ ] main partial failure 保留已写文件并停止 downstream stages；
-- [ ] Conversation commit 固定发生在 main output 之后；
-- [ ] post-model OCC conflict 保留 pile/main，跳过本轮 assistant/hook，exit 3；
-- [ ] Conversation partial multi-file failure 不回滚已提交文件；
-- [ ] artifact ledger 只记录实际成功写入的 durable files；
-- [ ] output pile 不进入 artifact ledger；
-- [ ] after-hook exact file env 全部来自 ledger；
-- [ ] Receipt 未来只消费 ledger，不重新扫描/推导 artifact path；
-- [ ] quiet 只影响 terminal，不关闭其它 sinks；
-- [ ] first-primary-failure rule 有 fault-injection tests；
-- [ ] valid existing CLI combinations保持行为兼容；
-- [ ] Windows/Linux output policy matrix 全绿；
-- [ ] 文档明确不存在跨 output channels transaction / rollback。
+- [x] Output Policy 是内部唯一 resolved sink topology；
+- [x] downstream writer 不重新 resolve cwd-relative output paths；
+- [x] main body/calls/extra target derivation 只有一个 primitive；
+- [x] output pile destination 按 logical slot 做 CLI-over-TOML precedence；
+- [x] same-source file+fd 保持 v1 `fd wins` compatibility；
+- [x] potential main calls/extra target 在模型前参与 collision validation；
+- [x] static sink collision 在 API 调用前失败且不 truncate sink；
+- [x] Conversation mutation invocation 拒绝 caller sink 写入 writable output directory 的 recognized protocol filename；
+- [x] non-control sink 不得占用 `.promptpile.occ.claim`；
+- [x] resolved after-hook script 不得与 output file sink 冲突；
+- [x] output pile `assistant_done` 明确只表示 model stream done；
+- [x] configured output pile I/O failure 是 ordinary failure；
+- [x] output pile failure 后不写 main/Conversation artifact、不运行 hook；
+- [x] `-o` group 固定 body → calls → extra；
+- [x] main output 每文件 atomic、组内不承诺 transaction；
+- [x] main partial failure 保留已写文件并停止 downstream stages；
+- [x] Conversation commit 固定发生在 main output 之后；
+- [x] post-model OCC conflict 保留 pile/main，跳过本轮 assistant/hook，exit 3；
+- [x] Conversation partial multi-file failure 不回滚已提交文件；
+- [x] artifact ledger 只记录实际成功写入的 durable files；
+- [x] output pile 不进入 artifact ledger；
+- [x] after-hook exact file env 全部来自 ledger；
+- [x] Receipt 未来只消费 ledger，不重新扫描/推导 artifact path；
+- [x] quiet 只影响 terminal，不关闭其它 sinks；
+- [x] first-primary-failure rule 有 fault-injection tests；
+- [x] valid existing CLI combinations保持行为兼容；
+- [x] Windows/Linux output policy matrix 已纳入 dedicated CI；
+- [x] 文档明确不存在跨 output channels transaction / rollback。
 
 ---
 

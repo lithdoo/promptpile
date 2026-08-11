@@ -1,6 +1,7 @@
 import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import type { CompletionArtifactLedger } from './completion-artifact-ledger';
 import type { ToolCall } from './types';
 
 export type ResolveAfterHookResult =
@@ -84,56 +85,43 @@ export const resolveAfterHookScript = (options: {
   return { status: 'skip' };
 };
 
-const callsPathForMainOutput = (resolvedMainPath: string): string => {
-  const { dir, name } = path.parse(resolvedMainPath);
-  return path.join(dir, `${name}.calls.jsonl`);
-};
-
 export const buildPromptpileHookEnv = (params: {
   scanAbs: string;
   inputDirectories: string[];
   outputDirectory?: string;
-  resolvedOutput?: string;
+  ledger: CompletionArtifactLedger;
   toolCalls: ToolCall[] | undefined;
   model: string;
   quiet: boolean;
   responseLength: number;
-  /** Absolute path to `[N]assistant.md` written by `--continue`; empty when not in continue mode. */
-  continueMdPath?: string;
-  /** Absolute path to `[N]assistant.calls.jsonl` written by `--continue` + tool_calls; empty otherwise. */
-  continueCallsPath?: string;
-  /** Absolute path to `[N]assistant.extra.json` written by `--continue` + reasoning_content; empty otherwise. */
-  continueExtraPath?: string;
   reasoningContent?: string;
 }): NodeJS.ProcessEnv => {
   const {
     scanAbs,
     inputDirectories,
     outputDirectory,
-    resolvedOutput,
+    ledger,
     toolCalls,
     model,
     quiet,
     responseLength,
-    continueMdPath,
-    continueCallsPath,
-    continueExtraPath,
     reasoningContent
   } = params;
-  const callsPath =
-    resolvedOutput && toolCalls && toolCalls.length > 0
-      ? callsPathForMainOutput(resolvedOutput)
-      : '';
+  const mainBody = ledger.find('main', 'body')?.absolutePath ?? '';
+  const mainCalls = ledger.find('main', 'calls')?.absolutePath ?? '';
+  const conversationBody = ledger.find('conversation', 'body')?.absolutePath ?? '';
+  const conversationCalls = ledger.find('conversation', 'calls')?.absolutePath ?? '';
+  const conversationExtra = ledger.find('conversation', 'extra')?.absolutePath ?? '';
   return {
     ...process.env,
     PROMPTPILE_SCAN_DIRECTORY: inputDirectories.length === 1 ? scanAbs : '',
     PROMPTPILE_INPUT_DIRECTORIES_JSON: JSON.stringify(inputDirectories),
     PROMPTPILE_OUTPUT_DIRECTORY: outputDirectory ?? '',
-    PROMPTPILE_OUTPUT_FILE: resolvedOutput ?? '',
-    PROMPTPILE_CALLS_FILE: callsPath,
-    PROMPTPILE_ASSISTANT_MD_FILE: continueMdPath ?? '',
-    PROMPTPILE_ASSISTANT_CALL_FILE: continueCallsPath ?? '',
-    PROMPTPILE_ASSISTANT_EXTRA_FILE: continueExtraPath ?? '',
+    PROMPTPILE_OUTPUT_FILE: mainBody,
+    PROMPTPILE_CALLS_FILE: mainCalls,
+    PROMPTPILE_ASSISTANT_MD_FILE: conversationBody,
+    PROMPTPILE_ASSISTANT_CALL_FILE: conversationCalls,
+    PROMPTPILE_ASSISTANT_EXTRA_FILE: conversationExtra,
     PROMPTPILE_MODEL: model,
     PROMPTPILE_QUIET: quiet ? '1' : '0',
     PROMPTPILE_HAS_TOOL_CALLS: toolCalls && toolCalls.length > 0 ? '1' : '0',
