@@ -75,11 +75,13 @@ Root completion 可接受 CLI-only `--invocation-id <id>`。值必须原样匹�
 
 Invocation ID 不得进入 messages、tools/tool arguments、Conversation/Archive artifacts、artifact filename 或模型 request body。启用 after-hook 时通过 `PROMPTPILE_INVOCATION_ID` 原样传播；未提供参数时该变量不存在，并且 executor 必须移除父进程继承的同名值。允许写入 Completion Receipt 的顶层 `invocationId`。日志如需展示该值必须采用安全的结构化编码。
 
+当前实现因 root config wiring 复用 `Config.invocationId` 作为 CLI parser 到 completion 入口的单次中转；它不是 TOML-mergeable config。completion 入口必须立即收敛成唯一、只读的 `ResolvedInvocationContextV1`，后续消费者不得再次读取 Config 或解析 CLI/env。
+
 ### Completion Receipt v1
 
 CLI `--receipt <path>` 覆盖 TOML `[promptpile].receipt`，相对路径相对 process cwd。Receipt 是可选 JSON 文件，固定包含 `schemaVersion: 1`、`status: "completed"`、`invocationId: string | null`、绝对 artifact paths、model、nullable finish reason/usage 和去除 raw stderr 的 hook observation。
 
-Receipt target 与 main output、potential sidecars、file output pile、Conversation namespace/control path 和 resolved hook 一起参加 pre-model collision validation。Receipt parent 在 sink preparation 创建；写入使用同目录 synced temp file 加 atomic rename。
+Receipt target 与 main output、potential sidecars、file output pile、Conversation namespace/control path 和 resolved hook 一起参加 pre-model collision validation。无论本轮是否启用 Conversation mutation，Receipt 都不得使用任一有效 input/output layer 中可识别的 Conversation artifact filename 或控制路径。Receipt parent 在 sink preparation 创建；写入使用同目录 synced temp file 加 atomic rename。
 
 Receipt 是 after-hook 之后的最后 durable completion marker，只能引用 ledger 中已经成功提交的 artifacts。hook `warn` failure 可产生 completed receipt并记录失败事实；hook `error` failure、模型/输出/OCC failure 或 receipt 自身写入失败均不产生有效 completed receipt。已有 artifacts 不因后续 receipt failure 回滚。Receipt 不复制正文、reasoning、tool arguments、API key 或 hook raw stderr。
 

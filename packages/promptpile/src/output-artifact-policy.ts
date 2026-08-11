@@ -27,6 +27,7 @@ export interface ResolvedOutputArtifactPolicyV1 {
   };
   receipt?: ResolvedFileTarget;
   conversation: {
+    inputDirectories: string[];
     continueEnabled: boolean;
     mutationEnabled: boolean;
     outputDirectory?: string;
@@ -104,20 +105,45 @@ const validateConversationNamespace = (
   targets: Array<{ label: string; target: ResolvedFileTarget }>
 ): void => {
   const outputDirectory = policy.conversation.outputDirectory;
-  if (!outputDirectory) return;
-  const outputIdentity = comparisonIdentity(
-    fs.existsSync(outputDirectory) ? fs.realpathSync(outputDirectory) : path.normalize(outputDirectory)
+  const directoryIdentity = (directory: string): string => comparisonIdentity(
+    fs.existsSync(directory) ? fs.realpathSync(directory) : path.normalize(directory)
   );
-  for (const { label, target } of targets) {
-    const targetParentIdentity = path.dirname(target.identity);
-    if (targetParentIdentity !== outputIdentity) continue;
+  const validateTarget = (
+    label: string,
+    target: ResolvedFileTarget,
+    directoryIdentities: ReadonlySet<string>,
+    protectProtocolArtifacts: boolean
+  ): void => {
+    if (!directoryIdentities.has(path.dirname(target.identity))) return;
     const basename = path.basename(target.absolutePath);
     if (comparisonIdentity(basename) === comparisonIdentity('.promptpile.occ.claim')) {
       throw new Error(`output artifact target uses reserved Conversation control path (${label}): ${target.absolutePath}`);
     }
-    if (policy.conversation.mutationEnabled && classifyConversationArtifactName(basename)) {
+    if (protectProtocolArtifacts && classifyConversationArtifactName(basename)) {
       throw new Error(`output artifact target collides with Conversation namespace (${label}): ${target.absolutePath}`);
     }
+  };
+
+  // A receipt is never a Conversation artifact. Protect every effective input
+  // layer even for a read-only completion, where mutationEnabled is false.
+  if (policy.receipt) {
+    const allConversationDirectories = new Set(
+      policy.conversation.inputDirectories.map(directoryIdentity)
+    );
+    if (outputDirectory) allConversationDirectories.add(directoryIdentity(outputDirectory));
+    validateTarget('completion receipt', policy.receipt, allConversationDirectories, true);
+  }
+
+  if (!outputDirectory) return;
+  const outputIdentities = new Set([directoryIdentity(outputDirectory)]);
+  for (const { label, target } of targets) {
+    if (target === policy.receipt) continue;
+    validateTarget(
+      label,
+      target,
+      outputIdentities,
+      policy.conversation.mutationEnabled
+    );
   }
 };
 
@@ -156,6 +182,7 @@ export const resolveOutputArtifactPolicy = (options: {
     mainOutput: config.output ? resolveMainOutputTargets(cwd, config.output) : undefined,
     receipt: config.receipt ? lexicalFileTarget(cwd, config.receipt) : undefined,
     conversation: {
+      inputDirectories: config.conversationIo.inputDirectories,
       continueEnabled: config.continueMode,
       mutationEnabled: config.continueMode || config.inputMode,
       outputDirectory,

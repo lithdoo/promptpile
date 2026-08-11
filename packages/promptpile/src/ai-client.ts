@@ -225,6 +225,11 @@ export const callAIStream = async (
     const streamToolDeltas: StreamDeltaToolCall[] = [];
     let finishReason: string | undefined;
     let usage: CompletionUsage | undefined;
+    const observeMetadata = (data: ChatCompletionStreamChunk): void => {
+      const observedFinishReason = data.choices?.[0]?.finish_reason;
+      if (typeof observedFinishReason === 'string') finishReason = observedFinishReason;
+      usage = normalizeUsage(data.usage) ?? usage;
+    };
 
     for await (const chunk of res.body) {
       buffer += chunk.toString('utf8');
@@ -244,9 +249,7 @@ export const callAIStream = async (
 
         try {
           const data = JSON.parse(payloadLine) as ChatCompletionStreamChunk;
-          const observedFinishReason = data.choices?.[0]?.finish_reason;
-          if (typeof observedFinishReason === 'string') finishReason = observedFinishReason;
-          usage = normalizeUsage(data.usage) ?? usage;
+          observeMetadata(data);
           const delta = data.choices?.[0]?.delta;
           const piece = delta?.content ?? '';
           if (piece) {
@@ -272,9 +275,7 @@ export const callAIStream = async (
       if (payloadLine && payloadLine !== '[DONE]') {
         try {
           const data = JSON.parse(payloadLine) as ChatCompletionStreamChunk;
-          const observedFinishReason = data.choices?.[0]?.finish_reason;
-          if (typeof observedFinishReason === 'string') finishReason = observedFinishReason;
-          usage = normalizeUsage(data.usage) ?? usage;
+          observeMetadata(data);
           const delta = data.choices?.[0]?.delta;
           const piece = delta?.content ?? '';
           if (piece) {

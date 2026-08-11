@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/lithdoo/promptpile/blob/main/doc/15-contracts/completion-receipt-v1.schema.json",
+  "$id": "https://raw.githubusercontent.com/lithdoo/promptpile/main/doc/15-contracts/completion-receipt-v1.schema.json",
   "title": "Promptpile Completion Receipt v1",
   "type": "object",
   "additionalProperties": false,
@@ -88,7 +88,11 @@
           "properties": {
             "status": { "const": "exited_nonzero" },
             "failureMode": { "$ref": "#/$defs/failureMode" },
-            "path": { "type": "string" }, "exitCode": { "type": "integer" }
+            "path": { "type": "string" },
+            "exitCode": {
+              "type": "integer",
+              "anyOf": [{ "maximum": -1 }, { "minimum": 1 }]
+            }
           }
         },
         {

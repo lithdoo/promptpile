@@ -146,6 +146,7 @@ const sendCompletion = (response, content) => {
       '--expected-output-next-index', '1',
       '--api-key', 'test-key', '--api-base-url', api,
       '--disable-tool', '--quiet', '--output', mainOutput,
+      '--invocation-id', 'occ-conflict-correlation',
       '--output-pile-file', outputPile, '--output-pile-format', 'json',
       '--after-hook-path', hook
     ], '', { HOOK_MARKER: hookMarker });

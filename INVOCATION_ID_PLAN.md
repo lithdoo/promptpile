@@ -1,6 +1,6 @@
 # Promptpile Invocation ID 实施设计计划
 
-> 状态：已实现（v1）
+> 状态：实现完成，待专项 CI 验证
 > 设计冻结日期：2026-08-11  
 > 核心提案：为一次 root completion invocation 提供一个 **caller-supplied、CLI-only、可选、受限 ASCII、绝不进入模型上下文** 的 correlation identifier，并把它收敛为独立的 `ResolvedInvocationContextV1`；v1 只向 after-hook 与未来 Completion Receipt 传播，不把它扩张为 run/session/transaction/幂等协议
 
@@ -1600,41 +1600,41 @@ LLM dump schema
 
 实施完成必须同时满足：
 
-- [ ] public surface 只有 root completion `--invocation-id <id>`；
-- [ ] v1 不支持 TOML invocation id；
-- [ ] v1 不从 process env 读取 invocation id；
-- [ ] Promptpile 不自动生成 invocation id；
-- [ ] omitted invocation id resolve 为 `null`；
-- [ ] 合法语言严格为 `^[A-Za-z0-9._:-]{1,128}$`；
-- [ ] parser 不 trim / normalize / case-fold；
-- [ ] parser validation error 不回显任意 raw invalid input；
-- [ ] invalid ID 在 root `--input` mutation 前失败；
-- [ ] invalid ID 在 sink preparation 前失败；
-- [ ] invalid ID 在 model request 前失败；
-- [ ] `ResolvedInvocationContextV1` 是唯一 runtime correlation fact；
-- [ ] Invocation ID 不进入 `ResolvedOutputArtifactPolicyV1`；
-- [ ] Invocation ID 不参与 file target derivation；
-- [ ] Invocation ID 不进入 model messages；
-- [ ] Invocation ID 不进入 provider request body/headers；
-- [ ] Invocation ID 不进入 tool args / tool definitions；
-- [ ] Invocation ID 不进入 Conversation artifacts / filenames / idx；
-- [ ] Invocation ID 不影响 Conversation Fingerprint；
-- [ ] Invocation ID 不参与 OCC claim/precondition；
-- [ ] Invocation ID 不进入 output pile text/JSON；
-- [ ] Invocation ID 不进入 LLM dump v1；
-- [ ] Invocation ID 不自动加到 stdout/stderr diagnostics；
-- [ ] after-hook 有 ID 时收到 exact `PROMPTPILE_INVOCATION_ID`；
-- [ ] after-hook 无 ID 时该 env key absent；
-- [ ] stale parent `PROMPTPILE_INVOCATION_ID` 不泄漏到无-ID hook；
-- [ ] CLI ID 覆盖 stale parent env；
-- [ ] 不新增 hook child invocation id；
-- [ ] future Receipt seam 固定为 `invocationId: string | null`；
-- [ ] Receipt 不从 env/path/hook 反推 invocation id；
-- [ ] duplicate ID 不被 Promptpile 当错误；
-- [ ] Invocation ID 不承担 authorization / idempotency / exactly-once；
-- [ ] 不提供 ID 时除 stale hook env 安全修正外行为兼容；
+- [x] public surface 只有 root completion `--invocation-id <id>`；
+- [x] v1 不支持 TOML invocation id；
+- [x] v1 不从 process env 读取 invocation id；
+- [x] Promptpile 不自动生成 invocation id；
+- [x] omitted invocation id resolve 为 `null`；
+- [x] 合法语言严格为 `^[A-Za-z0-9._:-]{1,128}$`；
+- [x] parser 不 trim / normalize / case-fold；
+- [x] parser validation error 不回显任意 raw invalid input；
+- [x] invalid ID 在 root `--input` mutation 前失败；
+- [x] invalid ID 在 sink preparation 前失败；
+- [x] invalid ID 在 model request 前失败；
+- [x] `ResolvedInvocationContextV1` 是唯一 runtime correlation fact；
+- [x] Invocation ID 不进入 `ResolvedOutputArtifactPolicyV1`；
+- [x] Invocation ID 不参与 file target derivation；
+- [x] Invocation ID 不进入 model messages；
+- [x] Invocation ID 不进入 provider request body/headers；
+- [x] Invocation ID 不进入 tool args / tool definitions；
+- [x] Invocation ID 不进入 Conversation artifacts / filenames / idx；
+- [x] Invocation ID 不影响 Conversation Fingerprint；
+- [x] Invocation ID 不参与 OCC claim/precondition；
+- [x] Invocation ID 不进入 output pile text/JSON；
+- [x] Invocation ID 不进入 LLM dump v1；
+- [x] Invocation ID 不自动加到 stdout/stderr diagnostics；
+- [x] after-hook 有 ID 时收到 exact `PROMPTPILE_INVOCATION_ID`；
+- [x] after-hook 无 ID 时该 env key absent；
+- [x] stale parent `PROMPTPILE_INVOCATION_ID` 不泄漏到无-ID hook；
+- [x] CLI ID 覆盖 stale parent env；
+- [x] 不新增 hook child invocation id；
+- [x] future Receipt seam 固定为 `invocationId: string | null`；
+- [x] Receipt 不从 env/path/hook 反推 invocation id；
+- [x] duplicate ID 不被 Promptpile 当错误；
+- [x] Invocation ID 不承担 authorization / idempotency / exactly-once；
+- [x] 不提供 ID 时除 stale hook env 安全修正外行为兼容；
 - [ ] Node 18/22 × Windows/Linux dedicated/regression CI 全绿；
-- [ ] CLI Contract、README、安全文档更新。
+- [x] CLI Contract、README、安全文档更新。
 
 ---
 

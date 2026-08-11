@@ -1,5 +1,3 @@
-export const INVOCATION_ID_MAX_LENGTH = 128;
-
 const INVOCATION_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
 const INVALID_INVOCATION_ID_MESSAGE =
   'invalid invocation id: expected 1-128 characters matching [A-Za-z0-9._:-]';

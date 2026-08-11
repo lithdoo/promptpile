@@ -4,16 +4,13 @@ import type { CompletionArtifactLedger } from './completion-artifact-ledger';
 import type { CompletionUsage } from './types';
 import type { ResolvedInvocationContextV1 } from './invocation-context';
 
-export interface CompletionReceiptHookV1 {
-  status: AfterHookObservationV1['status'];
-  failureMode: AfterHookFailureMode;
-  reason?: string;
-  path?: string;
-  attempted?: string;
-  exitCode?: number;
-  signal?: string;
-  errorCode?: string;
-}
+export type CompletionReceiptHookV1 =
+  | { status: 'skipped'; failureMode: AfterHookFailureMode; reason: 'not_configured' | 'default_not_found' }
+  | { status: 'invalid_explicit'; failureMode: AfterHookFailureMode; attempted: string; reason: string }
+  | { status: 'succeeded'; failureMode: AfterHookFailureMode; path: string; exitCode: 0 }
+  | { status: 'spawn_failed'; failureMode: AfterHookFailureMode; path: string; errorCode?: string }
+  | { status: 'exited_nonzero'; failureMode: AfterHookFailureMode; path: string; exitCode: number }
+  | { status: 'signaled'; failureMode: AfterHookFailureMode; path: string; signal: string };
 
 export interface CompletionReceiptV1 {
   schemaVersion: 1;

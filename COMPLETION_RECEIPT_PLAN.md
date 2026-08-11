@@ -1,6 +1,6 @@
 # Promptpile Completion Receipt v1 设计
 
-> 状态：已实现（v1）
+> 状态：实现完成，待专项 CI 验证
 > 日期：2026-08-07  
 > 核心提案：以可选、原子写入的 receipt 文件描述一次 completion 已落盘的结果
 
@@ -74,7 +74,7 @@ Receipt 是最后写入的完成标记。进程失败且没有 receipt 时，调
 
 - v1 只由外层 root completion 产生 receipt；`promptpile-react` 不为内部 phase 自动合成 receipt。
 - 已更新 CLI Contract、README 和 package 状态文档。
-- 已提供第三方 orchestrator 可用的 Completion Receipt v1 JSON Schema。
+- 已提供第三方 orchestrator 可用的 Completion Receipt v1 JSON Schema，并随 npm package 的 `dist` 发布。
 
 ## 8. 验收标准
 

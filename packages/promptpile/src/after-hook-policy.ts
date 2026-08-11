@@ -32,9 +32,24 @@ export interface AfterHookPolicyDecisionV1 {
   impact: AfterHookPolicyImpact;
 }
 
-export const observeAfterHookResolution = (
+type NonRunningAfterHookResolution = Exclude<ResolveAfterHookResult, { status: 'run' }>;
+type ResolutionAfterHookObservation = Extract<
+  AfterHookObservationV1,
+  { status: 'skipped' | 'invalid_explicit' }
+>;
+
+export function observeAfterHookResolution(
+  resolution: Extract<ResolveAfterHookResult, { status: 'run' }>
+): undefined;
+export function observeAfterHookResolution(
+  resolution: NonRunningAfterHookResolution
+): ResolutionAfterHookObservation;
+export function observeAfterHookResolution(
   resolution: ResolveAfterHookResult
-): AfterHookObservationV1 | undefined => {
+): ResolutionAfterHookObservation | undefined;
+export function observeAfterHookResolution(
+  resolution: ResolveAfterHookResult
+): ResolutionAfterHookObservation | undefined {
   if (resolution.status === 'run') return undefined;
   if (resolution.status === 'skip') {
     return { status: 'skipped', reason: resolution.reason };
@@ -44,7 +59,7 @@ export const observeAfterHookResolution = (
     attempted: resolution.attempted,
     reason: resolution.reason
   };
-};
+}
 
 export const evaluateAfterHookPolicy = (
   observation: AfterHookObservationV1,

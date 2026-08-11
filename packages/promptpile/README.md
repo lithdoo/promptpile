@@ -761,7 +761,7 @@ node dist/index.js -d ./messages --continue --quiet \
 
 Invocation ID 只来自 CLI，必须匹配 `[A-Za-z0-9._:-]{1,128}`；它不会进入模型 request body、Conversation artifact、tool arguments 或文件名。Receipt path 也可通过 TOML `[promptpile].receipt` 配置，CLI 优先。
 
-Receipt 是 after-hook 之后原子发布的 `status: "completed"` 最终标记。artifact 字段使用绝对路径，`finishReason` / `usage` 在网关未返回时为 `null`。hook 在 `warn` mode 下失败时 receipt 会记录结构化失败事实；`error` mode 下不发布 completed receipt。Receipt 缺失不代表此前没有 artifact 落盘，调用方仍需结合退出码判断。机器消费者可使用 [Completion Receipt v1 JSON Schema](../../doc/15-contracts/completion-receipt-v1.schema.json) 校验。
+Receipt 是 after-hook 之后原子发布的 `status: "completed"` 最终标记。artifact 字段使用绝对路径，`finishReason` / `usage` 在网关未返回时为 `null`。hook 在 `warn` mode 下失败时 receipt 会记录结构化失败事实；`error` mode 下不发布 completed receipt。Receipt 缺失不代表此前没有 artifact 落盘，调用方仍需结合退出码判断。机器消费者可使用 [Completion Receipt v1 JSON Schema](../../doc/15-contracts/completion-receipt-v1.schema.json) 校验；npm 包同时提供 `promptpile/dist/completion-receipt-v1.schema.json` 供离线读取。
 
 ---
 

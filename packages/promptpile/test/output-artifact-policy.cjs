@@ -68,6 +68,18 @@ try {
     config: configFor({ outputDirectory: messages, continueMode: true, receipt: path.join(messages, '[5]assistant.md') }),
     hook: hookPolicy({ status: 'skip', reason: 'not_configured' })
   }), /Conversation namespace/);
+  assert.throws(() => resolveOutputArtifactPolicy({ cwd: root,
+    config: configFor({ outputDirectory: messages, receipt: path.join(messages, '[0]user.md') }),
+    hook: hookPolicy({ status: 'skip', reason: 'not_configured' })
+  }), /Conversation namespace/, 'read-only output directory remains protected');
+  assert.throws(() => resolveOutputArtifactPolicy({ cwd: root,
+    config: configFor({ receipt: path.join(messages, '[0]user.md') }),
+    hook: hookPolicy({ status: 'skip', reason: 'not_configured' })
+  }), /Conversation namespace/, 'every read-only input layer remains protected');
+  assert.throws(() => resolveOutputArtifactPolicy({ cwd: root,
+    config: configFor({ receipt: path.join(messages, '.promptpile.occ.claim') }),
+    hook: hookPolicy({ status: 'skip', reason: 'not_configured' })
+  }), /reserved Conversation control path/);
 
   const policy = prepareOutputArtifactPolicy(resolveOutputArtifactPolicy({ cwd: root,
     config: configFor({ output: './main/result.md' }), hook: hookPolicy({ status: 'skip', reason: 'not_configured' }) }));

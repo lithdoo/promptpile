@@ -115,20 +115,20 @@ async function runCompletion(cwd: string): Promise<void> {
       config,
       hook: hookPolicy
     });
-    let hookObservation: AfterHookObservationV1 | undefined =
+    const resolutionHookObservation =
       observeAfterHookResolution(outputPolicy.hook.resolution);
-    if (hookObservation !== undefined) {
+    if (resolutionHookObservation !== undefined) {
       const decision = evaluateAfterHookPolicy(
-        hookObservation,
+        resolutionHookObservation,
         outputPolicy.hook.failureMode
       );
       if (decision.impact === 'error') {
-        throw new AfterHookFailureError(hookObservation);
+        throw new AfterHookFailureError(resolutionHookObservation);
       }
       if (decision.impact === 'warning') {
-        console.error(`Warning: ${formatAfterHookDiagnostic(hookObservation)}`);
+        console.error(`Warning: ${formatAfterHookDiagnostic(resolutionHookObservation)}`);
       } else if (isPromptpileDiagnostic()) {
-        console.error(`[promptpile] ${formatAfterHookDiagnostic(hookObservation)}`);
+        console.error(`[promptpile] ${formatAfterHookDiagnostic(resolutionHookObservation)}`);
       }
     }
     const quiet = outputPolicy.terminal.quiet;
@@ -327,6 +327,7 @@ async function runCompletion(cwd: string): Promise<void> {
       void saved;
     }
 
+    let finalHookObservation: AfterHookObservationV1;
     if (outputPolicy.hook.resolution.status === 'run') {
       const hookEnv = buildPromptpileHookEnv({
         scanAbs,
@@ -340,26 +341,25 @@ async function runCompletion(cwd: string): Promise<void> {
         reasoningContent,
         invocation
       });
-      hookObservation = await runAfterHook({
+      finalHookObservation = await runAfterHook({
         scriptPath: outputPolicy.hook.resolution.path,
         scanAbs,
         hookEnv
       });
       const decision = evaluateAfterHookPolicy(
-        hookObservation,
+        finalHookObservation,
         outputPolicy.hook.failureMode
       );
       if (decision.impact === 'warning') {
-        console.error(`Warning: ${formatAfterHookDiagnostic(hookObservation)}`);
+        console.error(`Warning: ${formatAfterHookDiagnostic(finalHookObservation)}`);
       } else if (decision.impact === 'error') {
-        throw new AfterHookFailureError(hookObservation);
+        throw new AfterHookFailureError(finalHookObservation);
       }
+    } else {
+      finalHookObservation = observeAfterHookResolution(outputPolicy.hook.resolution);
     }
 
     if (outputPolicy.receipt) {
-      if (hookObservation === undefined) {
-        throw new Error('internal error: after-hook observation is unavailable');
-      }
       const receipt = buildCompletionReceiptV1({
         invocation,
         ledger: artifactLedger,
@@ -367,7 +367,7 @@ async function runCompletion(cwd: string): Promise<void> {
         finishReason: result.finishReason,
         usage: result.usage,
         hook: buildCompletionReceiptHookV1(
-          hookObservation,
+          finalHookObservation,
           outputPolicy.hook.failureMode
         )
       });
