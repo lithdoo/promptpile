@@ -1,6 +1,6 @@
 # Promptpile Completion Receipt v1 实施闭环设计
 
-> 状态：实现与 CR-1 / CR-2 closure 完成，Freeze 待 dedicated matrix 复验
+> 状态：v1 已实施 / Freeze 完成
 > 初始设计日期：2026-08-07  
 > 闭环设计更新：2026-08-11  
 > 核心提案：Completion Receipt v1 是一次 **successful root completion 的最终 durable witness**。它以可选、原子发布的 JSON 文件描述本 invocation 已成功提交的 completion artifacts、调用关联信息、provider 可观察 metadata 与 after-hook 最终非致命状态；它不是通用运行日志、失败报告、事务日志或 Conversation 的第二份正文。
@@ -1395,9 +1395,9 @@ CR-1 / CR-2 closure 已通过本地 workflow 等价测试与 `npm test -w prompt
 - [x] npm package 发布 schema copy；
 - [x] package schema 与 normative schema equality test；
 - [x] Node 18/22 × Ubuntu/Windows 首轮 dedicated CI 全绿；
-- [ ] CR-1 / CR-2 closure 后 dedicated CI 再次全绿；
+- [x] CR-1 / CR-2 closure 后 dedicated CI 再次全绿；
 
-只有 CR-1、CR-2 完成并经同一 dedicated matrix 全绿后，本计划状态才改为：
+CR-1、CR-2 已完成，并经同一 dedicated matrix 全绿；本计划状态现为：
 
 ```text
 v1 已实施 / Freeze 完成
@@ -1534,7 +1534,7 @@ stale/reused Receipt target 的历史文件语义已有回归测试，
 caller-facing contract 已明确：文件存在本身不证明当前 invocation 成功
 ```
 
-最终 Freeze 只剩一个发布门禁：closure 分支上的 dedicated Node 18/22 × Ubuntu/Windows matrix 必须四组全绿；在该证据产生前，不把计划状态提前写成“Freeze 完成”。
+最终发布门禁已满足：closure 提交 `eae4000` 的 dedicated GitHub Actions run `31479386012` 在 Node 18/22 × Ubuntu/Windows 四组矩阵全部通过，Completion Receipt v1 正式 Freeze。
 
 完成后最终状态应为：
 
