@@ -56,6 +56,33 @@ const run = (cwd, args, extraEnv = {}) => new Promise((resolve, reject) => {
     assert.strictEqual(requestCount, 0);
     assert.strictEqual(fs.existsSync(path.dirname(resultPath)), false, 'collision does not mkdir or truncate');
 
+    const occOutput = path.join(root, 'occ-preflight', 'result.md');
+    const occFailure = await run(root, ['-d', messages, '--continue', ...apiArgs,
+      '--expected-output-next-index', '99', '--output', occOutput]);
+    assert.strictEqual(occFailure.code, 3, occFailure.stderr);
+    assert.strictEqual(requestCount, 0);
+    assert.strictEqual(fs.existsSync(path.dirname(occOutput)), false,
+      'OCC preflight failure happens before sink parent preparation');
+
+    const toolsOutput = path.join(root, 'tools-validation', 'result.md');
+    const toolsFailure = await run(root, ['-d', messages,
+      '--api-key', 'key', '--api-base-url', `http://127.0.0.1:${address.port}/v1`,
+      '--output', toolsOutput]);
+    assert.strictEqual(toolsFailure.code, 1);
+    assert.match(toolsFailure.stderr, /tools require/);
+    assert.strictEqual(requestCount, 0);
+    assert.strictEqual(fs.existsSync(path.dirname(toolsOutput)), false,
+      'tools validation failure happens before sink parent preparation');
+
+    const sidecarOutput = path.join(root, 'sidecar-validation', 'result.md');
+    const sidecarFailure = await run(root, ['-d', messages, ...apiArgs,
+      '--insert-files', './missing-insert.md', '--output', sidecarOutput]);
+    assert.strictEqual(sidecarFailure.code, 1);
+    assert.match(sidecarFailure.stderr, /loading insert\/append files/i);
+    assert.strictEqual(requestCount, 0);
+    assert.strictEqual(fs.existsSync(path.dirname(sidecarOutput)), false,
+      'sidecar validation failure happens before sink parent preparation');
+
     const invalidPile = await run(root, ['-d', messages, ...apiArgs, '--output-pile-file', messages]);
     assert.strictEqual(invalidPile.code, 1);
     assert.strictEqual(requestCount, 0, 'pile readiness failure happens before API request');

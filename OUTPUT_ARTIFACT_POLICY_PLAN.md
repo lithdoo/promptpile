@@ -1838,6 +1838,14 @@ policy + actual ledger
 v1 已实施
 ```
 
+### Closure audit：2026-08-11
+
+- `prepareOutputArtifactPolicy()` 已位于 OCC、messages、tools、tool choice 与 insert/append sidecar validation 之后；
+- terminal、Conversation output topology 与 hook execution 统一从 resolved policy 消费；
+- ledger 对 `(namespace, kind)` 实施唯一键约束，重复 record 是内部错误；
+- fault injection 覆盖 model failure + pile close failure，以及 main body/calls/extra 三个 failure point；
+- dedicated Windows/Linux workflow 包含 logical-slot CLI-over-TOML precedence 测试。
+
 ---
 
 ## 26. Test Plan

@@ -63,6 +63,8 @@ output pile destination 是单一 logical slot：CLI file/fd target group 整体
 
 `-o` 的 body、calls 与 extra potential targets 必须在调用模型前全部进入 collision set。它们不得与 pile file、writable Conversation directory 中可识别的 protocol filename、`.promptpile.occ.claim` 或本轮 resolved after-hook script 冲突。静态冲突是 exit `1`，不调用模型，也不打开或 truncate output sink。
 
+Policy resolution 与 lexical collision validation 不产生 filesystem side effect。只有 OCC early preflight、消息扫描、tools、tool choice、insert/append sidecar 等确定性验证全部成功后，才进入 sink preparation：创建 output parents、按 canonical parent identity 复检 collision，并打开/等待 pile readiness。上述验证失败不得因 `-o` 或 pile file 配置而留下新建的 output parent directory。
+
 output pile 是 required live transport，但不是 durable body authority，也不进入 artifact ledger。JSON pile 的 `assistant_done` 只表示 model stream done。pile open/write/done/close failure 是 ordinary failure，并阻止 main、Conversation 和 hook stages。
 
 durable commit 顺序固定为 main body → calls → extra，再进入 Conversation。每个文件独立 atomic；group 和跨 channel 都不 transactional。ledger 只在单个 durable write 成功后记录事实。后续失败不 rollback 已写 artifact。after-hook 的精确 artifact path 只能来自 ledger，不能根据模型结果、配置或目录扫描推导。cleanup/finalizer 的 secondary failure 不得覆盖更早的 primary failure。

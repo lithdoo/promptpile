@@ -58,6 +58,21 @@ try {
   assert.deepStrictEqual(ledger.entries().map(ref => [ref.namespace, ref.kind]), [
     ['main', 'body'], ['main', 'calls'], ['main', 'extra']
   ]);
+  assert.throws(() => ledger.record({
+    namespace: 'main', kind: 'body', absolutePath: path.join(root, 'duplicate.md')
+  }), /duplicate completion artifact ledger key/);
+  assert.strictEqual(ledger.entries().length, 3, 'duplicate record does not mutate the ledger');
+
+  const bodyFailureTargets = resolveMainOutputTargets(root, './body-failure/result.md');
+  fs.mkdirSync(path.dirname(bodyFailureTargets.body.absolutePath), { recursive: true });
+  const bodyFailureLedger = new CompletionArtifactLedger();
+  let bodyFailureWrites = 0;
+  assert.throws(() => commitMainOutput({ targets: bodyFailureTargets, response: 'not written',
+    toolCalls: undefined, reasoningContent: undefined, ledger: bodyFailureLedger,
+    writeFile() { bodyFailureWrites += 1; throw new Error('injected body failure'); }
+  }), /injected body failure/);
+  assert.strictEqual(bodyFailureWrites, 1);
+  assert.deepStrictEqual(bodyFailureLedger.entries(), []);
 
   const partialTargets = resolveMainOutputTargets(root, './partial/result.md');
   fs.mkdirSync(path.dirname(partialTargets.body.absolutePath), { recursive: true });
@@ -71,6 +86,25 @@ try {
   assert.strictEqual(fs.readFileSync(partialTargets.body.absolutePath, 'utf8'), 'kept');
   assert.deepStrictEqual(partialLedger.entries().map(ref => ref.kind), ['body']);
   assert.strictEqual(writes, 2, 'extra is not attempted after calls failure');
+
+  const extraFailureTargets = resolveMainOutputTargets(root, './extra-failure/result.md');
+  fs.mkdirSync(path.dirname(extraFailureTargets.body.absolutePath), { recursive: true });
+  const extraFailureLedger = new CompletionArtifactLedger();
+  let extraFailureWrites = 0;
+  assert.throws(() => commitMainOutput({ targets: extraFailureTargets, response: 'kept body',
+    toolCalls: [{ id: 'c-extra', type: 'function', function: { name: 'f', arguments: '{}' } }],
+    reasoningContent: 'fails', ledger: extraFailureLedger,
+    writeFile(target, content) {
+      extraFailureWrites += 1;
+      if (extraFailureWrites === 3) throw new Error('injected extra failure');
+      atomicWriteFileSync(target, content);
+    }
+  }), /injected extra failure/);
+  assert.strictEqual(extraFailureWrites, 3);
+  assert.deepStrictEqual(extraFailureLedger.entries().map(ref => ref.kind), ['body', 'calls']);
+  assert.strictEqual(fs.readFileSync(extraFailureTargets.body.absolutePath, 'utf8'), 'kept body');
+  assert.ok(fs.existsSync(extraFailureTargets.calls.absolutePath));
+  assert.ok(!fs.existsSync(extraFailureTargets.extra.absolutePath));
 
   const conversationLedger = new CompletionArtifactLedger();
   let conversationWrites = 0;

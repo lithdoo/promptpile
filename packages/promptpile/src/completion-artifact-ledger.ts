@@ -9,9 +9,20 @@ export interface CompletionArtifactRef {
 
 export class CompletionArtifactLedger {
   private readonly committed: CompletionArtifactRef[] = [];
+  private readonly byKey = new Map<string, CompletionArtifactRef>();
+
+  private key(namespace: CompletionArtifactNamespace, kind: CompletionArtifactKind): string {
+    return `${namespace}\u0000${kind}`;
+  }
 
   record(ref: CompletionArtifactRef): void {
-    this.committed.push(Object.freeze({ ...ref }));
+    const key = this.key(ref.namespace, ref.kind);
+    if (this.byKey.has(key)) {
+      throw new Error(`duplicate completion artifact ledger key: ${ref.namespace}/${ref.kind}`);
+    }
+    const committed = Object.freeze({ ...ref });
+    this.committed.push(committed);
+    this.byKey.set(key, committed);
   }
 
   entries(): readonly CompletionArtifactRef[] {
@@ -19,6 +30,6 @@ export class CompletionArtifactLedger {
   }
 
   find(namespace: CompletionArtifactNamespace, kind: CompletionArtifactKind): CompletionArtifactRef | undefined {
-    return this.committed.find(ref => ref.namespace === namespace && ref.kind === kind);
+    return this.byKey.get(this.key(namespace, kind));
   }
 }

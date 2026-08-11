@@ -47,6 +47,7 @@ import {
   isConversationConflictError
 } from './conversation-conflict';
 import { secondaryFailuresOf } from './primary-failure';
+import { runModelOutputLifecycle } from './model-output-lifecycle';
 
 const readUserInputFromTerminal = async (): Promise<string> => {
   console.log('Enter user message. Finish with Ctrl+Z then Enter (Windows), or Ctrl+D (macOS/Linux).');
@@ -82,8 +83,7 @@ async function runCompletion(cwd: string): Promise<void> {
       process.exit(1);
     }
 
-    const quiet = config.quiet;
-    const { inputDirectories, outputDirectory, anchorDirectory } = config.conversationIo;
+    const { inputDirectories, anchorDirectory } = config.conversationIo;
     const scanAbs = path.resolve(cwd, anchorDirectory);
     const hookResolution = resolveAfterHookScript({
       cwd,
@@ -92,11 +92,13 @@ async function runCompletion(cwd: string): Promise<void> {
       afterHookConfig: config.afterHookConfig,
       allowDefaultAfterHook: config.allowDefaultAfterHook
     });
-    const outputPolicy = prepareOutputArtifactPolicy(resolveOutputArtifactPolicy({
+    let outputPolicy = resolveOutputArtifactPolicy({
       cwd,
       config,
       hook: hookResolution
-    }));
+    });
+    const quiet = outputPolicy.terminal.quiet;
+    const { outputDirectory, outputDirectoryIndex } = outputPolicy.conversation;
     const artifactLedger = new CompletionArtifactLedger();
 
     const scanInputLayers = () =>
@@ -104,9 +106,6 @@ async function runCompletion(cwd: string): Promise<void> {
         scanDirectory(directory, directoryIndex)
       );
     let files: FileInfo[] = [];
-    const outputDirectoryIndex = outputDirectory === undefined
-      ? undefined
-      : inputDirectories.indexOf(outputDirectory);
     if (outputDirectory !== undefined && outputDirectoryIndex === -1) {
       throw new Error('resolved conversation output directory is not an input layer');
     }
@@ -144,9 +143,9 @@ async function runCompletion(cwd: string): Promise<void> {
           mutationKind: 'append_user',
           precondition: callerPrecondition,
           mutate: state => appendUserMessageAtIndex(outputDirectory!, state.nextIndex, userContent),
-          deriveFor: config.continueMode ? 'continue_assistant' : undefined
+          deriveFor: outputPolicy.conversation.continueEnabled ? 'continue_assistant' : undefined
         });
-        if (config.continueMode) {
+        if (outputPolicy.conversation.continueEnabled) {
           assistantPrecondition = {
             expectedFingerprint: committed.baseline?.fingerprint,
             expectedNextIndex: committed.baseline?.nextIndex
@@ -220,20 +219,18 @@ async function runCompletion(cwd: string): Promise<void> {
       process.exit(1);
     }
 
-    let response = '';
-    let toolCalls: ToolCall[] | undefined;
-    let reasoningContent: string | undefined;
+    // Side-effectful sink preparation begins only after deterministic OCC,
+    // message, tool, and sidecar validation has completed.
+    outputPolicy = prepareOutputArtifactPolicy(outputPolicy);
 
     const outputPile = createOutputPileWriter({
       target: outputPolicy.outputPile?.target,
       format: outputPolicy.outputPile?.format
     });
 
-    await outputPile.ready();
-    let hasPrimaryStreamFailure = false;
-    let primaryStreamFailure: unknown;
-    try {
-      const result = await callAIStream(
+    const result = await runModelOutputLifecycle({
+      outputPile,
+      runModel: () => callAIStream(
         config.apiKey,
         config.apiBaseUrl,
         config.model,
@@ -248,32 +245,11 @@ async function runCompletion(cwd: string): Promise<void> {
           }
         },
         config.extraBody
-      );
-      response = result.content;
-      toolCalls = result.toolCalls;
-      reasoningContent = result.reasoningContent;
-      outputPile.writeDone();
-    } catch (e) {
-      hasPrimaryStreamFailure = true;
-      primaryStreamFailure = e;
-      try {
-        outputPile.writeError(e);
-      } catch (secondary) {
-        console.error('Secondary output pile error:', secondary);
-      }
-    } finally {
-      try {
-        await outputPile.close();
-      } catch (closeError) {
-        if (!hasPrimaryStreamFailure) {
-          hasPrimaryStreamFailure = true;
-          primaryStreamFailure = closeError;
-        } else {
-          console.error('Secondary output pile close error:', closeError);
-        }
-      }
-    }
-    if (hasPrimaryStreamFailure) throw primaryStreamFailure;
+      )
+    });
+    const response = result.content;
+    const toolCalls = result.toolCalls;
+    const reasoningContent = result.reasoningContent;
 
     if (outputPolicy.mainOutput) {
       commitMainOutput({
@@ -286,7 +262,7 @@ async function runCompletion(cwd: string): Promise<void> {
     }
     printToolCallsLines(toolCalls, quiet);
 
-    if (config.continueMode) {
+    if (outputPolicy.conversation.continueEnabled) {
       const conversationWriteOptions = {
         onArtifactCommitted: (artifact: { kind: 'body' | 'calls' | 'extra'; absolutePath: string }) => {
           artifactLedger.record({ namespace: 'conversation', ...artifact });
@@ -317,14 +293,14 @@ async function runCompletion(cwd: string): Promise<void> {
       void saved;
     }
 
-    if (hookResolution.status === 'skip' && isPromptpileDiagnostic()) {
+    if (outputPolicy.hook.status === 'skip' && isPromptpileDiagnostic()) {
       console.error('[promptpile] after-hook: skipped (no script resolved)');
     }
-    if (hookResolution.status === 'warn_invalid_explicit') {
+    if (outputPolicy.hook.status === 'warn_invalid_explicit') {
       console.error(
-        `Warning: after-hook script is not executable as a regular file: ${hookResolution.attempted} (${hookResolution.reason})`
+        `Warning: after-hook script is not executable as a regular file: ${outputPolicy.hook.attempted} (${outputPolicy.hook.reason})`
       );
-    } else if (hookResolution.status === 'run') {
+    } else if (outputPolicy.hook.status === 'run') {
       const hookEnv = buildPromptpileHookEnv({
         scanAbs,
         inputDirectories,
@@ -337,7 +313,7 @@ async function runCompletion(cwd: string): Promise<void> {
         reasoningContent
       });
       await runAfterHook({
-        scriptPath: hookResolution.path,
+        scriptPath: outputPolicy.hook.path,
         scanAbs,
         hookEnv,
         quiet

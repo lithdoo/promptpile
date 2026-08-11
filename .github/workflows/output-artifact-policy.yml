@@ -37,6 +37,12 @@ jobs:
       - name: Verify resolved policy, collision, ledger, and partial writes
         run: node packages/promptpile/test/output-artifact-policy.cjs
 
+      - name: Verify logical-slot CLI-over-TOML precedence
+        run: node packages/promptpile/test/resolve-config.cjs
+
+      - name: Verify model and pile first-primary ordering
+        run: node packages/promptpile/test/model-output-lifecycle.cjs
+
       - name: Verify pile lifecycle failures
         run: node packages/promptpile/test/output-pile.cjs
 
