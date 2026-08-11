@@ -2,10 +2,11 @@
 
 > 类型：Tracking  
 > 非 normative  
-> 最近复核：2026-08-10
+> 最近复核：2026-08-11
 
 ## 已完成
 
+- After-hook Failure Policy v1 已实现 `warn|error` 配置、事实化 resolution、结构化 executor、64 KiB stderr tail、pre-model strict validation 与 post-artifact runtime decision，并进入 Node 18/22 × Windows/Linux 专项矩阵。
 - Conversation Optimistic Concurrency v1 已覆盖 `conversation append-user`、root `--input`、root `--continue` 与组合 derived baseline；使用 output-directory-scoped exclusive claim、commit-time recheck、稳定 exit code 3，并进入 Node 18/22 × Windows/Linux 并发矩阵。
 - React CLI-first architecture migration 已进入 main。
 - `conversation append-user` 已注册为正式 Commander command tree。

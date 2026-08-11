@@ -366,7 +366,7 @@ API key 保留既有的 direct-key 优先语义：
 
 ### TOML（`--config`）
 
-- **`[promptpile]`**：与 `example.toml` 一致，如有序目录数组 `dirs`（或兼容单值 `dir`）、Conversation 写入目录 `output_dir`、普通输出文件 `output`、`output_pile_file`、`output_pile_fd`、`output_pile_format`、`quiet`、`after_hook`、`tool_choice`、`tools_file`、`disable_tool`、`continue`、`input`、`insert_files`、`append_files`、`missing_tool_results`、`llm_api`、`llm_api_key`、`llm_api_key_env`、`llm_api_model`、`llm_api_base_url`、`llm_api_temperature`、`llm_api_extra_body`。`dirs` 与 `dir` 不能同时声明；旧名 `output_pipe` / `output_pipe_format` 仍兼容，新名优先。
+- **`[promptpile]`**：与 `example.toml` 一致，如有序目录数组 `dirs`（或兼容单值 `dir`）、Conversation 写入目录 `output_dir`、普通输出文件 `output`、`output_pile_file`、`output_pile_fd`、`output_pile_format`、`quiet`、`after_hook`、`after_hook_failure`、`tool_choice`、`tools_file`、`disable_tool`、`continue`、`input`、`insert_files`、`append_files`、`missing_tool_results`、`llm_api`、`llm_api_key`、`llm_api_key_env`、`llm_api_model`、`llm_api_base_url`、`llm_api_temperature`、`llm_api_extra_body`。`dirs` 与 `dir` 不能同时声明；旧名 `output_pipe` / `output_pipe_format` 仍兼容，新名优先。
 - **`[[llm_api]]`**：`name`、`model`、`base_url`、`api_key`、`api_key_env`、`temperature`、`extra_body`；由 `--llm-api` 或 `[promptpile].llm_api` 选择 profile 后，再应用显式 CLI / `[promptpile].llm_api_*` 覆盖。
 - **密钥**：若配置了 `api_key_env` / `llm_api_key_env`，在同一合并结果中的直写 `api_key` / `llm_api_key` 仍为空时从 `process.env[该变量名]` 读取。该兼容语义保持不变。
 
@@ -400,6 +400,7 @@ API key 保留既有的 direct-key 优先语义：
 | `--append-files <paths>` | 在扫描消息 **之后** 追加 sidecar 消息；规则同 `--insert-files` | 无 |
 | `--after-hook-path <path>` | 完成后执行的脚本文件；**相对路径相对当前工作目录** | 无 |
 | `--allow-default-after-hook` | 未显式配置 hook 时，允许在 conversation anchor 发现默认 `.after-hook.*`；**仅 CLI 可启用** | 关闭 |
+| `--after-hook-failure <warn\|error>` | hook 的显式路径解析失败、启动失败、非零退出或 signal 终止时，选择警告后继续或 ordinary failure | `warn` |
 | `--tool-choice <value>` | OpenAI `tool_choice`：当且仅当本次请求包含非空 `tools` 时写入请求体。`none`（禁止工具调用）\|`auto`\|`required`\|`function:<name>`（强制指定工具）。**优先级**：CLI 高于 TOML `tool_choice`；均未设置时按 `auto` | 无（由下层或未设置时的 `auto` 决定） |
 | `--disable-tool` | 不加载、不发送 `tools`：忽略 `--tools-file` 与 TOML `tools_file`；与 `--tools-file` 同时出现时 **本开关优先** | 关闭 |
 | `--missing-tool-results <policy>` | 缺失工具结果处理：`warn`、`error` 或 `ignore` | `warn` |
@@ -765,7 +766,17 @@ output pile destination 是一个逻辑槽位，按 **CLI target group > TOML ta
 
 `--allow-default-after-hook` 是 **CLI-only 授权**；TOML 中的 `allow_default_after_hook` 不会生效，避免项目配置自行开启隐式脚本发现。
 
-显式脚本在执行前会通过 `realpath` 解析真实目标，并验证目标为普通文件。文件缺失、目录、断裂符号链接等情况会向 stderr 输出 `Warning: after-hook script is not executable as a regular file: ...`，不执行钩子，主流程仍成功结束。
+显式脚本在执行前会通过 `realpath` 解析真实目标，并验证目标为普通文件。文件缺失、目录、断裂符号链接等情况不会 fallback 到较低优先级 hook，而是形成 `invalid_explicit` observation。
+
+### Failure policy
+
+failure mode 只有 `warn` 和 `error`，优先级固定为 CLI `--after-hook-failure` > TOML `after_hook_failure` > 默认 `warn`。
+
+- `warn`：显式路径无效或 runtime hook 失败时输出 warning；若其余 required stages 成功，最终仍 exit `0`。
+- `error`：显式路径无效时在 `--input` mutation、sink preparation 和模型请求前 exit `1`；runtime hook 失败时在 durable artifacts 已提交后 exit `1`，已写内容不回滚。
+- 未配置 hook，或显式允许 default discovery 但未找到 default hook，都只是 skip；即使 mode 为 `error` 也不会失败。
+
+runtime failure 包括启动失败、非零退出和 signal 终止。Conversation OCC conflict 仍为 exit `3`，并且 conflict 或任何更早的 required stage 失败时不运行 hook。
 
 ### 默认文件名（仅在 CLI 授权时）
 
@@ -798,7 +809,7 @@ Windows **默认链**不包含 `.sh`；若要在 Windows 上跑 shell 脚本，�
 
 所有精确 artifact path 都来自本轮实际成功写入后的内部 ledger；hook 不会根据 `tool_calls`、`reasoning_content` 或配置路径重新推导某个文件“应该存在”。
 
-子进程 **stdout / stderr** 被管道收集：**非 0 退出码** 时向主进程 **stderr** 打印退出码与子进程 stderr；**成功（退出码 0）时不回显**子进程 stdout/stderr，以免干扰父进程终端输出。
+子进程 stdout 不是协议：始终丢弃，不转发、不缓存，也不进入 artifact ledger。stderr 始终持续 drain，但只保留最后 64 KiB 原始字节用于失败诊断；成功时不回显。`--quiet` 不抑制 hook warning/error。结构化 observation 保留退出码、signal 或 spawn error，但未来 Receipt 不应保存 raw stderr。
 
 ### 启动方式（按扩展名）
 
@@ -811,7 +822,7 @@ Windows **默认链**不包含 `.sh`；若要在 Windows 上跑 shell 脚本，�
 
 ### 安全说明
 
-CLI `--after-hook-path` 与 TOML `after_hook` 都属于显式配置，会直接授权执行对应脚本；请只使用已审查的配置。默认文件发现关闭，只有本次命令明确传入 `--allow-default-after-hook` 才启用。符号链接按 `realpath` 后的真实目标执行并校验为普通文件。不要将密钥等敏感信息写入钩子日志（本实现不会主动注入 API Key 到上述 `PROMPTPILE_*` 变量）。
+CLI `--after-hook-path` 与 TOML `after_hook` 都属于显式配置，会直接授权执行对应脚本；请只使用已审查的配置。默认文件发现关闭，只有本次命令明确传入 `--allow-default-after-hook` 才启用。符号链接按 `realpath` 后的真实目标执行并校验为普通文件。不要将密钥等敏感信息写入钩子日志：Promptpile 不会主动把 API Key 写入上述 `PROMPTPILE_*` 变量，也不会 dump hook env，但 hook 自己产生的 stderr 是不可信输出，失败时其 bounded tail 可能展示给操作者。
 
 ---
 
@@ -848,7 +859,8 @@ packages/promptpile/
 │   ├── toml-config.ts     # 分离加载 `[promptpile]` 与 `[[llm_api]]`
 │   ├── file-handler.ts  # 目录扫描、拼 ChatMessage[]
 │   ├── tools-loader.ts  # 显式 `.toml` 工具、`extends` 解析与 `loadTools`
-│   ├── after-hook.ts    # 解析并执行完成后钩子脚本
+│   ├── after-hook.ts    # 解析 hook 并返回结构化执行事实
+│   ├── after-hook-policy.ts # failure mode、observation、decision 与 diagnostics
 │   ├── ai-client.ts     # node-fetch 调用 chat/completions（含流式 tool_calls 合并）
 │   └── types.ts         # Config、ChatMessage、FileInfo 等
 ├── dist/                # 编译产物（运行入口）
@@ -880,8 +892,8 @@ packages/promptpile/
 | `No files found matching` … | 目录下无匹配的消息文件 | 检查是否至少存在 `[数字]角色.md`、`.json` 或 `[idx]assistant.calls.jsonl` / `[idx]assistant.extra.json` / `[idx]assistant.result.jsonl` 等匹配项 |
 | `Error loading tools` / `Circular tools extends` / `Tools extends depth exceeds` | 工具 `.toml` 非法、`extends` 成环、递归过深、显式路径不存在或扩展名非 `.toml` 等 | 按 stderr 提示修正；条目须为扁平 `[[tools]]`；`extends` 路径相对当前 toml 所在目录 |
 | `Error: tools require an explicit .toml path` | 未传 `--disable-tool` 且未提供 `--tools-file` 或配置中的 `tools_file` | 指定 `.toml` 路径或添加 `--disable-tool` |
-| `Warning: after-hook script is not executable as a regular file` | 显式 hook 缺失、不是普通文件或真实路径解析失败 | 修正路径或删除配置 |
-| `after-hook exited with code` / `spawn error` | 脚本语法错误、无解释器、或 `.ps1` 被策略拦截 | 在本机直接运行同一脚本排查 |
+| `after-hook script is not executable as a regular file` | 显式 hook 缺失、不是普通文件或真实路径解析失败 | 修正路径或删除配置；`error` mode 会在模型前失败 |
+| `after-hook exited with code` / `spawn failed` / `terminated by signal` | 脚本失败、无解释器、被策略拦截或收到 signal | 在本机直接运行同一脚本排查；按需使用 `warn` 或 `error` |
 | `Cannot create or write to output directory` | `-o` 父目录无法创建或不可写 | 检查路径权限与磁盘 |
 | `Incomplete tool result` / `Warning: Incomplete tool result` | calls 缺少 result 文件或对应 `tool_call_id` | 补齐 result；或按场景使用 `--missing-tool-results error|warn|ignore` |
 | `assistant.result.jsonl line …` / `Invalid JSON`（来自拼消息阶段） | `[idx]assistant.result.jsonl` 某行非合法 JSON 或缺少 `tool_call_id` / `content` | 按报错行号修正该文件 |

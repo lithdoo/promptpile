@@ -1,3 +1,5 @@
+import type { AfterHookFailureMode } from './after-hook-policy';
+
 /**
  * Synthetic `tool` message `content` when `[idx]assistant.calls.jsonl` lists a `tool_call_id` but
  * `[idx]assistant.result.jsonl` has no matching line (or the file is absent). Documented in README.
@@ -141,6 +143,8 @@ export interface Config {
   afterHookCli?: string;
   /** TOML `after_hook`: relative to the conversation anchor when relative. */
   afterHookConfig?: string;
+  /** Resolved CLI > TOML > default policy for after-hook failures. */
+  afterHookFailure: AfterHookFailureMode;
   /** CLI-only opt-in for discovering default .after-hook files at the conversation anchor. */
   allowDefaultAfterHook: boolean;
   /**

@@ -1,0 +1,43 @@
+name: After-hook Failure Policy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/promptpile/**'
+      - '.github/workflows/after-hook-failure-policy.yml'
+  pull_request:
+    paths:
+      - 'packages/promptpile/**'
+      - '.github/workflows/after-hook-failure-policy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  after-hook:
+    name: Node ${{ matrix.node }} / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: [18, 22]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci --ignore-scripts --workspace=promptpile
+      - run: npm run build -w promptpile
+      - name: Verify after-hook contracts
+        run: >-
+          node packages/promptpile/test/after-hook-policy.cjs &&
+          node packages/promptpile/test/after-hook-executor.cjs &&
+          node packages/promptpile/test/after-hook-security.cjs &&
+          node packages/promptpile/test/after-hook-failure-cli.cjs &&
+          node packages/promptpile/test/output-artifact-policy.cjs &&
+          node packages/promptpile/test/output-artifact-policy-cli.cjs &&
+          node packages/promptpile/test/root-conversation-occ.cjs

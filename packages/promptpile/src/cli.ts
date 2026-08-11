@@ -12,6 +12,7 @@ import {
   type FingerprintConversationOptions,
   type InspectConversationOptions
 } from './conversation-command';
+import { parseAfterHookFailureMode } from './after-hook-policy';
 
 /** Result of {@link parseCli}; `configPath` is raw path from argv (resolve against cwd in resolve-config). */
 export interface CliParseResult {
@@ -108,6 +109,11 @@ export const buildProgram = (handlers?: PromptpileCommandHandlers): Command => {
       'Allow discovery of a default .after-hook script at the conversation anchor'
     )
     .option(
+      '--after-hook-failure <mode>',
+      'After-hook failure policy: warn | error (default: warn)',
+      parseAfterHookFailureMode
+    )
+    .option(
       '--tool-choice <value>',
       'OpenAI tool_choice when tools are sent: none | auto | required | function:<name> (default: auto if unset)'
     )
@@ -165,6 +171,7 @@ export const parseCli = (argv: string[]): CliParseResult => {
     expectedOutputNextIndex?: number;
     toolsFile?: string;
     afterHookPath?: string;
+    afterHookFailure?: string;
     allowDefaultAfterHook?: boolean;
     toolChoice?: string;
     insertFiles?: string;
@@ -264,6 +271,7 @@ export const parseCli = (argv: string[]): CliParseResult => {
       insertFilesCli,
       appendFilesCli,
       afterHookCli,
+      afterHookFailure: parseAfterHookFailureMode(options.afterHookFailure),
       allowDefaultAfterHook:
         options.allowDefaultAfterHook === true ? true : undefined,
       toolChoice: toolChoiceCli,

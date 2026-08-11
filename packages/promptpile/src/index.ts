@@ -13,6 +13,13 @@ import {
 import { callAIStream } from './ai-client';
 import { loadTools } from './tools-loader';
 import { buildPromptpileHookEnv, resolveAfterHookScript, runAfterHook } from './after-hook';
+import {
+  AfterHookFailureError,
+  evaluateAfterHookPolicy,
+  formatAfterHookDiagnostic,
+  observeAfterHookResolution,
+  type AfterHookObservationV1
+} from './after-hook-policy';
 import { effectiveToolChoiceForRequest, parseToolChoiceInput } from './tool-choice';
 import {
   applyAppendFiles,
@@ -92,11 +99,31 @@ async function runCompletion(cwd: string): Promise<void> {
       afterHookConfig: config.afterHookConfig,
       allowDefaultAfterHook: config.allowDefaultAfterHook
     });
+    const hookPolicy = {
+      failureMode: config.afterHookFailure,
+      resolution: hookResolution
+    } as const;
     let outputPolicy = resolveOutputArtifactPolicy({
       cwd,
       config,
-      hook: hookResolution
+      hook: hookPolicy
     });
+    let hookObservation: AfterHookObservationV1 | undefined =
+      observeAfterHookResolution(outputPolicy.hook.resolution);
+    if (hookObservation !== undefined) {
+      const decision = evaluateAfterHookPolicy(
+        hookObservation,
+        outputPolicy.hook.failureMode
+      );
+      if (decision.impact === 'error') {
+        throw new AfterHookFailureError(hookObservation);
+      }
+      if (decision.impact === 'warning') {
+        console.error(`Warning: ${formatAfterHookDiagnostic(hookObservation)}`);
+      } else if (isPromptpileDiagnostic()) {
+        console.error(`[promptpile] ${formatAfterHookDiagnostic(hookObservation)}`);
+      }
+    }
     const quiet = outputPolicy.terminal.quiet;
     const { outputDirectory, outputDirectoryIndex } = outputPolicy.conversation;
     const artifactLedger = new CompletionArtifactLedger();
@@ -293,14 +320,7 @@ async function runCompletion(cwd: string): Promise<void> {
       void saved;
     }
 
-    if (outputPolicy.hook.status === 'skip' && isPromptpileDiagnostic()) {
-      console.error('[promptpile] after-hook: skipped (no script resolved)');
-    }
-    if (outputPolicy.hook.status === 'warn_invalid_explicit') {
-      console.error(
-        `Warning: after-hook script is not executable as a regular file: ${outputPolicy.hook.attempted} (${outputPolicy.hook.reason})`
-      );
-    } else if (outputPolicy.hook.status === 'run') {
+    if (outputPolicy.hook.resolution.status === 'run') {
       const hookEnv = buildPromptpileHookEnv({
         scanAbs,
         inputDirectories,
@@ -312,12 +332,20 @@ async function runCompletion(cwd: string): Promise<void> {
         responseLength: response.length,
         reasoningContent
       });
-      await runAfterHook({
-        scriptPath: outputPolicy.hook.path,
+      hookObservation = await runAfterHook({
+        scriptPath: outputPolicy.hook.resolution.path,
         scanAbs,
-        hookEnv,
-        quiet
+        hookEnv
       });
+      const decision = evaluateAfterHookPolicy(
+        hookObservation,
+        outputPolicy.hook.failureMode
+      );
+      if (decision.impact === 'warning') {
+        console.error(`Warning: ${formatAfterHookDiagnostic(hookObservation)}`);
+      } else if (decision.impact === 'error') {
+        throw new AfterHookFailureError(hookObservation);
+      }
     }
   } catch (error) {
     for (const secondary of secondaryFailuresOf(error)) {
@@ -328,7 +356,11 @@ async function runCompletion(cwd: string): Promise<void> {
       process.exitCode = CONVERSATION_CONFLICT_EXIT_CODE;
       return;
     }
-    console.error('Error:', error);
+    if (error instanceof AfterHookFailureError) {
+      console.error(`Error: ${error.message}`);
+    } else {
+      console.error('Error:', error);
+    }
     process.exitCode = 1;
   }
 }
