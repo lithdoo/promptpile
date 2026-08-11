@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import type { ResolveAfterHookResult } from './after-hook';
+import type { ResolvedAfterHookPolicyV1 } from './after-hook-policy';
 import { classifyConversationArtifactName } from './conversation-artifact-name';
 import type { Config } from './types';
 
@@ -31,7 +31,7 @@ export interface ResolvedOutputArtifactPolicyV1 {
     outputDirectory?: string;
     outputDirectoryIndex?: number;
   };
-  hook: ResolveAfterHookResult;
+  hook: ResolvedAfterHookPolicyV1;
 }
 
 const comparisonIdentity = (value: string): string =>
@@ -121,8 +121,8 @@ const validateHookCollision = (
   policy: ResolvedOutputArtifactPolicyV1,
   targets: Array<{ label: string; target: ResolvedFileTarget }>
 ): void => {
-  if (policy.hook.status !== 'run') return;
-  const hookIdentity = comparisonIdentity(policy.hook.path);
+  if (policy.hook.resolution.status !== 'run') return;
+  const hookIdentity = comparisonIdentity(policy.hook.resolution.path);
   const collision = targets.find(({ target }) => target.identity === hookIdentity);
   if (collision) {
     throw new Error(`output artifact target would overwrite resolved after-hook (${collision.label}): ${collision.target.absolutePath}`);
@@ -132,7 +132,7 @@ const validateHookCollision = (
 export const resolveOutputArtifactPolicy = (options: {
   cwd: string;
   config: Config;
-  hook: ResolveAfterHookResult;
+  hook: ResolvedAfterHookPolicyV1;
 }): ResolvedOutputArtifactPolicyV1 => {
   const { cwd, config, hook } = options;
   const outputPileTarget: ResolvedOutputPileTarget | undefined =

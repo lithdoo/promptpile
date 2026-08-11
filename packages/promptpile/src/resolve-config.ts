@@ -16,6 +16,7 @@ import {
 } from './llm-sampling';
 import { parseOutputPileFd, parseOutputPileFormat, type OutputPileFormat } from './output-pile';
 import { parseMissingToolResultsPolicy } from './tool-result-policy';
+import { parseAfterHookFailureMode } from './after-hook-policy';
 
 /** Pre-merge shape: booleans use undefined = “本层未写”. */
 interface FlatLayer {
@@ -34,6 +35,7 @@ interface FlatLayer {
   inputMode?: boolean;
   toolsFileConfig?: string;
   afterHookConfig?: string;
+  afterHookFailure?: Config['afterHookFailure'];
   toolChoice?: string;
   insertFiles?: string;
   appendFiles?: string;
@@ -149,6 +151,7 @@ const buildTomlLayer = (
   if (ah !== undefined) {
     out.afterHookConfig = ah;
   }
+  out.afterHookFailure = parseAfterHookFailureMode(p.after_hook_failure);
   const tc = getStr(p, 'tool_choice');
   if (tc !== undefined) {
     out.toolChoice = tc;
@@ -268,6 +271,7 @@ const mapCliToFlat = (cli: Partial<Config>): FlatLayer => ({
   quiet: cli.quiet,
   continueMode: cli.continueMode,
   inputMode: cli.inputMode,
+  afterHookFailure: cli.afterHookFailure,
   toolChoice: trim(cli.toolChoice),
   disableTool: cli.disableTool,
   temperature: cli.temperature,
@@ -567,6 +571,9 @@ export const resolveConfig = (cwd: string, argv: string[]): Config => {
     tomlLayer.afterHookConfig,
   );
 
+  const afterHookFailure =
+    cliLayer.afterHookFailure ?? tomlLayer.afterHookFailure ?? 'warn';
+
   const allowDefaultAfterHook = cliPartial.allowDefaultAfterHook === true;
 
   const toolChoice = pickOptStr(
@@ -631,6 +638,7 @@ export const resolveConfig = (cwd: string, argv: string[]): Config => {
     appendFilesCli: appendFilesMerged,
     afterHookCli: cliPartial.afterHookCli,
     afterHookConfig,
+    afterHookFailure,
     allowDefaultAfterHook,
     toolChoice,
     missingToolResults,

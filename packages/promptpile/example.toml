@@ -23,6 +23,7 @@
     output = './message/promptpile-example-output.md'
     quiet = false
     after_hook = './after_hook.sh'
+    after_hook_failure = 'warn' # warn | error；CLI --after-hook-failure 优先
     tool_choice = 'auto'
     # 工具定义文件：仅 .toml，路径相对扫描目录根；文件内可写 extends = ["./base-tools.toml"]
     tools_file = './.tools.toml'
@@ -46,5 +47,3 @@
     # 省略时默认 0.8；可覆盖 [[llm_api]] 中 profile 的 temperature
     llm_api_temperature = 0.8
     llm_api_extra_body = { top_p = 0.9 }
-
-    

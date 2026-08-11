@@ -7,7 +7,9 @@ const { CompletionArtifactLedger } = require('../dist/completion-artifact-ledger
 const { resolveConfig } = require('../dist/resolve-config.js');
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'promptpile-hook-security-'));
+const previousFailureEnv = process.env.PROMPTPILE_AFTER_HOOK_FAILURE;
 try {
+  process.env.PROMPTPILE_AFTER_HOOK_FAILURE = 'error';
   const scanAbs = path.join(root, 'messages');
   fs.mkdirSync(scanAbs);
   const defaultName = process.platform === 'win32' ? '.after-hook.cmd' : '.after-hook.sh';
@@ -16,7 +18,7 @@ try {
 
   assert.deepStrictEqual(
     resolveAfterHookScript({ cwd: root, scanAbs }),
-    { status: 'skip' },
+    { status: 'skip', reason: 'not_configured' },
     'default hook discovery must be disabled without CLI opt-in'
   );
 
@@ -53,8 +55,25 @@ try {
     scanAbs,
     afterHookCli: scanAbs,
   });
-  assert.strictEqual(directoryResult.status, 'warn_invalid_explicit');
+  assert.strictEqual(directoryResult.status, 'invalid_explicit');
   assert.match(directoryResult.reason, /regular file/);
+  const invalidCliDoesNotFallback = resolveAfterHookScript({
+    cwd: root,
+    scanAbs,
+    afterHookCli: './missing-cli-hook.sh',
+    afterHookConfig: './configured.sh',
+    allowDefaultAfterHook: true
+  });
+  assert.strictEqual(invalidCliDoesNotFallback.status, 'invalid_explicit');
+  assert.match(invalidCliDoesNotFallback.attempted, /missing-cli-hook/);
+
+  const noDefaultDirectory = path.join(root, 'no-default');
+  fs.mkdirSync(noDefaultDirectory);
+  assert.deepStrictEqual(resolveAfterHookScript({
+    cwd: root,
+    scanAbs: noDefaultDirectory,
+    allowDefaultAfterHook: true
+  }), { status: 'skip', reason: 'default_not_found' });
 
   if (process.platform !== 'win32') {
     const linkPath = path.join(root, 'hook-link.sh');
@@ -75,6 +94,7 @@ try {
   );
   const fromToml = resolveConfig(root, ['node', 'promptpile', '--config', configPath]);
   assert.strictEqual(fromToml.allowDefaultAfterHook, false, 'TOML must not enable default hooks');
+  assert.strictEqual(fromToml.afterHookFailure, 'warn', 'failure mode is not read from process env');
   const fromCli = resolveConfig(root, [
     'node',
     'promptpile',
@@ -83,6 +103,32 @@ try {
     '--allow-default-after-hook',
   ]);
   assert.strictEqual(fromCli.allowDefaultAfterHook, true);
+  assert.strictEqual(fromCli.afterHookFailure, 'warn');
+  fs.writeFileSync(
+    configPath,
+    '[promptpile]\ndir = "./messages"\nafter_hook_failure = "error"\n'
+  );
+  const failureFromToml = resolveConfig(root, ['node', 'promptpile', '--config', configPath]);
+  assert.strictEqual(failureFromToml.afterHookFailure, 'error');
+  const failureFromCli = resolveConfig(root, [
+    'node', 'promptpile', '--config', configPath, '--after-hook-failure', 'warn'
+  ]);
+  assert.strictEqual(failureFromCli.afterHookFailure, 'warn');
+  fs.writeFileSync(
+    configPath,
+    '[promptpile]\ndir = "./messages"\nllm_api = "profile"\n\n' +
+      '[[llm_api]]\nname = "profile"\nafter_hook_failure = "error"\n'
+  );
+  const failureNotFromProfile = resolveConfig(root, ['node', 'promptpile', '--config', configPath]);
+  assert.strictEqual(failureNotFromProfile.afterHookFailure, 'warn');
+  fs.writeFileSync(
+    configPath,
+    '[promptpile]\ndir = "./messages"\nafter_hook_failure = "WARN"\n'
+  );
+  assert.throws(
+    () => resolveConfig(root, ['node', 'promptpile', '--config', configPath]),
+    /invalid after-hook failure mode/
+  );
 
   const outputAbs = path.join(root, 'output');
   const layeredLedger = new CompletionArtifactLedger();
@@ -131,5 +177,7 @@ try {
 
   console.log('after-hook security tests passed');
 } finally {
+  if (previousFailureEnv === undefined) delete process.env.PROMPTPILE_AFTER_HOOK_FAILURE;
+  else process.env.PROMPTPILE_AFTER_HOOK_FAILURE = previousFailureEnv;
   fs.rmSync(root, { recursive: true, force: true });
 }

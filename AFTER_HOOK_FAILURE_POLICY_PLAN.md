@@ -1,6 +1,6 @@
 # Promptpile After-hook Failure Policy 实施设计计划
 
-> 状态：实施前冻结稿  
+> 状态：已实施，待远端 dedicated CI 矩阵验证
 > 设计冻结日期：2026-08-11  
 > 核心提案：把 after-hook 从“执行后打印几条日志”的宽容副作用，收敛为一个版本化但内部使用的 **resolution → execution observation → failure-policy decision** 状态机；默认继续保持 `warn` 兼容语义，同时提供 `error` 严格模式，并让 Output Artifact Policy、未来 Completion Receipt 与上层 orchestrator 对 hook 结果只有一套解释
 
@@ -1617,41 +1617,41 @@ Node 22 / Windows
 
 实施完成必须同时满足：
 
-- [ ] failure mode 只有 `warn|error`；
-- [ ] 默认 mode 为 `warn`；
-- [ ] CLI > TOML > default precedence 冻结；
-- [ ] invalid failure mode 在模型调用前失败；
-- [ ] resolver status 不再包含 `warn_` / `error_` policy 语义；
-- [ ] CLI explicit hook > TOML hook > opt-in default discovery；
-- [ ] invalid CLI hook 不 fallback；
-- [ ] default discovery 仍只能由 CLI 显式 opt-in；
-- [ ] `error` mode 不把 missing default hook 当 failure；
-- [ ] `ResolvedAfterHookPolicyV1` 进入唯一 Output Policy topology；
-- [ ] `runAfterHook` 返回结构化 execution result；
-- [ ] success / spawn_failed / exited_nonzero / signaled 均有确定分类；
-- [ ] child lifecycle 恰好产生一个 terminal result；
-- [ ] executor 不读取 failure mode；
-- [ ] executor 不直接设置 process exit；
-- [ ] hook stdout 不缓存、不进入 stdout/ledger/receipt；
-- [ ] hook stderr 持续 drain 且只保留最后 64 KiB；
-- [ ] invalid explicit + warn 继续 completion；
-- [ ] invalid explicit + error 在 model/sink preparation 前失败；
-- [ ] `--input` strict invalid hook 不先 append user；
-- [ ] runtime hook failure 发生在 durable output stages 后；
-- [ ] warn runtime failure 保留 artifacts 且不单独改变 success exit；
-- [ ] error runtime failure 保留 artifacts 且 exit 1；
-- [ ] hook failure 不回滚 main/Conversation artifacts；
-- [ ] upstream ordinary failure/OCC conflict 时 hook 不执行；
-- [ ] OCC conflict 仍保持 exit 3；
-- [ ] quiet 不吞 hook warning/error diagnostics；
-- [ ] artifact env 继续只来自 actual ledger；
-- [ ] structured result/Receipt seam 不携带 raw hook stdout/stderr/env；
-- [ ] first-primary-failure 与 future Receipt failure 顺序已冻结；
-- [ ] v1 不实现 timeout / process-tree kill；
-- [ ] v1 不增加 `ignore`；
-- [ ] v1 不增加 hook 专用 exit code；
+- [x] failure mode 只有 `warn|error`；
+- [x] 默认 mode 为 `warn`；
+- [x] CLI > TOML > default precedence 冻结；
+- [x] invalid failure mode 在模型调用前失败；
+- [x] resolver status 不再包含 `warn_` / `error_` policy 语义；
+- [x] CLI explicit hook > TOML hook > opt-in default discovery；
+- [x] invalid CLI hook 不 fallback；
+- [x] default discovery 仍只能由 CLI 显式 opt-in；
+- [x] `error` mode 不把 missing default hook 当 failure；
+- [x] `ResolvedAfterHookPolicyV1` 进入唯一 Output Policy topology；
+- [x] `runAfterHook` 返回结构化 execution result；
+- [x] success / spawn_failed / exited_nonzero / signaled 均有确定分类；
+- [x] child lifecycle 恰好产生一个 terminal result；
+- [x] executor 不读取 failure mode；
+- [x] executor 不直接设置 process exit；
+- [x] hook stdout 不缓存、不进入 stdout/ledger/receipt；
+- [x] hook stderr 持续 drain 且只保留最后 64 KiB；
+- [x] invalid explicit + warn 继续 completion；
+- [x] invalid explicit + error 在 model/sink preparation 前失败；
+- [x] `--input` strict invalid hook 不先 append user；
+- [x] runtime hook failure 发生在 durable output stages 后；
+- [x] warn runtime failure 保留 artifacts 且不单独改变 success exit；
+- [x] error runtime failure 保留 artifacts 且 exit 1；
+- [x] hook failure 不回滚 main/Conversation artifacts；
+- [x] upstream ordinary failure/OCC conflict 时 hook 不执行；
+- [x] OCC conflict 仍保持 exit 3；
+- [x] quiet 不吞 hook warning/error diagnostics；
+- [x] artifact env 继续只来自 actual ledger；
+- [x] structured result/Receipt seam 不携带 raw hook stdout/stderr/env；
+- [x] first-primary-failure 与 future Receipt failure 顺序已冻结；
+- [x] v1 不实现 timeout / process-tree kill；
+- [x] v1 不增加 `ignore`；
+- [x] v1 不增加 hook 专用 exit code；
 - [ ] Node 18/22 × Windows/Linux dedicated CI 全绿；
-- [ ] CLI Contract、README、安全文档更新。
+- [x] CLI Contract、README、安全文档更新。
 
 ---
 

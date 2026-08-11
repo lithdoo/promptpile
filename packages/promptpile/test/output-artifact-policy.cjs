@@ -18,8 +18,9 @@ const configFor = (o = {}) => ({
   model: 'test', apiKey: 'key', apiBaseUrl: 'http://invalid.test', temperature: 0,
   continueMode: o.continueMode ?? false, inputMode: o.inputMode ?? false,
   output: o.output, outputPileTarget: o.outputPileTarget, outputPileFormat: o.outputPileFormat,
-  quiet: false, allowDefaultAfterHook: false, missingToolResults: 'warn'
+  quiet: false, afterHookFailure: 'warn', allowDefaultAfterHook: false, missingToolResults: 'warn'
 });
+const hookPolicy = resolution => ({ failureMode: 'warn', resolution });
 
 try {
   const targets = resolveMainOutputTargets(root, './run/result.md');
@@ -31,26 +32,26 @@ try {
   assert.throws(() => resolveOutputArtifactPolicy({ cwd: root, config: configFor({
     output: './collision-parent/result.md',
     outputPileTarget: { kind: 'file', path: './collision-parent/result.calls.jsonl', source: 'cli' }
-  }), hook: { status: 'skip' } }), /target collision/);
+  }), hook: hookPolicy({ status: 'skip', reason: 'not_configured' }) }), /target collision/);
   assert.strictEqual(fs.existsSync(collisionParent), false, 'lexical collision fails before mkdir');
 
   assert.throws(() => resolveOutputArtifactPolicy({ cwd: root, config: configFor({
     outputDirectory: messages, continueMode: true, output: path.join(messages, '[4]assistant.md')
-  }), hook: { status: 'skip' } }), /Conversation namespace/);
+  }), hook: hookPolicy({ status: 'skip', reason: 'not_configured' }) }), /Conversation namespace/);
   assert.throws(() => resolveOutputArtifactPolicy({ cwd: root, config: configFor({
     outputDirectory: messages,
     outputPileTarget: { kind: 'file', path: path.join(messages, '.promptpile.occ.claim'), source: 'cli' }
-  }), hook: { status: 'skip' } }), /reserved Conversation control path/);
+  }), hook: hookPolicy({ status: 'skip', reason: 'not_configured' }) }), /reserved Conversation control path/);
 
   const hookPath = path.join(root, 'hook.sh');
   fs.writeFileSync(hookPath, 'echo ok\n');
   assert.throws(() => resolveOutputArtifactPolicy({ cwd: root,
-    config: configFor({ output: hookPath }), hook: { status: 'run', path: fs.realpathSync(hookPath) }
+    config: configFor({ output: hookPath }), hook: hookPolicy({ status: 'run', path: fs.realpathSync(hookPath) })
   }), /overwrite resolved after-hook/);
   assert.strictEqual(fs.readFileSync(hookPath, 'utf8'), 'echo ok\n');
 
   const policy = prepareOutputArtifactPolicy(resolveOutputArtifactPolicy({ cwd: root,
-    config: configFor({ output: './main/result.md' }), hook: { status: 'skip' } }));
+    config: configFor({ output: './main/result.md' }), hook: hookPolicy({ status: 'skip', reason: 'not_configured' }) }));
   const ledger = new CompletionArtifactLedger();
   commitMainOutput({ targets: policy.mainOutput, response: 'answer',
     toolCalls: [{ id: 'c1', type: 'function', function: { name: 'f', arguments: '{}' } }],

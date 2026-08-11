@@ -55,6 +55,7 @@ export const loadConfig = (options: Partial<Config>): Config => {
     appendFilesCli: options.appendFilesCli,
     afterHookCli: options.afterHookCli,
     afterHookConfig: options.afterHookConfig,
+    afterHookFailure: options.afterHookFailure ?? 'warn',
     allowDefaultAfterHook: options.allowDefaultAfterHook ?? false,
     toolChoice: options.toolChoice,
     missingToolResults: options.missingToolResults ?? 'warn',

@@ -69,6 +69,16 @@ output pile 是 required live transport，但不是 durable body authority，也
 
 durable commit 顺序固定为 main body → calls → extra，再进入 Conversation。每个文件独立 atomic；group 和跨 channel 都不 transactional。ledger 只在单个 durable write 成功后记录事实。后续失败不 rollback 已写 artifact。after-hook 的精确 artifact path 只能来自 ledger，不能根据模型结果、配置或目录扫描推导。cleanup/finalizer 的 secondary failure 不得覆盖更早的 primary failure。
 
+### After-hook Failure Policy v1
+
+failure mode 仅为 `warn | error`，解析优先级为 CLI `--after-hook-failure` > TOML `[promptpile].after_hook_failure` > `warn`。failure mode 不从 process env 或 `[[llm_api]]` profile 读取，也不启用 default hook discovery。
+
+resolution 只产生事实：`run`、`skip(not_configured | default_not_found)` 或 `invalid_explicit`。CLI hook path > TOML hook path > CLI-opt-in default discovery；显式高优先级路径无效时不得 fallback。没有配置 hook或没有找到 default hook 都是 skip，在 `error` mode 下也不失败。
+
+`invalid_explicit + error` 是 pre-model ordinary failure：必须先于 root `--input` user mutation、sink preparation、模型请求和 assistant mutation。`invalid_explicit + warn` 输出 warning 并继续 completion。
+
+runtime executor 只返回 `succeeded | spawn_failed | exited_nonzero | signaled` 结构化事实，不读取 failure mode、不输出日志、不设置 process exit。stdout 丢弃；stderr 持续 drain 且只保留最后 64 KiB raw bytes 对应的 UTF-8 diagnostic tail。runtime hook 仅在 required durable output stages 全部成功后运行。runtime failure 在 `warn` 下保留 success candidate，在 `error` 下为 exit `1`；两者都不回滚 artifacts。OCC conflict 仍为 exit `3` 且不运行 hook。
+
 ### TOML keys 与优先级
 
 ```toml
