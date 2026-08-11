@@ -1,6 +1,6 @@
 # Promptpile After-hook Failure Policy 实施设计计划
 
-> 状态：已实施，待远端 dedicated CI 矩阵验证
+> 状态：已实施并冻结
 > 设计冻结日期：2026-08-11  
 > 核心提案：把 after-hook 从“执行后打印几条日志”的宽容副作用，收敛为一个版本化但内部使用的 **resolution → execution observation → failure-policy decision** 状态机；默认继续保持 `warn` 兼容语义，同时提供 `error` 严格模式，并让 Output Artifact Policy、未来 Completion Receipt 与上层 orchestrator 对 hook 结果只有一套解释
 
@@ -1652,7 +1652,7 @@ Node 22 / Windows
 - [x] v1 不实现 timeout / process-tree kill；
 - [x] v1 不增加 `ignore`；
 - [x] v1 不增加 hook 专用 exit code；
-- [ ] Node 18/22 × Windows/Linux dedicated CI 全绿；
+- [x] Node 18/22 × Windows/Linux dedicated CI 全绿；
 - [x] CLI Contract、README、安全文档更新。
 
 ---
