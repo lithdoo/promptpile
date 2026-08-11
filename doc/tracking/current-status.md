@@ -6,7 +6,7 @@
 
 ## 已完成
 
-- Root completion Invocation ID 与 Completion Receipt v1 实现已完成：受限 ASCII CLI correlation、模型/Conversation/pile/dump 隔离、after-hook 安全传播、最终原子 receipt、全 layer namespace 防覆盖、artifact ledger 引用和 npm 可消费 JSON Schema 已通过本地端到端测试；专项 Node 18/22 × Windows/Linux workflow 已就绪，待首次远端矩阵验证后冻结。
+- Root completion Invocation ID 与 Completion Receipt v1 实现及 CR-1 / CR-2 closure 已完成：public schema 与 producer 均拒绝 fatal hook state，stale target reuse 具备受控 API failure 回归和 caller guidance；专项 workflow 等价测试与 `npm test -w promptpile` 已在本地通过。最终 Freeze 仅待 closure 分支上的 Node 18/22 × Windows/Linux 远端矩阵复验。
 - After-hook Failure Policy v1 已实现并冻结：`warn|error` 配置、事实化 resolution、结构化 executor、64 KiB stderr tail、pre-model strict validation 与 post-artifact runtime decision 已通过 Node 18/22 × Windows/Linux 专项矩阵。
 - Conversation Optimistic Concurrency v1 已覆盖 `conversation append-user`、root `--input`、root `--continue` 与组合 derived baseline；使用 output-directory-scoped exclusive claim、commit-time recheck、稳定 exit code 3，并进入 Node 18/22 × Windows/Linux 并发矩阵。
 - React CLI-first architecture migration 已进入 main。

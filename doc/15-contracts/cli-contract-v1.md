@@ -85,6 +85,8 @@ Receipt target 与 main output、potential sidecars、file output pile、Convers
 
 Receipt 是 after-hook 之后的最后 durable completion marker，只能引用 ledger 中已经成功提交的 artifacts。hook `warn` failure 可产生 completed receipt并记录失败事实；hook `error` failure、模型/输出/OCC failure 或 receipt 自身写入失败均不产生有效 completed receipt。已有 artifacts 不因后续 receipt failure 回滚。Receipt 不复制正文、reasoning、tool arguments、API key 或 hook raw stderr。
 
+Receipt path 是 caller-managed output slot。Promptpile 不会在 invocation 开始时删除该路径上的旧 Receipt；如果新 invocation 在 publication 前失败，旧文件会继续作为历史结果保留。因此 `exists(receiptPath)` 本身不能证明当前 invocation 成功。严格调用方 SHOULD 为每次 invocation 使用唯一 Receipt path，例如 `./runs/<caller-controlled-id>/completion-receipt.json`。调用方复用路径时，必须至少同时确认进程退出码为 `0`、Receipt 通过 v1 schema 校验，并在提供 Invocation ID 时确认 `receipt.invocationId` 等于本轮期望值。
+
 ### After-hook Failure Policy v1
 
 failure mode 仅为 `warn | error`，解析优先级为 CLI `--after-hook-failure` > TOML `[promptpile].after_hook_failure` > `warn`。failure mode 不从 process env 或 `[[llm_api]]` profile 读取，也不启用 default hook discovery。

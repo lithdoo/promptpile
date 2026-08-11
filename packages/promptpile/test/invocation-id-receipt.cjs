@@ -54,7 +54,13 @@ const makeMessages = (root, name) => {
     request.setEncoding('utf8');
     request.on('data', chunk => { body += chunk; });
     request.on('end', () => {
-      requests.push({ body: JSON.parse(body), headers: request.headers });
+      const parsedBody = JSON.parse(body);
+      requests.push({ body: parsedBody, headers: request.headers });
+      if (parsedBody.model === 'receipt-failure-model') {
+        response.writeHead(500, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({ error: { message: 'controlled receipt regression failure' } }));
+        return;
+      }
       response.writeHead(200, { 'content-type': 'text/event-stream' });
       response.end([
         `data: ${JSON.stringify({ choices: [{ delta: { content: 'answer' } }] })}`,
@@ -315,6 +321,43 @@ const makeMessages = (root, name) => {
     assert.strictEqual(strict.code, 1);
     assert.strictEqual(fs.existsSync(strictReceipt), false, 'strict hook failure must not publish a completed receipt');
     assert.strictEqual(fs.readFileSync(path.join(messagesStrict, '[1]assistant.md'), 'utf8'), 'answer');
+
+    const messagesStale = makeMessages(root, 'messages-stale-receipt');
+    const reusedReceipt = path.join(root, 'receipts', 'reused.json');
+    const historicalReceipt = `${JSON.stringify({
+      schemaVersion: 1,
+      status: 'completed',
+      invocationId: 'historical-run',
+      artifacts: {
+        assistant: null,
+        calls: null,
+        extra: null,
+        mainOutput: null,
+        mainCalls: null,
+        mainExtra: null
+      },
+      model: 'historical-model',
+      finishReason: 'stop',
+      usage: null,
+      hook: { status: 'skipped', failureMode: 'warn', reason: 'not_configured' }
+    }, null, 2)}\n`;
+    fs.writeFileSync(reusedReceipt, historicalReceipt);
+    const beforeStaleFailureRequests = requests.length;
+    const failedReuse = await run(root, [
+      '-d', messagesStale, ...apiArgs,
+      '--model', 'receipt-failure-model',
+      '--invocation-id', 'current-failed-run',
+      '--receipt', reusedReceipt
+    ]);
+    assert.strictEqual(failedReuse.code, 1);
+    assert.strictEqual(requests.length, beforeStaleFailureRequests + 1,
+      'the stale-target regression must fail during the new model invocation');
+    assert.strictEqual(fs.readFileSync(reusedReceipt, 'utf8'), historicalReceipt,
+      'a failed invocation must not delete, truncate, or republish a pre-existing receipt');
+    const staleDoc = JSON.parse(fs.readFileSync(reusedReceipt, 'utf8'));
+    assert.strictEqual(staleDoc.invocationId, 'historical-run');
+    assert.notStrictEqual(staleDoc.invocationId, 'current-failed-run',
+      'receipt existence alone must not correlate a historical receipt to the failed invocation');
 
     console.log('invocation-id-receipt.cjs: ok');
   } finally {

@@ -43,6 +43,7 @@ jobs:
       - name: Verify invocation and receipt contracts
         run: >-
           node packages/promptpile/test/invocation-context.cjs &&
+          node packages/promptpile/test/completion-receipt-schema.cjs &&
           node packages/promptpile/test/invocation-id-receipt.cjs &&
           node packages/promptpile/test/after-hook-security.cjs &&
           node packages/promptpile/test/output-artifact-policy.cjs &&

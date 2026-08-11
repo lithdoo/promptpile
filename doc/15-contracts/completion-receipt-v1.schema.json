@@ -60,7 +60,7 @@
           "required": ["status", "failureMode", "attempted", "reason"],
           "properties": {
             "status": { "const": "invalid_explicit" },
-            "failureMode": { "$ref": "#/$defs/failureMode" },
+            "failureMode": { "const": "warn" },
             "attempted": { "type": "string" }, "reason": { "type": "string" }
           }
         },
@@ -78,7 +78,7 @@
           "required": ["status", "failureMode", "path"],
           "properties": {
             "status": { "const": "spawn_failed" },
-            "failureMode": { "$ref": "#/$defs/failureMode" },
+            "failureMode": { "const": "warn" },
             "path": { "type": "string" }, "errorCode": { "type": "string" }
           }
         },
@@ -87,7 +87,7 @@
           "required": ["status", "failureMode", "path", "exitCode"],
           "properties": {
             "status": { "const": "exited_nonzero" },
-            "failureMode": { "$ref": "#/$defs/failureMode" },
+            "failureMode": { "const": "warn" },
             "path": { "type": "string" },
             "exitCode": {
               "type": "integer",
@@ -100,7 +100,7 @@
           "required": ["status", "failureMode", "path", "signal"],
           "properties": {
             "status": { "const": "signaled" },
-            "failureMode": { "$ref": "#/$defs/failureMode" },
+            "failureMode": { "const": "warn" },
             "path": { "type": "string" }, "signal": { "type": "string" }
           }
         }

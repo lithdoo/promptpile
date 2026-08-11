@@ -1,6 +1,6 @@
 # Promptpile Completion Receipt v1 实施闭环设计
 
-> 状态：实现完成，Freeze closure 待完成  
+> 状态：实现与 CR-1 / CR-2 closure 完成，Freeze 待 dedicated matrix 复验
 > 初始设计日期：2026-08-07  
 > 闭环设计更新：2026-08-11  
 > 核心提案：Completion Receipt v1 是一次 **successful root completion 的最终 durable witness**。它以可选、原子发布的 JSON 文件描述本 invocation 已成功提交的 completion artifacts、调用关联信息、provider 可观察 metadata 与 after-hook 最终非致命状态；它不是通用运行日志、失败报告、事务日志或 Conversation 的第二份正文。
@@ -668,7 +668,7 @@ signaled + error
 
 出现在 `status: "completed"` Receipt 中。
 
-**Freeze blocker CR-1：** 当前 JSON Schema 仍允许上述不可能组合；Freeze 前必须收紧 schema，并加入 schema regression test。
+**CR-1 closure（2026-08-11 已完成）：** JSON Schema 已拒绝上述不可能组合；producer builder 同时拒绝 fatal after-hook decision，并由独立 schema regression test 覆盖合法与非法状态矩阵。
 
 ### 11.2 `reason` 稳定性
 
@@ -930,7 +930,7 @@ v1 不在 invocation 开始时主动 unlink 旧 Receipt。
 
 理由：失败 invocation 不应无条件销毁此前成功 invocation 的 durable metadata；freshness/correlation 属于 caller output-slot policy。
 
-**Freeze blocker CR-2：** 文档已冻结 stale-target 语义；Freeze 前必须增加回归测试，证明“预存 Receipt + 新 invocation 失败”时旧文件不会被误认为本轮新发布结果，并在 CLI/contract 文档中给出 caller guidance。
+**CR-2 closure（2026-08-11 已完成）：** 回归测试已证明“预存 Receipt + 新 invocation 在 publication 前失败”时旧文件原字节保留、历史 Invocation ID 不变；CLI contract 与 package README 已给出 caller freshness/correlation guidance。
 
 ---
 
@@ -1177,7 +1177,7 @@ Protocol Package extraction 只能共享已冻结的纯 schema/types，不应反
 - package `dist` schema copy；
 - schema copy equality regression。
 
-### Phase 4 — Freeze blocker CR-1
+### Phase 4 — 已完成：Freeze blocker CR-1
 
 收紧 hook schema：
 
@@ -1188,7 +1188,7 @@ failed hook observation + completed Receipt
 
 并增加 producer/schema tests。
 
-### Phase 5 — Freeze blocker CR-2
+### Phase 5 — 已完成：Freeze blocker CR-2
 
 补 stale Receipt target reuse contract test：
 
@@ -1300,6 +1300,7 @@ Node 22 / Windows
 
 ```text
 invocation context tests
+Receipt JSON Schema contract tests
 Receipt integration tests
 After-hook security regression
 Output Artifact Policy regression
@@ -1309,7 +1310,7 @@ root OCC regression
 
 当前 2026-08-11 专项矩阵已经四组全绿。
 
-Freeze closure 改动 CR-1 / CR-2 后必须再次跑同一矩阵，不能只依赖本地测试。
+CR-1 / CR-2 closure 已通过本地 workflow 等价测试与 `npm test -w promptpile`；Freeze 前仍必须再次跑同一远端矩阵，不能以本地结果替代。
 
 ---
 
@@ -1367,7 +1368,7 @@ Freeze closure 改动 CR-1 / CR-2 后必须再次跑同一矩阵，不能只依�
 - [x] hook error failure 不生成 completed Receipt；
 - [x] raw hook stderr 不进入 Receipt；
 - [x] spawn error message/env 不进入 Receipt；
-- [ ] **CR-1：JSON Schema 禁止 completed Receipt 中 failed hook + `failureMode=error` 不可能状态；**
+- [x] **CR-1：JSON Schema 禁止 completed Receipt 中 failed hook + `failureMode=error` 不可能状态；**
 
 ### Completion / failure semantics
 
@@ -1378,7 +1379,7 @@ Freeze closure 改动 CR-1 / CR-2 后必须再次跑同一矩阵，不能只依�
 - [x] Receipt 是 completion 主链最后 fallible required stage；
 - [x] no new Receipt 不表示没有 prior artifacts；
 - [x] 不在 invocation 开始时自动删除旧 Receipt；
-- [ ] **CR-2：stale reused Receipt path 语义具备回归测试与 caller-facing contract guidance；**
+- [x] **CR-2：stale reused Receipt path 语义具备回归测试与 caller-facing contract guidance；**
 
 ### Security / ecosystem
 
@@ -1519,19 +1520,21 @@ Receipt = failure log/正文副本/tool proof/telemetry dump
 
 ## 32. Freeze closure 结论
 
-当前实现已经完成绝大部分 v1 contract，并且首轮 Node 18/22 × Ubuntu/Windows dedicated workflow 全绿。
+当前实现已经完成 v1 contract、CR-1 schema closure 与 CR-2 stale-target closure。closure 改动已通过本地 dedicated-workflow 等价测试及 `npm test -w promptpile`；首轮 Node 18/22 × Ubuntu/Windows dedicated workflow 也已全绿。
 
-Freeze 前只剩两项硬 closure：
+两项硬 closure 已完成：
 
 ```text
 CR-1
-public JSON Schema 必须拒绝：
+public JSON Schema 已拒绝：
 completed + failed hook observation + failureMode=error
 
 CR-2
-stale/reused Receipt target 的历史文件语义必须有回归测试，
-并在 caller-facing contract 中明确：文件存在本身不证明当前 invocation 成功
+stale/reused Receipt target 的历史文件语义已有回归测试，
+caller-facing contract 已明确：文件存在本身不证明当前 invocation 成功
 ```
+
+最终 Freeze 只剩一个发布门禁：closure 分支上的 dedicated Node 18/22 × Ubuntu/Windows matrix 必须四组全绿；在该证据产生前，不把计划状态提前写成“Freeze 完成”。
 
 完成后最终状态应为：
 

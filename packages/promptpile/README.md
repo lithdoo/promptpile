@@ -763,6 +763,8 @@ Invocation ID 只来自 CLI，必须匹配 `[A-Za-z0-9._:-]{1,128}`；它不会�
 
 Receipt 是 after-hook 之后原子发布的 `status: "completed"` 最终标记。artifact 字段使用绝对路径，`finishReason` / `usage` 在网关未返回时为 `null`。hook 在 `warn` mode 下失败时 receipt 会记录结构化失败事实；`error` mode 下不发布 completed receipt。Receipt 缺失不代表此前没有 artifact 落盘，调用方仍需结合退出码判断。机器消费者可使用 [Completion Receipt v1 JSON Schema](../../doc/15-contracts/completion-receipt-v1.schema.json) 校验；npm 包同时提供 `promptpile/dist/completion-receipt-v1.schema.json` 供离线读取。
 
+Receipt path 由调用方管理，Promptpile 不会在新 invocation 开始时删除路径上的旧 Receipt。若复用路径后本轮在 Receipt 发布前失败，旧文件会继续保留，所以仅检查 `exists(receiptPath)` 不能证明本轮成功。自动化调用方应优先为每次 invocation 使用唯一路径，例如 `./runs/<caller-controlled-id>/completion-receipt.json`；必须复用时，至少应同时检查进程退出码为 `0`、Receipt 通过 v1 schema 校验，并在传入 Invocation ID 时核对 `receipt.invocationId` 与本轮期望值一致。
+
 ---
 
 ## 完成后钩子（after-hook）

@@ -6,11 +6,11 @@ import type { ResolvedInvocationContextV1 } from './invocation-context';
 
 export type CompletionReceiptHookV1 =
   | { status: 'skipped'; failureMode: AfterHookFailureMode; reason: 'not_configured' | 'default_not_found' }
-  | { status: 'invalid_explicit'; failureMode: AfterHookFailureMode; attempted: string; reason: string }
+  | { status: 'invalid_explicit'; failureMode: 'warn'; attempted: string; reason: string }
   | { status: 'succeeded'; failureMode: AfterHookFailureMode; path: string; exitCode: 0 }
-  | { status: 'spawn_failed'; failureMode: AfterHookFailureMode; path: string; errorCode?: string }
-  | { status: 'exited_nonzero'; failureMode: AfterHookFailureMode; path: string; exitCode: number }
-  | { status: 'signaled'; failureMode: AfterHookFailureMode; path: string; signal: string };
+  | { status: 'spawn_failed'; failureMode: 'warn'; path: string; errorCode?: string }
+  | { status: 'exited_nonzero'; failureMode: 'warn'; path: string; exitCode: number }
+  | { status: 'signaled'; failureMode: 'warn'; path: string; signal: string };
 
 export interface CompletionReceiptV1 {
   schemaVersion: 1;
@@ -34,19 +34,24 @@ export const buildCompletionReceiptHookV1 = (
   observation: AfterHookObservationV1,
   failureMode: AfterHookFailureMode
 ): CompletionReceiptHookV1 => {
+  const successful = observation.status === 'skipped' || observation.status === 'succeeded';
+  if (!successful && failureMode === 'error') {
+    throw new Error('cannot build a completed receipt from a fatal after-hook decision');
+  }
+
   switch (observation.status) {
     case 'skipped':
       return { status: observation.status, failureMode, reason: observation.reason };
     case 'invalid_explicit':
-      return { status: observation.status, failureMode, attempted: observation.attempted, reason: observation.reason };
+      return { status: observation.status, failureMode: 'warn', attempted: observation.attempted, reason: observation.reason };
     case 'succeeded':
       return { status: observation.status, failureMode, path: observation.path, exitCode: observation.exitCode };
     case 'spawn_failed':
-      return { status: observation.status, failureMode, path: observation.path, errorCode: observation.errorCode };
+      return { status: observation.status, failureMode: 'warn', path: observation.path, errorCode: observation.errorCode };
     case 'exited_nonzero':
-      return { status: observation.status, failureMode, path: observation.path, exitCode: observation.exitCode };
+      return { status: observation.status, failureMode: 'warn', path: observation.path, exitCode: observation.exitCode };
     case 'signaled':
-      return { status: observation.status, failureMode, path: observation.path, signal: observation.signal };
+      return { status: observation.status, failureMode: 'warn', path: observation.path, signal: observation.signal };
   }
 };
 
