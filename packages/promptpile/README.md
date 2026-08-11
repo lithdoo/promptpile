@@ -773,7 +773,7 @@ output pile destination 是一个逻辑槽位，按 **CLI target group > TOML ta
 failure mode 只有 `warn` 和 `error`，优先级固定为 CLI `--after-hook-failure` > TOML `after_hook_failure` > 默认 `warn`。
 
 - `warn`：显式路径无效或 runtime hook 失败时输出 warning；若其余 required stages 成功，最终仍 exit `0`。
-- `error`：显式路径无效时在 `--input` mutation、sink preparation 和模型请求前 exit `1`；runtime hook 失败时在 durable artifacts 已提交后 exit `1`，已写内容不回滚。
+- `error`：显式路径无效时在 `--input` mutation、completion output sink preparation 和模型请求前 exit `1`；runtime hook 失败时在 durable artifacts 已提交后 exit `1`，已写内容不回滚。显式 `--output-dir` 的 Conversation configuration preparation 仍由 config resolution 提前完成，因此 fresh directory 可能已被创建，但其中不会出现 user/assistant artifacts。
 - 未配置 hook，或显式允许 default discovery 但未找到 default hook，都只是 skip；即使 mode 为 `error` 也不会失败。
 
 runtime failure 包括启动失败、非零退出和 signal 终止。Conversation OCC conflict 仍为 exit `3`，并且 conflict 或任何更早的 required stage 失败时不运行 hook。

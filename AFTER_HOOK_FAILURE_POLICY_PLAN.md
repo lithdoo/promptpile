@@ -4,6 +4,8 @@
 > 设计冻结日期：2026-08-11  
 > 核心提案：把 after-hook 从“执行后打印几条日志”的宽容副作用，收敛为一个版本化但内部使用的 **resolution → execution observation → failure-policy decision** 状态机；默认继续保持 `warn` 兼容语义，同时提供 `error` 严格模式，并让 Output Artifact Policy、未来 Completion Receipt 与上层 orchestrator 对 hook 结果只有一套解释
 
+> v1 closure：显式 fresh output directory 的创建属于 config resolution preparation，可早于 strict invalid-hook decision；该场景允许留下空目录，但不允许产生 Conversation artifacts、completion sinks 或模型请求。把 `AfterHookPolicyDecisionV1` 保存为 Completion Receipt 的正式 stage output 留待 Receipt 实施，不在 v1 重复计算 policy。
+
 ## 0. 结论
 
 After-hook Failure Policy v1 只回答一个问题：

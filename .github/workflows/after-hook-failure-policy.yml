@@ -4,10 +4,12 @@ on:
   push:
     branches: [main]
     paths:
+      - 'package-lock.json'
       - 'packages/promptpile/**'
       - '.github/workflows/after-hook-failure-policy.yml'
   pull_request:
     paths:
+      - 'package-lock.json'
       - 'packages/promptpile/**'
       - '.github/workflows/after-hook-failure-policy.yml'
   workflow_dispatch:

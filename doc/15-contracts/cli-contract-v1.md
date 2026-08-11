@@ -75,7 +75,7 @@ failure mode 仅为 `warn | error`，解析优先级为 CLI `--after-hook-failur
 
 resolution 只产生事实：`run`、`skip(not_configured | default_not_found)` 或 `invalid_explicit`。CLI hook path > TOML hook path > CLI-opt-in default discovery；显式高优先级路径无效时不得 fallback。没有配置 hook或没有找到 default hook 都是 skip，在 `error` mode 下也不失败。
 
-`invalid_explicit + error` 是 pre-model ordinary failure：必须先于 root `--input` user mutation、sink preparation、模型请求和 assistant mutation。`invalid_explicit + warn` 输出 warning 并继续 completion。
+`invalid_explicit + error` 是 pre-model ordinary failure：必须先于 root `--input` user mutation、completion output sink preparation、模型请求和 assistant mutation。`invalid_explicit + warn` 输出 warning 并继续 completion。v1 明确允许 config resolution 先创建并校验 fresh 显式 output directory；strict invalid hook 可以留下空目录，但不得在其中写入 Conversation artifacts。
 
 runtime executor 只返回 `succeeded | spawn_failed | exited_nonzero | signaled` 结构化事实，不读取 failure mode、不输出日志、不设置 process exit。stdout 丢弃；stderr 持续 drain 且只保留最后 64 KiB raw bytes 对应的 UTF-8 diagnostic tail。runtime hook 仅在 required durable output stages 全部成功后运行。runtime failure 在 `warn` 下保留 success candidate，在 `error` 下为 exit `1`；两者都不回滚 artifacts。OCC conflict 仍为 exit `3` 且不运行 hook。
 

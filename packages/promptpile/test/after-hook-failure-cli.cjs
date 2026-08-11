@@ -91,6 +91,19 @@ const run = (cwd, args, { env = {}, input } = {}) => new Promise((resolve, rejec
     assert.strictEqual(requestCount, beforeStrict);
     assert.strictEqual(fs.existsSync(path.dirname(strictOutput)), false);
 
+    const freshOutputDirectory = path.join(root, 'fresh-output-directory');
+    const strictWithFreshOutput = await run(root, [
+      '--output-dir', freshOutputDirectory, ...apiArgs,
+      '--after-hook-path', missingHook, '--after-hook-failure', 'error'
+    ]);
+    assert.strictEqual(strictWithFreshOutput.code, 1);
+    assert.match(strictWithFreshOutput.stderr, /Error: after-hook script is not executable/);
+    assert.strictEqual(requestCount, beforeStrict);
+    assert.strictEqual(fs.existsSync(freshOutputDirectory), true,
+      'v1 accepts output-directory configuration preparation before strict hook validation');
+    assert.deepStrictEqual(fs.readdirSync(freshOutputDirectory), [],
+      'strict invalid hook creates no Conversation artifacts in a prepared output directory');
+
     const beforeInputFiles = fs.readdirSync(messages).sort();
     const invalidInput = await run(root, [
       '-d', messages, ...apiArgs, '--input',
