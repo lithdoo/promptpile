@@ -8,6 +8,12 @@ const { CompletionArtifactLedger } = require('../dist/completion-artifact-ledger
 const { commitMainOutput } = require('../dist/main-output.js');
 const { appendAssistantTurnAtIndex } = require('../dist/file-handler.js');
 const { atomicWriteFileSync } = require('../dist/atomic-file.js');
+const {
+  buildCompletionReceiptHookV1,
+  buildCompletionReceiptV1,
+  commitCompletionReceiptV1
+} = require('../dist/completion-receipt.js');
+const { resolveInvocationContext } = require('../dist/invocation-context.js');
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'promptpile-output-policy-'));
 const messages = path.join(root, 'messages');
@@ -17,7 +23,8 @@ const configFor = (o = {}) => ({
   inputDirectories: [messages], directory: messages, outputDirectory: o.outputDirectory,
   model: 'test', apiKey: 'key', apiBaseUrl: 'http://invalid.test', temperature: 0,
   continueMode: o.continueMode ?? false, inputMode: o.inputMode ?? false,
-  output: o.output, outputPileTarget: o.outputPileTarget, outputPileFormat: o.outputPileFormat,
+  output: o.output, receipt: o.receipt,
+  outputPileTarget: o.outputPileTarget, outputPileFormat: o.outputPileFormat,
   quiet: false, afterHookFailure: 'warn', allowDefaultAfterHook: false, missingToolResults: 'warn'
 });
 const hookPolicy = resolution => ({ failureMode: 'warn', resolution });
@@ -49,6 +56,18 @@ try {
     config: configFor({ output: hookPath }), hook: hookPolicy({ status: 'run', path: fs.realpathSync(hookPath) })
   }), /overwrite resolved after-hook/);
   assert.strictEqual(fs.readFileSync(hookPath, 'utf8'), 'echo ok\n');
+  assert.throws(() => resolveOutputArtifactPolicy({ cwd: root,
+    config: configFor({ output: './same.json', receipt: './same.json' }),
+    hook: hookPolicy({ status: 'skip', reason: 'not_configured' })
+  }), /target collision/);
+  assert.throws(() => resolveOutputArtifactPolicy({ cwd: root,
+    config: configFor({ receipt: hookPath }),
+    hook: hookPolicy({ status: 'run', path: fs.realpathSync(hookPath) })
+  }), /overwrite resolved after-hook/);
+  assert.throws(() => resolveOutputArtifactPolicy({ cwd: root,
+    config: configFor({ outputDirectory: messages, continueMode: true, receipt: path.join(messages, '[5]assistant.md') }),
+    hook: hookPolicy({ status: 'skip', reason: 'not_configured' })
+  }), /Conversation namespace/);
 
   const policy = prepareOutputArtifactPolicy(resolveOutputArtifactPolicy({ cwd: root,
     config: configFor({ output: './main/result.md' }), hook: hookPolicy({ status: 'skip', reason: 'not_configured' }) }));
@@ -123,6 +142,22 @@ try {
   commitMainOutput({ targets: emptyTargets, response: '', toolCalls: undefined, reasoningContent: undefined, ledger: emptyLedger });
   assert.strictEqual(fs.statSync(emptyTargets.body.absolutePath).size, 0);
   assert.deepStrictEqual(emptyLedger.entries().map(ref => ref.kind), ['body']);
+
+  const receiptLedger = new CompletionArtifactLedger();
+  const receiptDoc = buildCompletionReceiptV1({
+    invocation: resolveInvocationContext('unit-test'), ledger: receiptLedger, model: 'test',
+    hook: buildCompletionReceiptHookV1({ status: 'skipped', reason: 'not_configured' }, 'warn')
+  });
+  assert.deepStrictEqual(receiptDoc.usage, null);
+  assert.strictEqual(receiptDoc.finishReason, null);
+  const invalidReceiptTarget = path.join(root, 'receipt-target-directory');
+  fs.mkdirSync(invalidReceiptTarget);
+  assert.throws(() => commitCompletionReceiptV1({
+    targetPath: invalidReceiptTarget, receipt: receiptDoc, ledger: receiptLedger
+  }));
+  assert.strictEqual(receiptLedger.find('receipt', 'receipt'), undefined,
+    'a failed atomic publication must not enter the ledger');
+  assert.ok(!fs.readdirSync(root).some(name => name.includes('.receipt-target-directory.tmp-')));
   console.log('output artifact policy tests ok');
 } finally {
   fs.rmSync(root, { recursive: true, force: true });

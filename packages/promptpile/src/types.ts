@@ -1,4 +1,5 @@
 import type { AfterHookFailureMode } from './after-hook-policy';
+import type { InvocationId } from './invocation-context';
 
 /**
  * Synthetic `tool` message `content` when `[idx]assistant.calls.jsonl` lists a `tool_call_id` but
@@ -109,6 +110,8 @@ export interface Config {
   model: string;
   apiKey: string;
   apiBaseUrl: string;
+  /** CLI-only external correlation label; never added to model input. */
+  invocationId?: InvocationId;
   /** Merged sampling temperature; default 0.8 when unset at all layers. */
   temperature: number;
   /** Merged extra request body fields; omitted when unset at all layers. */
@@ -120,6 +123,8 @@ export interface Config {
   /** CLI-only OCC precondition for the next output Conversation mutation index. */
   expectedOutputNextIndex?: number;
   output?: string;
+  /** Completion Receipt v1 file path; relative paths resolve from process cwd. */
+  receipt?: string;
   /** Optional file/pipe path that receives streamed assistant output even when quiet is true. */
   outputPileFile?: string;
   /** Optional inherited fd that receives streamed assistant output even when quiet is true. */
@@ -162,4 +167,12 @@ export interface AiCallResult {
   content: string;
   toolCalls: ToolCall[] | undefined;
   reasoningContent: string | undefined;
+  finishReason: string | undefined;
+  usage: CompletionUsage | undefined;
+}
+
+export interface CompletionUsage {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
 }

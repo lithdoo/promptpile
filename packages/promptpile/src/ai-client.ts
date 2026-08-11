@@ -5,7 +5,14 @@ import {
   finishLlmDumpSuccess,
   type LlmDumpSession
 } from './llm-dump';
-import type { AiCallResult, ChatApiToolChoice, ChatMessage, ToolCall, ToolDefinition } from './types';
+import type {
+  AiCallResult,
+  ChatApiToolChoice,
+  ChatMessage,
+  CompletionUsage,
+  ToolCall,
+  ToolDefinition
+} from './types';
 
 interface StreamDeltaToolCall {
   index?: number;
@@ -21,11 +28,37 @@ interface ChatCompletionStreamChunk {
       tool_calls?: StreamDeltaToolCall[];
       reasoning_content?: string | null;
     };
+    finish_reason?: string | null;
   }>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  } | null;
   error?: { message?: string };
 }
 
 const trimTrailingSlash = (url: string) => url.replace(/\/$/, '');
+
+const isTokenCount = (value: unknown): value is number =>
+  Number.isSafeInteger(value) && (value as number) >= 0;
+
+const normalizeUsage = (value: ChatCompletionStreamChunk['usage']): CompletionUsage | undefined => {
+  if (!value) return undefined;
+  const { prompt_tokens, completion_tokens, total_tokens } = value;
+  if (
+    !isTokenCount(prompt_tokens) ||
+    !isTokenCount(completion_tokens) ||
+    !isTokenCount(total_tokens)
+  ) {
+    return undefined;
+  }
+  return {
+    inputTokens: prompt_tokens,
+    outputTokens: completion_tokens,
+    totalTokens: total_tokens
+  };
+};
 
 export const pickNonEmptyString = (v: unknown): string | undefined => {
   if (typeof v !== 'string') {
@@ -190,6 +223,8 @@ export const callAIStream = async (
     let fullReasoning = '';
     let buffer = '';
     const streamToolDeltas: StreamDeltaToolCall[] = [];
+    let finishReason: string | undefined;
+    let usage: CompletionUsage | undefined;
 
     for await (const chunk of res.body) {
       buffer += chunk.toString('utf8');
@@ -209,6 +244,9 @@ export const callAIStream = async (
 
         try {
           const data = JSON.parse(payloadLine) as ChatCompletionStreamChunk;
+          const observedFinishReason = data.choices?.[0]?.finish_reason;
+          if (typeof observedFinishReason === 'string') finishReason = observedFinishReason;
+          usage = normalizeUsage(data.usage) ?? usage;
           const delta = data.choices?.[0]?.delta;
           const piece = delta?.content ?? '';
           if (piece) {
@@ -234,6 +272,9 @@ export const callAIStream = async (
       if (payloadLine && payloadLine !== '[DONE]') {
         try {
           const data = JSON.parse(payloadLine) as ChatCompletionStreamChunk;
+          const observedFinishReason = data.choices?.[0]?.finish_reason;
+          if (typeof observedFinishReason === 'string') finishReason = observedFinishReason;
+          usage = normalizeUsage(data.usage) ?? usage;
           const delta = data.choices?.[0]?.delta;
           const piece = delta?.content ?? '';
           if (piece) {
@@ -259,7 +300,7 @@ export const callAIStream = async (
     const reasoningContent = pickNonEmptyString(fullReasoning);
 
     finishLlmDumpSuccess(dumpSession, res.status, true, fullText, toolCalls, reasoningContent);
-    return { content: fullText, toolCalls, reasoningContent };
+    return { content: fullText, toolCalls, reasoningContent, finishReason, usage };
   } catch (error) {
     if (error instanceof Error && error.message.startsWith('AI API error')) {
       throw error;

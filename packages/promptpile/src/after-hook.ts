@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import type { CompletionArtifactLedger } from './completion-artifact-ledger';
 import type { ToolCall } from './types';
+import type { ResolvedInvocationContextV1 } from './invocation-context';
 
 export type ResolveAfterHookResult =
   | { status: 'run'; path: string }
@@ -123,6 +124,7 @@ export const buildPromptpileHookEnv = (params: {
   quiet: boolean;
   responseLength: number;
   reasoningContent?: string;
+  invocation: ResolvedInvocationContextV1;
 }): NodeJS.ProcessEnv => {
   const {
     scanAbs,
@@ -133,14 +135,15 @@ export const buildPromptpileHookEnv = (params: {
     model,
     quiet,
     responseLength,
-    reasoningContent
+    reasoningContent,
+    invocation
   } = params;
   const mainBody = ledger.find('main', 'body')?.absolutePath ?? '';
   const mainCalls = ledger.find('main', 'calls')?.absolutePath ?? '';
   const conversationBody = ledger.find('conversation', 'body')?.absolutePath ?? '';
   const conversationCalls = ledger.find('conversation', 'calls')?.absolutePath ?? '';
   const conversationExtra = ledger.find('conversation', 'extra')?.absolutePath ?? '';
-  return {
+  const env: NodeJS.ProcessEnv = {
     ...process.env,
     PROMPTPILE_SCAN_DIRECTORY: inputDirectories.length === 1 ? scanAbs : '',
     PROMPTPILE_INPUT_DIRECTORIES_JSON: JSON.stringify(inputDirectories),
@@ -156,6 +159,12 @@ export const buildPromptpileHookEnv = (params: {
     PROMPTPILE_HAS_REASONING: reasoningContent ? '1' : '0',
     PROMPTPILE_RESPONSE_LENGTH: String(responseLength)
   };
+  // Never accept a stale/spoofed value inherited from the parent process.
+  delete env.PROMPTPILE_INVOCATION_ID;
+  if (invocation.id !== null) {
+    env.PROMPTPILE_INVOCATION_ID = invocation.id;
+  }
+  return env;
 };
 
 export const runAfterHook = (options: {

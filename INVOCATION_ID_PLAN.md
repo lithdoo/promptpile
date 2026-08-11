@@ -1,6 +1,6 @@
 # Promptpile Invocation ID 实施设计计划
 
-> 状态：实施前冻结稿  
+> 状态：已实现（v1）
 > 设计冻结日期：2026-08-11  
 > 核心提案：为一次 root completion invocation 提供一个 **caller-supplied、CLI-only、可选、受限 ASCII、绝不进入模型上下文** 的 correlation identifier，并把它收敛为独立的 `ResolvedInvocationContextV1`；v1 只向 after-hook 与未来 Completion Receipt 传播，不把它扩张为 run/session/transaction/幂等协议
 

@@ -25,6 +25,7 @@ export interface ResolvedOutputArtifactPolicyV1 {
     calls: ResolvedFileTarget;
     extra: ResolvedFileTarget;
   };
+  receipt?: ResolvedFileTarget;
   conversation: {
     continueEnabled: boolean;
     mutationEnabled: boolean;
@@ -78,6 +79,9 @@ const allFileTargets = (policy: ResolvedOutputArtifactPolicyV1): Array<{
   }
   if (policy.outputPile?.target.kind === 'file') {
     targets.push({ label: 'output pile', target: policy.outputPile.target.file });
+  }
+  if (policy.receipt) {
+    targets.push({ label: 'completion receipt', target: policy.receipt });
   }
   return targets;
 };
@@ -150,6 +154,7 @@ export const resolveOutputArtifactPolicy = (options: {
       shadowedFile: config.outputPileTarget?.shadowedFile
     },
     mainOutput: config.output ? resolveMainOutputTargets(cwd, config.output) : undefined,
+    receipt: config.receipt ? lexicalFileTarget(cwd, config.receipt) : undefined,
     conversation: {
       continueEnabled: config.continueMode,
       mutationEnabled: config.continueMode || config.inputMode,
@@ -189,6 +194,7 @@ export const prepareOutputArtifactPolicy = (
       calls: canonicalize(policy.mainOutput.calls),
       extra: canonicalize(policy.mainOutput.extra)
     },
+    receipt: policy.receipt && canonicalize(policy.receipt),
     outputPile: policy.outputPile && {
       ...policy.outputPile,
       target: policy.outputPile.target.kind === 'file'

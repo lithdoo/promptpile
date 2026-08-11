@@ -21,6 +21,8 @@
 [promptpile]
     dir = './message'
     output = './message/promptpile-example-output.md'
+    # 可选最终完成标记；相对路径相对进程 cwd。Invocation ID 仅支持 CLI --invocation-id。
+    # receipt = './run/completion-receipt.json'
     quiet = false
     after_hook = './after_hook.sh'
     after_hook_failure = 'warn' # warn | error；CLI --after-hook-failure 优先

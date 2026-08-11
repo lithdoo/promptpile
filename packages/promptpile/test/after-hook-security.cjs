@@ -5,6 +5,7 @@ const path = require('path');
 const { buildPromptpileHookEnv, resolveAfterHookScript } = require('../dist/after-hook.js');
 const { CompletionArtifactLedger } = require('../dist/completion-artifact-ledger.js');
 const { resolveConfig } = require('../dist/resolve-config.js');
+const { resolveInvocationContext } = require('../dist/invocation-context.js');
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'promptpile-hook-security-'));
 const previousFailureEnv = process.env.PROMPTPILE_AFTER_HOOK_FAILURE;
@@ -138,6 +139,7 @@ try {
     absolutePath: path.join(outputAbs, '[1]assistant.md')
   });
   const layeredEnv = buildPromptpileHookEnv({
+    invocation: resolveInvocationContext(undefined),
     scanAbs: outputAbs,
     inputDirectories: [scanAbs, outputAbs],
     outputDirectory: outputAbs,
@@ -160,6 +162,7 @@ try {
 
   const singleLedger = new CompletionArtifactLedger();
   const singleEnv = buildPromptpileHookEnv({
+    invocation: resolveInvocationContext(undefined),
     scanAbs,
     inputDirectories: [scanAbs],
     outputDirectory: scanAbs,

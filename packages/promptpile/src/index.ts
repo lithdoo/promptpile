@@ -55,6 +55,12 @@ import {
 } from './conversation-conflict';
 import { secondaryFailuresOf } from './primary-failure';
 import { runModelOutputLifecycle } from './model-output-lifecycle';
+import { resolveInvocationContext } from './invocation-context';
+import {
+  buildCompletionReceiptHookV1,
+  buildCompletionReceiptV1,
+  commitCompletionReceiptV1
+} from './completion-receipt';
 
 const readUserInputFromTerminal = async (): Promise<string> => {
   console.log('Enter user message. Finish with Ctrl+Z then Enter (Windows), or Ctrl+D (macOS/Linux).');
@@ -84,6 +90,7 @@ const printToolCallsLines = (toolCalls: ToolCall[] | undefined, quiet: boolean):
 async function runCompletion(cwd: string): Promise<void> {
   try {
     const config = resolveConfig(cwd, process.argv);
+    const invocation = resolveInvocationContext(config.invocationId);
 
     if (!config.apiKey) {
       console.error('Error: AI API key is required');
@@ -330,7 +337,8 @@ async function runCompletion(cwd: string): Promise<void> {
         model: config.model,
         quiet,
         responseLength: response.length,
-        reasoningContent
+        reasoningContent,
+        invocation
       });
       hookObservation = await runAfterHook({
         scriptPath: outputPolicy.hook.resolution.path,
@@ -346,6 +354,28 @@ async function runCompletion(cwd: string): Promise<void> {
       } else if (decision.impact === 'error') {
         throw new AfterHookFailureError(hookObservation);
       }
+    }
+
+    if (outputPolicy.receipt) {
+      if (hookObservation === undefined) {
+        throw new Error('internal error: after-hook observation is unavailable');
+      }
+      const receipt = buildCompletionReceiptV1({
+        invocation,
+        ledger: artifactLedger,
+        model: config.model,
+        finishReason: result.finishReason,
+        usage: result.usage,
+        hook: buildCompletionReceiptHookV1(
+          hookObservation,
+          outputPolicy.hook.failureMode
+        )
+      });
+      commitCompletionReceiptV1({
+        targetPath: outputPolicy.receipt.absolutePath,
+        receipt,
+        ledger: artifactLedger
+      });
     }
   } catch (error) {
     for (const secondary of secondaryFailuresOf(error)) {

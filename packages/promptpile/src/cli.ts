@@ -13,6 +13,7 @@ import {
   type InspectConversationOptions
 } from './conversation-command';
 import { parseAfterHookFailureMode } from './after-hook-policy';
+import { parseInvocationId } from './invocation-context';
 
 /** Result of {@link parseCli}; `configPath` is raw path from argv (resolve against cwd in resolve-config). */
 export interface CliParseResult {
@@ -62,6 +63,11 @@ export const buildProgram = (handlers?: PromptpileCommandHandlers): Command => {
     .option('--api-key-env <name>', 'Read the AI API key from this environment variable')
     .option('-b, --api-base-url <url>', 'AI API base URL')
     .option(
+      '--invocation-id <id>',
+      'External completion correlation ID (1-128 restricted ASCII characters)',
+      parseInvocationId
+    )
+    .option(
       '--temperature <n>',
       'Sampling temperature (0–2); overrides llm_api_temperature / [[llm_api]] profile (default 0.8 if unset)'
     )
@@ -70,6 +76,7 @@ export const buildProgram = (handlers?: PromptpileCommandHandlers): Command => {
       'Extra JSON object merged into Chat Completions request body; overrides llm_api_extra_body / [[llm_api]] profile'
     )
     .option('-o, --output <path>', 'Output file path for AI response')
+    .option('--receipt <path>', 'Atomically write Completion Receipt v1 after success')
     .option('--output-pile-file <path>', 'Write streamed assistant output to this file/pipe path')
     .option('--output-pile-fd <fd>', 'Write streamed assistant output to an inherited file descriptor')
     .option('--output-pile-format <format>', 'Output pile format: text | json (default: text)')
@@ -126,6 +133,16 @@ export const buildProgram = (handlers?: PromptpileCommandHandlers): Command => {
       'Handle missing tool results: warn | error | ignore (default: warn)'
     );
 
+  program.hook('preAction', (_thisCommand, actionCommand) => {
+    if (actionCommand === program) return;
+    if (program.getOptionValue('invocationId') !== undefined) {
+      throw new Error('--invocation-id is only valid for root completion');
+    }
+    if (program.getOptionValue('receipt') !== undefined) {
+      throw new Error('--receipt is only valid for root completion');
+    }
+  });
+
   registerConversationCommand(program, {
     appendUser: handlers?.appendUser,
     inspectConversation: handlers?.inspectConversation,
@@ -158,7 +175,9 @@ export const parseCli = (argv: string[]): CliParseResult => {
     apiKey?: string;
     apiKeyEnv?: string;
     apiBaseUrl?: string;
+    invocationId?: string;
     output?: string;
+    receipt?: string;
     outputPileFile?: string;
     outputPileFd?: string;
     outputPileFormat?: string;
@@ -197,6 +216,11 @@ export const parseCli = (argv: string[]): CliParseResult => {
   const llmConfigPath = trimOpt(options.llmConfig);
   const llmApiName = trimOpt(options.llmApi);
   const apiKeyEnvName = trimOpt(options.apiKeyEnv);
+  const rawReceipt = options.receipt;
+  const receipt = trimOpt(rawReceipt);
+  if (rawReceipt !== undefined && receipt === undefined) {
+    throw new Error('--receipt value must not be empty');
+  }
 
   const rawToolsFile = options.toolsFile as string | undefined;
   const toolsFileCli =
@@ -258,7 +282,9 @@ export const parseCli = (argv: string[]): CliParseResult => {
       model: options.model,
       apiKey: options.apiKey,
       apiBaseUrl: options.apiBaseUrl,
+      invocationId: options.invocationId,
       output: options.output,
+      receipt,
       outputPileFile,
       outputPileFd,
       outputPileFormat,

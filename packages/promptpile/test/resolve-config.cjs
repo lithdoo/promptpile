@@ -19,6 +19,7 @@ const envKeys = [
   'PROMPTPILE_OUTPUT_PILE_FD',
   'PROMPTPILE_OUTPUT_PILE_FORMAT',
   'PROMPTPILE_OUTPUT_PIPE_FORMAT',
+  'PROMPTPILE_INVOCATION_ID',
   'PROMPTPILE_TEST_KEY',
   'PROMPTPILE_CLI_KEY'
 ];
@@ -391,6 +392,18 @@ try {
   ]);
   assert.strictEqual(cfgCliAliasPile.outputPileFile, 'cli-alias.jsonl', 'old cli output-pipe alias');
   assert.strictEqual(cfgCliAliasPile.outputPileFormat, 'json', 'old cli output-pipe-format alias');
+
+  process.env.PROMPTPILE_INVOCATION_ID = 'must-not-be-config-input';
+  fs.writeFileSync(tomlPath, '[promptpile]\nreceipt = "toml-receipt.json"\n');
+  const cfgTomlReceipt = resolveConfig(tmp, ['node', fakeScript, '--config', 'app.toml', '-k', 'key']);
+  assert.strictEqual(cfgTomlReceipt.receipt, 'toml-receipt.json');
+  assert.strictEqual(cfgTomlReceipt.invocationId, undefined, 'invocation id is never read from process env');
+  const cfgCliReceipt = resolveConfig(tmp, [
+    'node', fakeScript, '--config', 'app.toml', '-k', 'key',
+    '--receipt', 'cli-receipt.json', '--invocation-id', 'run:exact'
+  ]);
+  assert.strictEqual(cfgCliReceipt.receipt, 'cli-receipt.json', 'CLI receipt path overrides TOML');
+  assert.strictEqual(cfgCliReceipt.invocationId, 'run:exact');
 } finally {
   process.chdir(prevCwd);
   for (const [key, value] of envBefore) {

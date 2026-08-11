@@ -366,7 +366,7 @@ API key 保留既有的 direct-key 优先语义：
 
 ### TOML（`--config`）
 
-- **`[promptpile]`**：与 `example.toml` 一致，如有序目录数组 `dirs`（或兼容单值 `dir`）、Conversation 写入目录 `output_dir`、普通输出文件 `output`、`output_pile_file`、`output_pile_fd`、`output_pile_format`、`quiet`、`after_hook`、`after_hook_failure`、`tool_choice`、`tools_file`、`disable_tool`、`continue`、`input`、`insert_files`、`append_files`、`missing_tool_results`、`llm_api`、`llm_api_key`、`llm_api_key_env`、`llm_api_model`、`llm_api_base_url`、`llm_api_temperature`、`llm_api_extra_body`。`dirs` 与 `dir` 不能同时声明；旧名 `output_pipe` / `output_pipe_format` 仍兼容，新名优先。
+- **`[promptpile]`**：与 `example.toml` 一致，如有序目录数组 `dirs`（或兼容单值 `dir`）、Conversation 写入目录 `output_dir`、普通输出文件 `output`、`receipt`、`output_pile_file`、`output_pile_fd`、`output_pile_format`、`quiet`、`after_hook`、`after_hook_failure`、`tool_choice`、`tools_file`、`disable_tool`、`continue`、`input`、`insert_files`、`append_files`、`missing_tool_results`、`llm_api`、`llm_api_key`、`llm_api_key_env`、`llm_api_model`、`llm_api_base_url`、`llm_api_temperature`、`llm_api_extra_body`。`dirs` 与 `dir` 不能同时声明；旧名 `output_pipe` / `output_pipe_format` 仍兼容，新名优先。
 - **`[[llm_api]]`**：`name`、`model`、`base_url`、`api_key`、`api_key_env`、`temperature`、`extra_body`；由 `--llm-api` 或 `[promptpile].llm_api` 选择 profile 后，再应用显式 CLI / `[promptpile].llm_api_*` 覆盖。
 - **密钥**：若配置了 `api_key_env` / `llm_api_key_env`，在同一合并结果中的直写 `api_key` / `llm_api_key` 仍为空时从 `process.env[该变量名]` 读取。该兼容语义保持不变。
 
@@ -383,9 +383,11 @@ API key 保留既有的 direct-key 优先语义：
 | `-k, --api-key <key>` | API Key | 无 |
 | `--api-key-env <name>` | 在 Promptpile 进程内从指定环境变量读取 API Key；与 `--api-key` 互斥 | 无 |
 | `-b, --api-base-url <url>` | Base URL | 见上合并链 |
+| `--invocation-id <id>` | 本次 root completion 的外部关联 ID；仅允许 1–128 位字母、数字、`.`、`_`、`-`、`:`；不进入模型请求 | 无 |
 | `--temperature <n>` | 采样温度（`0`–`2`）；覆盖 `llm_api_temperature` / profile | `0.8` |
 | `--extra-body <json>` | 额外请求体字段（JSON 对象）；覆盖 `llm_api_extra_body` / profile | 无 |
 | `-o, --output <path>` | 输出文件路径（保存模型回复） | 无 |
+| `--receipt <path>` | 成功完成后原子写入 Completion Receipt v1；覆盖 TOML `receipt` | 无 |
 | `--output-pile-file <path>` | 将流式 assistant 正文旁路写入文件/命名管道路径；不受 `--quiet` 影响 | 无 |
 | `--output-pile-fd <fd>` | 将流式 assistant 正文旁路写入继承 fd（整数，须 `>= 3`）；优先于 `--output-pile-file` | 无 |
 | `--output-pile-format <text\|json>` | 旁路输出格式；`text` 写纯 chunk，`json` 写 JSONL 事件 | `text` |
@@ -743,9 +745,23 @@ output pile destination 是一个逻辑槽位，按 **CLI target group > TOML ta
 
 所有 caller-managed 相对输出路径只相对 invocation cwd 解析一次。模型调用前会预留 `-o` 的 body、`.calls.jsonl`、`.extra.json` potential targets，并检查它们与 pile file、Conversation namespace、`.promptpile.occ.claim` 和 resolved after-hook script 的冲突；已知冲突会在 API 调用及任何 output truncate 之前失败。
 
-执行顺序固定为：prepare sinks → model stream → finalize pile → `-o` body/calls/extra → terminal tool-call postlude → Conversation commit → after-hook。`assistant_done` **只表示模型 stream 已结束**，不表示后续 durable artifacts 或 hook 已成功。显式配置的 pile 是 required sink；其 open/write/done/close 任一失败都会以 exit `1` 停止后续 durable stages。
+执行顺序固定为：prepare sinks → model stream → finalize pile → `-o` body/calls/extra → terminal tool-call postlude → Conversation commit → after-hook → completion receipt。`assistant_done` **只表示模型 stream 已结束**，不表示后续 durable artifacts、hook 或 receipt 已成功。显式配置的 pile 是 required sink；其 open/write/done/close 任一失败都会以 exit `1` 停止后续 durable stages。
 
 每个 durable 文件独立原子替换，并在成功后进入内部 artifact ledger；多文件 group 及不同 output channel 之间不存在 transaction 或 rollback。后续失败不会删除已经成功写入或已经流出的内容。
+
+### Invocation ID 与 Completion Receipt
+
+编排器可为一次 root completion 提供关联标签，并在最终 receipt 中读取实际落盘结果：
+
+```bash
+node dist/index.js -d ./messages --continue --quiet \
+  --invocation-id run-01JXYZ \
+  --receipt ./run/completion-receipt.json
+```
+
+Invocation ID 只来自 CLI，必须匹配 `[A-Za-z0-9._:-]{1,128}`；它不会进入模型 request body、Conversation artifact、tool arguments 或文件名。Receipt path 也可通过 TOML `[promptpile].receipt` 配置，CLI 优先。
+
+Receipt 是 after-hook 之后原子发布的 `status: "completed"` 最终标记。artifact 字段使用绝对路径，`finishReason` / `usage` 在网关未返回时为 `null`。hook 在 `warn` mode 下失败时 receipt 会记录结构化失败事实；`error` mode 下不发布 completed receipt。Receipt 缺失不代表此前没有 artifact 落盘，调用方仍需结合退出码判断。机器消费者可使用 [Completion Receipt v1 JSON Schema](../../doc/15-contracts/completion-receipt-v1.schema.json) 校验。
 
 ---
 
@@ -806,10 +822,11 @@ Windows **默认链**不包含 `.sh`；若要在 Windows 上跑 shell 脚本，�
 | `PROMPTPILE_HAS_TOOL_CALLS` | `0` 或 `1` |
 | `PROMPTPILE_HAS_REASONING` | 本轮 API 是否返回非空 `reasoning_content`：`0` 或 `1` |
 | `PROMPTPILE_RESPONSE_LENGTH` | 本轮正文字符串长度（数字字符串） |
+| `PROMPTPILE_INVOCATION_ID` | 仅在 CLI 提供 `--invocation-id` 时存在并保持原值；未提供时清除父进程继承的同名变量 |
 
 所有精确 artifact path 都来自本轮实际成功写入后的内部 ledger；hook 不会根据 `tool_calls`、`reasoning_content` 或配置路径重新推导某个文件“应该存在”。
 
-子进程 stdout 不是协议：始终丢弃，不转发、不缓存，也不进入 artifact ledger。stderr 始终持续 drain，但只保留最后 64 KiB 原始字节用于失败诊断；成功时不回显。`--quiet` 不抑制 hook warning/error。结构化 observation 保留退出码、signal 或 spawn error，但未来 Receipt 不应保存 raw stderr。
+子进程 stdout 不是协议：始终丢弃，不转发、不缓存，也不进入 artifact ledger。stderr 始终持续 drain，但只保留最后 64 KiB 原始字节用于失败诊断；成功时不回显。`--quiet` 不抑制 hook warning/error。结构化 observation 保留退出码、signal 或 spawn error；Completion Receipt 不保存 raw stderr。
 
 ### 启动方式（按扩展名）
 
@@ -875,6 +892,8 @@ packages/promptpile/
 
 - **API Key**：勿将真实密钥提交到仓库；优先使用 `--api-key-env`，或在 TOML 中使用 `api_key_env` 引用环境变量名。`--api-key-env` 只把变量名称放入 argv，secret 在 Promptpile 进程内解析。
 - **日志**：默认不会在日志中打印完整 `messages` 负载；若自行修改代码或在外层包装脚本中记录请求体，请注意敏感数据与 CI 输出。
+- **Invocation ID**：它是不可信的外部关联标签，不是鉴权、幂等或锁凭据；受限 ASCII 校验阻止路径和日志换行注入，且不会写入模型请求或 Conversation artifact。
+- **Completion Receipt**：只保存已提交 artifact 的绝对路径和结构化执行事实，不复制正文、reasoning、工具参数、API Key 或 hook raw stderr；缺少 receipt 表示没有完成标记，不表示此前一定没有落盘 artifact。
 - **网络**：请求发往 `apiBaseUrl` 所指向的服务器，请确认合规与数据出境要求。
 - **工具调用**：本工具 **不执行** 用户定义的工具函数；工具结果文件需自行保证来源可信。
 

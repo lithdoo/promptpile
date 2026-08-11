@@ -4,7 +4,7 @@
 > 状态：Normative  
 > 稳定程度：Evolving  
 > 主要定义：Promptpile ecosystem 的跨进程、跨 package 互操作入口  
-> 最近复核：2026-08-10
+> 最近复核：2026-08-11
 
 正式契约回答：**两个独立实现不共享私有代码时，如何仍然正确互操作。**
 
@@ -13,6 +13,7 @@
 | [Conversation Protocol v1](./conversation-protocol-v1.md) | Normative / Evolving | conversation layer、文件命名、扫描、排序与 sidecar 组合 |
 | [Archive Protocol v1](./archive-protocol-v1.md) | Active Design / Experimental | archive discovery、manifest 最小字段、producer/consumer 边界 |
 | [CLI Contract v1](./cli-contract-v1.md) | Normative / Evolving | machine-facing CLI、layered I/O、process contract 与 profile selection |
+| [Completion Receipt v1 JSON Schema](./completion-receipt-v1.schema.json) | Normative / Evolving | root completion 最终完成标记、artifact 引用、invocation 与 hook observation |
 | [Tool Artifacts v1](./tool-artifacts-v1.md) | Normative / Evolving | calls/result JSONL、physical-directory ownership 与配对语义 |
 | [Tools TOML v1](./tools-toml-v1.md) | Normative / Evolving | 工具声明与 extends 规则 |
 

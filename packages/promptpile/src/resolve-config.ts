@@ -27,6 +27,7 @@ interface FlatLayer {
   apiKeyEnvName?: string;
   apiBaseUrl?: string;
   output?: string;
+  receipt?: string;
   outputPileFile?: string;
   outputPileFd?: number;
   outputPileFormat?: OutputPileFormat;
@@ -136,6 +137,10 @@ const buildTomlLayer = (
     if (t !== undefined) {
       out.output = t;
     }
+  }
+  const receipt = getStr(p, 'receipt');
+  if (receipt !== undefined) {
+    out.receipt = receipt;
   }
   const outputPileFile = getStr(p, 'output_pile_file') ?? getStr(p, 'output_pipe');
   if (outputPileFile !== undefined) {
@@ -265,6 +270,7 @@ const mapCliToFlat = (cli: Partial<Config>): FlatLayer => ({
   apiKey: trim(cli.apiKey),
   apiBaseUrl: trim(cli.apiBaseUrl),
   output: trim(cli.output),
+  receipt: trim(cli.receipt),
   outputPileFile: trim(cli.outputPileFile),
   outputPileFd: cli.outputPileFd,
   outputPileFormat: cli.outputPileFormat,
@@ -508,6 +514,10 @@ export const resolveConfig = (cwd: string, argv: string[]): Config => {
     cliLayer.output,
     tomlLayer.output,
   );
+  const receipt = pickOptStr(
+    cliLayer.receipt,
+    tomlLayer.receipt,
+  );
 
   const outputPileFile = pickOptStr(
     cliLayer.outputPileFile,
@@ -620,6 +630,7 @@ export const resolveConfig = (cwd: string, argv: string[]): Config => {
     model,
     apiKey,
     apiBaseUrl,
+    invocationId: cliPartial.invocationId,
     temperature,
     extraBody,
     continueMode,
@@ -627,6 +638,7 @@ export const resolveConfig = (cwd: string, argv: string[]): Config => {
     expectedOutputFingerprint: cliPartial.expectedOutputFingerprint,
     expectedOutputNextIndex: cliPartial.expectedOutputNextIndex,
     output,
+    receipt,
     outputPileFile,
     outputPileFd,
     outputPileTarget,

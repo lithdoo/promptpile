@@ -56,7 +56,7 @@ Root completion 的唯一执行顺序为：
 ```text
 resolve/preflight → prepare configured sinks → model stream → finalize output pile
 → commit -o body/calls/extra → terminal tool-call postlude
-→ commit Conversation assistant artifacts → after-hook → final status
+→ commit Conversation assistant artifacts → after-hook → completion receipt → final status
 ```
 
 output pile destination 是单一 logical slot：CLI file/fd target group 整体优先于 TOML target group；同一来源同时给出 file 与 fd 时保持 v1 `fd wins`。caller-managed 相对路径只相对 invocation cwd resolve 一次，下游 writer 不得重新读取 `process.cwd()` 解释路径。
@@ -68,6 +68,20 @@ Policy resolution 与 lexical collision validation 不产生 filesystem side eff
 output pile 是 required live transport，但不是 durable body authority，也不进入 artifact ledger。JSON pile 的 `assistant_done` 只表示 model stream done。pile open/write/done/close failure 是 ordinary failure，并阻止 main、Conversation 和 hook stages。
 
 durable commit 顺序固定为 main body → calls → extra，再进入 Conversation。每个文件独立 atomic；group 和跨 channel 都不 transactional。ledger 只在单个 durable write 成功后记录事实。后续失败不 rollback 已写 artifact。after-hook 的精确 artifact path 只能来自 ledger，不能根据模型结果、配置或目录扫描推导。cleanup/finalizer 的 secondary failure 不得覆盖更早的 primary failure。
+
+### Invocation ID v1
+
+Root completion 可接受 CLI-only `--invocation-id <id>`。值必须原样匹配 `[A-Za-z0-9._:-]{1,128}`，不 trim；非法值在模型调用前以 ordinary failure 退出。它是外部 correlation label，不是 Conversation identity、授权身份、幂等键或 lock owner，不从 TOML/process env 读取。
+
+Invocation ID 不得进入 messages、tools/tool arguments、Conversation/Archive artifacts、artifact filename 或模型 request body。启用 after-hook 时通过 `PROMPTPILE_INVOCATION_ID` 原样传播；未提供参数时该变量不存在，并且 executor 必须移除父进程继承的同名值。允许写入 Completion Receipt 的顶层 `invocationId`。日志如需展示该值必须采用安全的结构化编码。
+
+### Completion Receipt v1
+
+CLI `--receipt <path>` 覆盖 TOML `[promptpile].receipt`，相对路径相对 process cwd。Receipt 是可选 JSON 文件，固定包含 `schemaVersion: 1`、`status: "completed"`、`invocationId: string | null`、绝对 artifact paths、model、nullable finish reason/usage 和去除 raw stderr 的 hook observation。
+
+Receipt target 与 main output、potential sidecars、file output pile、Conversation namespace/control path 和 resolved hook 一起参加 pre-model collision validation。Receipt parent 在 sink preparation 创建；写入使用同目录 synced temp file 加 atomic rename。
+
+Receipt 是 after-hook 之后的最后 durable completion marker，只能引用 ledger 中已经成功提交的 artifacts。hook `warn` failure 可产生 completed receipt并记录失败事实；hook `error` failure、模型/输出/OCC failure 或 receipt 自身写入失败均不产生有效 completed receipt。已有 artifacts 不因后续 receipt failure 回滚。Receipt 不复制正文、reasoning、tool arguments、API key 或 hook raw stderr。
 
 ### After-hook Failure Policy v1
 
@@ -86,6 +100,7 @@ runtime executor 只返回 `succeeded | spawn_failed | exited_nonzero | signaled
 dirs = ["./base", "./shared"]
 output_dir = "./session"
 continue = true
+receipt = "./run/completion-receipt.json"
 ```
 
 旧的单值 `dir` 继续有效。目录输入按以下整组优先级选择，不跨来源拼接：
@@ -101,8 +116,8 @@ CLI `--output-dir` 覆盖 TOML `output_dir`。没有配置 input、但配置了 
 
 ### 路径基准
 
-- CLI `--directory`、`--output-dir`、`--config`、`--llm-config`、`--tools-file`、`--after-hook-path`、`-o`、insert/append files 的相对路径相对 process cwd。
-- TOML `dirs`、`dir`、`output_dir` 和 `output` 的相对路径继续相对 process cwd，以保持现有 `dir`/`output` 行为。
+- CLI `--directory`、`--output-dir`、`--config`、`--llm-config`、`--tools-file`、`--after-hook-path`、`--receipt`、`-o`、insert/append files 的相对路径相对 process cwd。
+- TOML `dirs`、`dir`、`output_dir`、`output` 和 `receipt` 的相对路径继续相对 process cwd，以保持现有路径行为。
 - TOML `tools_file` 与 `after_hook` 的相对路径相对 **conversation anchor**：有 output directory 时为 output directory，否则为最后一个有效输入层。单目录配置因此保持现有语义。
 - 绝对路径不再与任何基准拼接。`tools_file` 的 `extends` 仍按 Tools TOML v1 解析。
 

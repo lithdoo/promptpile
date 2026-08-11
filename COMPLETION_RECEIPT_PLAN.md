@@ -1,6 +1,6 @@
-# Promptpile Completion Receipt 初步设计计划
+# Promptpile Completion Receipt v1 设计
 
-> 状态：讨论草案  
+> 状态：已实现（v1）
 > 日期：2026-08-07  
 > 核心提案：以可选、原子写入的 receipt 文件描述一次 completion 已落盘的结果
 
@@ -27,27 +27,9 @@ receipt = "./run/completion-receipt.json"
 
 ## 3. Receipt 草案
 
-```json
-{
-  "schemaVersion": 1,
-  "status": "completed",
-  "artifacts": {
-    "assistant": "[8]assistant.md",
-    "calls": "[8]assistant.calls.jsonl",
-    "extra": null,
-    "mainOutput": null
-  },
-  "model": "example-model",
-  "finishReason": "tool_calls",
-  "usage": {
-    "inputTokens": 1234,
-    "outputTokens": 321,
-    "totalTokens": 1555
-  }
-}
-```
+Receipt 固定包含 `schemaVersion: 1`、`status: "completed"`、`invocationId`、`artifacts`、`model`、`finishReason`、`usage` 与 `hook`。`artifacts` 的 `assistant`、`calls`、`extra`、`mainOutput`、`mainCalls`、`mainExtra` 使用规范化绝对路径或 `null`，因此单目录和 layered I/O 都可唯一解析。
 
-Artifact 引用必须指向已完成原子提交的文件。启用 layered Conversation I/O 后，引用还需要包含 output directory identity 或稳定的相对基准。
+`finishReason` 或 `usage` 未由兼容网关的流返回时写 `null`。`hook` 保存结构化状态、failure mode 及必要的 exit/signal/path 事实，不保存 raw stderr、spawn error message 或环境快照。
 
 ## 4. 写入时序与失败语义
 
@@ -55,7 +37,7 @@ Artifact 引用必须指向已完成原子提交的文件。启用 layered Conve
 2. 写入 `-o` 和/或 `--continue` artifacts。
 3. 执行 after-hook。
 4. 收集已知 artifact path、usage、finish reason 和 hook 状态。
-5. 将 receipt 写到同目录临时文件，fsync/close 后原子 rename。
+5. 将 receipt 写到同目录临时文件，fsync/close 后原子 rename，再登记到 artifact ledger。
 
 Receipt 是最后写入的完成标记。进程失败且没有 receipt 时，调用方回退到退出码和 artifacts 检查；第一版不强制为所有失败写 receipt。
 
@@ -75,25 +57,24 @@ Receipt 是最后写入的完成标记。进程失败且没有 receipt 时，调
 - 不定义业务 run、session、operation 或 World 状态。
 - 不通过 receipt 承诺 exactly-once 工具执行。
 
-## 7. 实施计划
+## 7. 实施结果
 
 ### Phase 0：冻结 schema
 
-- 定义状态、artifact reference、usage 和 hook 字段。
-- 明确成功、API 失败、输出失败、hook 失败时是否写 receipt。
-- 明确路径是绝对路径、receipt-relative 还是 output-directory-relative。
+- 已定义状态、artifact reference、usage 和 hook 字段。
+- 已冻结成功、API 失败、输出失败、hook 失败时的 receipt 语义。
+- artifact reference 已固定为绝对路径。
 
 ### Phase 1：Promptpile 写入
 
-- 增加 CLI/TOML 配置。
-- 实现规范编码和原子写入。
-- 将现有输出路径和 `appendAssistantTurn` 返回值接入 receipt builder。
+- 已增加 CLI/TOML 配置、规范 JSON 编码和原子写入。
+- 已通过 completion artifact ledger 接入实际提交路径。
 
 ### Phase 2：生态使用
 
-- `promptpile-react` 可选透传独立 phase receipt，或只让外层 completion 使用。
-- 更新 CLI Contract 和 README。
-- 为第三方 orchestrator 提供 JSON Schema。
+- v1 只由外层 root completion 产生 receipt；`promptpile-react` 不为内部 phase 自动合成 receipt。
+- 已更新 CLI Contract、README 和 package 状态文档。
+- 已提供第三方 orchestrator 可用的 Completion Receipt v1 JSON Schema。
 
 ## 8. 验收标准
 
@@ -103,9 +84,10 @@ Receipt 是最后写入的完成标记。进程失败且没有 receipt 时，调
 - 单目录和 layered output directory 均可唯一解析 artifact 引用。
 - Receipt 不包含 API key、完整 prompt、工具参数和 assistant 正文。
 
-## 9. 待定项
+## 9. v1 决策
 
-- after-hook 在 receipt 之前还是之后执行；初步建议之后写 receipt，从而记录 hook 状态。
-- 是否为失败结果写 `<receipt>.failed.json`，还是保持“无 receipt 即未完成”。
-- usage 不可用时使用 `null`、省略字段还是明确 `unknown`。
-- 是否允许 receipt 输出到继承 fd；第一版建议只支持文件。
+- after-hook 在 receipt 之前执行，使 receipt 成为最终完成标记。
+- v1 不写失败 receipt；没有 completed receipt 时调用方结合退出码和已存在 artifacts 判断。
+- `finishReason` 和 `usage` 不可用时均写 `null`。
+- v1 只支持文件路径，不支持继承 fd。
+- `invalid_explicit` 或 runtime hook failure 在 `warn` mode 下仍可写 completed receipt并记录 hook 状态；`error` mode 下不写 receipt。
