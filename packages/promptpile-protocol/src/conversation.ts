@@ -60,6 +60,7 @@ export function formatAssistantArtifactNameV1(idx: number, kind: AssistantArtifa
     case 'calls': return `[${idx}]assistant.calls.jsonl`;
     case 'extra': return `[${idx}]assistant.extra.json`;
     case 'result': return `[${idx}]assistant.result.jsonl`;
+    default: throw new TypeError(`unknown assistant artifact kind: ${String(kind)}`);
   }
 }
 

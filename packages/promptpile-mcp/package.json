@@ -24,7 +24,7 @@
     "build": "tsc",
     "test": "npm run build && node --test dist/src/mcp-config.test.js dist/src/mcp/tool-name.test.js dist/src/http/execution.test.js dist/src/exec-calls/check-status.test.js dist/src/exec-calls/post-exec.test.js dist/src/exec-calls/scan-call-files.test.js dist/src/exec-calls/write-result-jsonl.test.js dist/src/commands/exec-calls.test.js dist/src/commands/layered-output-boundary.test.js",
     "test:smoke": "npm run build && npm run mcp:smoke",
-    "prepare": "npm run build",
+    "prepack": "npm run build",
     "mcp:smoke": "node dist/scripts/mcp-smoke.js",
     "start": "node dist/src/index.js",
     "dev": "ts-node src/index.ts"

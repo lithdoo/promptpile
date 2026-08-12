@@ -17,6 +17,7 @@ assert.strictEqual(protocol.formatAssistantArtifactNameV1(1, 'calls'), '[1]assis
 assert.strictEqual(protocol.formatAssistantArtifactNameV1(1, 'extra'), '[1]assistant.extra.json');
 assert.strictEqual(protocol.formatAssistantArtifactNameV1(1, 'result'), '[1]assistant.result.jsonl');
 assert.throws(() => protocol.formatAssistantArtifactNameV1(-1, 'body'), RangeError);
+assert.throws(() => protocol.formatAssistantArtifactNameV1(1, 'garbage'), TypeError);
 
 const names = ['[1]assistant.result.jsonl', '[1]assistant.extra.json', '[1]assistant.calls.jsonl', '[1]assistant.md', '[1]用户.md', '[1]z.md'];
 const entries = names.map(relativePath => ({ ...protocol.classifyConversationArtifactNameV1(relativePath), relativePath }));

@@ -6,7 +6,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "prepare": "npm run build"
+    "prepack": "npm run build"
   },
   "keywords": ["agent-tools", "base", "types"],
   "author": "",

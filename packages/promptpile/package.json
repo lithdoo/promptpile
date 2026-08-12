@@ -22,7 +22,7 @@
   },
   "scripts": {
     "build": "node scripts/clean-dist.mjs && tsc && node scripts/copy-receipt-schema.mjs",
-    "prepare": "npm run build",
+    "prepack": "npm run build",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
     "posttest": "node test/output-artifact-policy.cjs && node test/model-output-lifecycle.cjs && node test/output-artifact-policy-cli.cjs",

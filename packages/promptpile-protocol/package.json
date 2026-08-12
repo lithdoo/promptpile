@@ -50,7 +50,7 @@
   "scripts": {
     "clean": "node scripts/clean-dist.mjs",
     "build": "npm run clean && tsc && node scripts/copy-schemas.mjs",
-    "test": "npm run build && node test/conversation.cjs && node test/tool.cjs && node test/receipt-schema.cjs && node test/zero-side-effect.cjs && node test/architecture.cjs && node test/package-surface.cjs",
+    "test": "npm run build && node test/conversation.cjs && node test/tool.cjs && node test/receipt-schema.cjs && node test/zero-side-effect.cjs && node test/architecture.cjs && node test/workspace-bootstrap.cjs && node test/package-surface.cjs",
     "prepack": "npm run build"
   },
   "engines": {

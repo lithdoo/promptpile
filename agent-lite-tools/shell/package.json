@@ -6,7 +6,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "prepare": "npm run build",
+    "prepack": "npm run build",
     "test": "npm run build && tsc -p tsconfig.test.json && node --test test-dist/bash-tool.test.js test-dist/powershell-tool.test.js test-dist/run-shell.test.js test-dist/parse-args.test.js"
   },
   "keywords": ["shell", "bash", "powershell", "agent-tools"],
