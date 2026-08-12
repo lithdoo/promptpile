@@ -12,4 +12,6 @@ it('production reader and adapters do not import compression implementation deta
     .join('\n');
   assert.doesNotMatch(source, /promptpile-compress|\.\.\/promptpile-compress/);
   assert.doesNotMatch(source, /\/src\/|\/dist\//);
+  assert.match(source, /promptpile-protocol\/conversation/);
+  assert.doesNotMatch(source, /const (?:MESSAGE|ASSISTANT_(?:SIDECAR|EXTRA))_PATTERN/);
 });

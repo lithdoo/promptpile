@@ -98,8 +98,11 @@ describe('Archive Protocol reader', () => {
       ['[4]assistant.extra.json', 'extra'],
       ['[4]assistant.calls.jsonl', 'calls'],
       ['[4]assistant.md', 'assistant'],
+      ['[4]assistant.json', 'assistant json'],
       ['[4]zeta.md', 'zeta'],
       ['[4]Alpha.md', 'alpha'],
+      ['[4]用户.md', 'unicode'],
+      ['[9007199254740992]user.md', 'unsafe'],
     ]) {
       fs.writeFileSync(path.join(archive, name), content);
     }
@@ -109,7 +112,9 @@ describe('Archive Protocol reader', () => {
         turn.artifacts.map(({ name }) => name),
         [
           '[4]Alpha.md',
+          '[4]assistant.json',
           '[4]zeta.md',
+          '[4]用户.md',
           '[4]assistant.md',
           '[4]assistant.calls.jsonl',
           '[4]assistant.extra.json',

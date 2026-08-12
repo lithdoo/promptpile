@@ -1,5 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import {
+  classifyConversationArtifactNameV1,
+  compareConversationArtifactsV1,
+  type ConversationArtifactFileKindV1,
+} from 'promptpile-protocol/conversation';
 import { ARCHIVE_READ_DEFAULTS, ArchiveDomainError } from './contracts';
 import {
   DEFAULT_ARCHIVE_SEARCH_SAFETY_LIMITS,
@@ -49,10 +54,6 @@ export {
 } from './search-domain';
 
 const ARCHIVE_PATTERN = /^\[(\d+)\]system\.md\.archive$/;
-const MESSAGE_PATTERN = /^\[(\d+)\](.+?)\.(md|json)$/;
-const ASSISTANT_SIDECAR_PATTERN =
-  /^\[(\d+)\]assistant\.(calls|result)\.jsonl$/;
-const ASSISTANT_EXTRA_PATTERN = /^\[(\d+)\]assistant\.extra\.json$/;
 
 export interface ArchiveDescriptor {
   idx: number;
@@ -162,24 +163,34 @@ export const discoverArchives = async (
   return archives.sort((a, b) => b.idx - a.idx);
 };
 
-const artifactOrder = (
-  artifact: Omit<ArchivedArtifact, 'content'>
-): number => {
-  if (artifact.fileKind === 'message') {
-    return artifact.role === 'assistant' ? 1 : 0;
-  }
-  if (artifact.fileKind === 'calls') return 2;
-  if (artifact.fileKind === 'extra') return 3;
-  return 4;
+const protocolFileKind = (
+  fileKind: ArchiveArtifactFileKind
+): ConversationArtifactFileKindV1 => {
+  if (fileKind === 'calls') return 'assistant_call';
+  if (fileKind === 'result') return 'assistant_result';
+  if (fileKind === 'extra') return 'assistant_extra';
+  return 'message';
 };
 
 const compareArtifacts = (
   a: Omit<ArchivedArtifact, 'content'>,
   b: Omit<ArchivedArtifact, 'content'>
-): number =>
-  artifactOrder(a) - artifactOrder(b) ||
-  a.role.localeCompare(b.role) ||
-  a.name.localeCompare(b.name);
+): number => compareConversationArtifactsV1(
+  {
+    idx: a.turnIdx,
+    role: a.role,
+    extension: a.name.endsWith('.jsonl') ? 'jsonl' : a.name.endsWith('.json') ? 'json' : 'md',
+    fileKind: protocolFileKind(a.fileKind),
+    relativePath: a.name,
+  },
+  {
+    idx: b.turnIdx,
+    role: b.role,
+    extension: b.name.endsWith('.jsonl') ? 'jsonl' : b.name.endsWith('.json') ? 'json' : 'md',
+    fileKind: protocolFileKind(b.fileKind),
+    relativePath: b.name,
+  }
+);
 
 const compareSearchableArtifacts = (
   a: SearchableArtifact,
@@ -193,34 +204,18 @@ const parseArtifact = (
   archivePath: string,
   name: string
 ): Omit<ArchivedArtifact, 'content'> | null => {
-  const sidecar = name.match(ASSISTANT_SIDECAR_PATTERN);
-  if (sidecar) {
-    return {
-      name,
-      path: path.join(archivePath, name),
-      turnIdx: Number.parseInt(sidecar[1], 10),
-      role: 'assistant',
-      fileKind: sidecar[2] as 'calls' | 'result',
-    };
-  }
-  const extra = name.match(ASSISTANT_EXTRA_PATTERN);
-  if (extra) {
-    return {
-      name,
-      path: path.join(archivePath, name),
-      turnIdx: Number.parseInt(extra[1], 10),
-      role: 'assistant',
-      fileKind: 'extra',
-    };
-  }
-  const message = name.match(MESSAGE_PATTERN);
-  if (!message) return null;
+  const recognized = classifyConversationArtifactNameV1(name);
+  if (!recognized) return null;
   return {
     name,
     path: path.join(archivePath, name),
-    turnIdx: Number.parseInt(message[1], 10),
-    role: message[2],
-    fileKind: 'message',
+    turnIdx: recognized.idx,
+    role: recognized.role,
+    fileKind:
+      recognized.fileKind === 'assistant_call' ? 'calls' :
+      recognized.fileKind === 'assistant_result' ? 'result' :
+      recognized.fileKind === 'assistant_extra' ? 'extra' :
+      'message',
   };
 };
 
