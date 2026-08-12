@@ -37,14 +37,19 @@ export default {
       { text: '15 · 正式契约', items: [
         { text: '契约目录', link: '/15-contracts/README' },
         { text: 'Conversation Protocol v1', link: '/15-contracts/conversation-protocol-v1' },
-        { text: 'Archive Protocol v1', link: '/15-contracts/archive-protocol-v1' },
+        { text: 'Conversation Fork v1', link: '/15-contracts/conversation-fork-v1' },
         { text: 'CLI Contract v1', link: '/15-contracts/cli-contract-v1' },
+        { text: 'Completion Receipt v1', link: '/15-contracts/completion-receipt-v1.schema.json' },
         { text: 'Tool Artifacts v1', link: '/15-contracts/tool-artifacts-v1' },
-        { text: 'Tools TOML v1', link: '/15-contracts/tools-toml-v1' }
+        { text: 'Tools TOML v1', link: '/15-contracts/tools-toml-v1' },
+        { text: 'Agent Event Protocol v1', link: '/15-contracts/agent-event-protocol-v1' },
+        { text: 'Archive Protocol v1', link: '/15-contracts/archive-protocol-v1' }
       ]},
       { text: '20 · Packages', items: [
         { text: '包目录', link: '/20-packages/README' },
+        { text: 'promptpile-protocol', link: '/20-packages/promptpile-protocol' },
         { text: 'promptpile', link: '/20-packages/promptpile' },
+        { text: 'promptpile-fork', link: '/20-packages/promptpile-fork' },
         { text: 'promptpile-react', link: '/20-packages/promptpile-react' },
         { text: 'promptpile-mcp', link: '/20-packages/promptpile-mcp' },
         { text: 'promptpile-compress', link: '/20-packages/promptpile-compress' },
@@ -64,11 +69,10 @@ export default {
         { text: '测试策略', link: '/30-development/testing-strategy' },
         { text: '文档维护', link: '/30-development/documentation-maintenance' }
       ]},
-      { text: '决策与追踪', items: [
+      { text: '设计决策', items: [
         { text: 'ADR 0001 · File-native', link: '/decisions/0001-file-native-conversation' },
         { text: 'ADR 0002 · CLI-first', link: '/decisions/0002-cli-first-boundary' },
-        { text: 'ADR 0003 · Tool execution outside core', link: '/decisions/0003-tool-execution-outside-core' },
-        { text: '当前状态', link: '/tracking/current-status' }
+        { text: 'ADR 0003 · Tool execution outside core', link: '/decisions/0003-tool-execution-outside-core' }
       ]}
     ],
     socialLinks: [{ icon: 'github', link: 'https://github.com/lithdoo/promptpile' }],
