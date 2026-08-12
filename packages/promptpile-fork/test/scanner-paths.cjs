@@ -22,7 +22,7 @@ const { resolveForkPaths } = require('../dist/paths');
       '[01]User.md', '[1]assistant.calls.jsonl', '[1]assistant.result.jsonl'
     ]);
     const resolved = await resolveForkPaths(source, path.join(root, 'target'));
-    assert.strictEqual(resolved.source, fs.realpathSync(source));
+    assert.strictEqual(resolved.source, await fs.promises.realpath(source));
     await assert.rejects(resolveForkPaths(source, path.join(source, 'target')), error => error.code === 'path_overlap');
     fs.mkdirSync(path.join(root, 'existing'));
     await assert.rejects(resolveForkPaths(source, path.join(root, 'existing')), error => error.code === 'target_exists');

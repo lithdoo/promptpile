@@ -71,6 +71,21 @@ export async function verifyStaging(
   throughIndex: number,
   baseline: ForkPrefixObservation
 ): Promise<void> {
+  let entries: import('node:fs').Dirent[];
+  try {
+    entries = await fs.readdir(staging, { withFileTypes: true });
+  } catch (error) {
+    throw new ForkError('staging_verify_failed', 'unable to enumerate staged Conversation artifacts', error);
+  }
+  const expectedBasenames = new Set(baseline.records.map(record => record.relativePath));
+  if (entries.length !== expectedBasenames.size || entries.some(entry =>
+    !entry.isFile() || entry.isSymbolicLink() || !expectedBasenames.has(entry.name)
+  )) {
+    throw new ForkError(
+      'staging_verify_failed',
+      'staging directory does not contain exactly the selected source artifacts'
+    );
+  }
   let observed: ForkPrefixObservation;
   try { observed = await observeStablePrefix(staging, throughIndex); } catch (error) {
     throw new ForkError('staging_verify_failed', 'unable to verify staged Conversation prefix', error);

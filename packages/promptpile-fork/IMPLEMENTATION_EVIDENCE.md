@@ -28,7 +28,9 @@ Status: implementation complete; final Freeze is gated only on the committed ded
 - Selected source artifacts are opened without following symlinks where the platform provides
   `O_NOFOLLOW`, streamed byte-exactly to exclusive staging files, and checked against baseline
   length and SHA-256 during the copy.
-- Staging is independently rescanned twice and compared with the baseline before publication.
+- Staging direct entries must be exactly the baseline basenames and all be regular files; the
+  complete exact set is then independently rescanned twice and compared with the baseline before
+  publication. Tests fail closed for both an above-cutoff protocol artifact and a non-protocol file.
 - The source selected prefix is independently re-observed before publication. Changes at or below
   the cutoff fail; append above the cutoff succeeds.
 - A canonical-target exclusive claim serializes cooperating writers. `test/contention.cjs` proves

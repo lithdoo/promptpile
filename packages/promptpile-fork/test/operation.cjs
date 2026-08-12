@@ -69,6 +69,15 @@ const options = item => ({ source: item.source, target: item.target, throughInde
       assert(!fs.existsSync(item.target));
     } finally { fs.rmSync(item.root, { recursive: true, force: true }); }
   }
+  for (const unexpected of ['[999]assistant.md', 'unrecognized.tmp']) {
+    const item = makeCase();
+    try {
+      await assert.rejects(executeConversationFork(options(item), { hooks: {
+        afterStagingCreate: staging => fs.writeFileSync(path.join(staging, unexpected), 'unexpected')
+      }}), error => error.code === 'staging_verify_failed');
+      assert(!fs.existsSync(item.target), `${unexpected} must make exact-set verification fail closed`);
+    } finally { fs.rmSync(item.root, { recursive: true, force: true }); }
+  }
   for (const hook of ['afterBaseline', 'beforeStagingCreate', 'afterStagingCreate', 'afterEachCopy',
     'afterStagingVerify', 'afterSourceReobserve', 'beforePublish']) {
     const item = makeCase();
