@@ -36,6 +36,7 @@ jobs:
       - name: Install active package dependencies
         run: >-
           npm ci --ignore-scripts
+          --workspace=promptpile-protocol
           --workspace=promptpile
           --workspace=promptpile-mcp
           --workspace=promptpile-react

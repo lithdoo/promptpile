@@ -29,7 +29,10 @@ jobs:
           cache: npm
 
       - name: Install Promptpile core
-        run: npm ci --ignore-scripts --workspace=promptpile
+        run: npm ci --ignore-scripts --workspace=promptpile-protocol --workspace=promptpile
+
+      - name: Build Promptpile protocol
+        run: npm run build -w promptpile-protocol
 
       - name: Build Promptpile core
         run: npm run build -w promptpile

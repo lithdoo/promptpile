@@ -38,7 +38,8 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-      - run: npm ci --ignore-scripts --workspace=promptpile
+      - run: npm ci --ignore-scripts --workspace=promptpile-protocol --workspace=promptpile
+      - run: npm run build -w promptpile-protocol
       - run: npm run build -w promptpile
       - name: Verify invocation and receipt contracts
         run: >-

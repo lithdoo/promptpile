@@ -30,9 +30,13 @@ jobs:
       - name: Install layered I/O packages
         run: >-
           npm ci --ignore-scripts
+          --workspace=promptpile-protocol
           --workspace=promptpile
           --workspace=promptpile-react
           --workspace=promptpile-mcp
+
+      - name: Build Promptpile protocol
+        run: npm run build -w promptpile-protocol
 
       - name: Test core layered Conversation contract
         run: npm test -w promptpile
