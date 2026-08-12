@@ -1,5 +1,5 @@
 /**
- * CLI 层校验（不含业务 I/O）；与 DESIGN.md §3 对齐。
+ * CLI 层校验（不含业务 I/O）；public command contract 见 canonical package docs。
  */
 
 export function assertHttpUrl(raw: string): void {

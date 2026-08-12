@@ -1,28 +1,38 @@
 # promptpile-mcp
 
-> 类型：package  
-> 状态：implemented / beta  
-> 主要职责：MCP session gateway 与 tool artifact executor  
-> 最近复核：2026-08-10
+> 类型：CLI package
+> 状态：Promptpile MCP Tool Execution v1 Frozen
+> 最近复核：2026-08-12
 
-## Architecture
+`promptpile-mcp` 是 MCP session gateway 与 ToolCall artifact executor。Node.js contract 为 `>=20`。
 
-`launch` 常驻进程读取 MCP config，建立 stdio MCP sessions，并监听 localhost HTTP gateway。短生命周期命令通过 HTTP 使用 gateway：
+## Commands
 
-- `export-tools`：`tools/list` → Promptpile `.tools.toml`
-- `exec-calls`：calls JSONL → `tools/call` → result JSONL
-- `check`：只读检查 calls/result 完整性
+- `launch`：读取严格的 v1 config，建立 stdio MCP sessions，仅在 loopback 启动 HTTP gateway。
+- `export-tools`：把 `tools/list` 导出为 Promptpile `.tools.toml`。
+- `exec-calls`：执行一个明确 calls 文件或一个 physical directory 第一层的 calls 文件。
+- `check`：只读报告 `complete | pending | partial | invalid`，并额外显示 execution claim 是否存在。
 
-Promptpile core 不因此引入 MCP SDK，也不执行工具。
+Conversation integration 推荐把 `PROMPTPILE_ASSISTANT_CALL_FILE` 作为 `exec-calls --input` 的精确路径。MCP 不做 layered union scan，也不从 cwd 猜 Conversation。
 
-Layered Conversation I/O 下，`exec-calls` 仍以一个明确目录或 calls 文件为 mutation 边界。推荐 after-hook 传 `PROMPTPILE_ASSISTANT_CALL_FILE` 给 `--input`；result 原子写回同一 output directory。`check` 只配对该 calls 文件的同目录 result，不跨 base/reference layers 搜索。
+## Result semantics
 
-## Failure model
+- 已有 complete result 且未 overwrite：安全 skip。
+- 已有 partial/invalid result 且未 overwrite：fail closed，退出非零且不执行工具。
+- `--overwrite-results` 是显式 re-execution policy，仍不能绕过已有 claim。
+- claim conflict 或 indeterminate execution：退出非零且不自动重放。
+- 目录模式任一 selected item 失败，整体不能报告成功。
 
-MCP config 支持启动 failure policy；execution 层拥有 concurrency、timeout、retry 与 `continue | fail_fast` 等策略。`check` 用 complete/pending/partial/invalid 明确 artifact 状态。
+## Strict config
 
-## Security boundary
+缺省字段使用 documented defaults；显式错误值立即失败。version 仅允许整数 `1`。顶层和各 known table 拒绝未知 key；table、boolean、integer、transport、server id、command、env 与 `retry_safe_tools` 都严格校验。env 仅允许 string、finite number、boolean，并规范化为 subprocess string。
 
-Gateway 默认绑定 loopback；可配置 bearer token。工具执行权限最终仍取决于被启动 MCP server 的 command、cwd、env 与 server 自身能力。
+## Package and security boundary
 
-[查看 DESIGN](https://github.com/lithdoo/promptpile/blob/main/packages/promptpile-mcp/DESIGN.md)
+包只声明 CLI `bin`，不声明稳定 library `main`。CLI 与 MCP clientInfo 从 package metadata 读取同一版本。gateway 默认 loopback，可启用 bearer token；server command/cwd/env 等同本机代码执行权限。claim metadata 不包含 token、tool arguments 或 secret payload。
+
+## Evidence
+
+包测试包括 strict config、exact response contract、claim owner token、concurrent contention、lost-response replay blocking、real stdio MCP CLI integration 与 packed fresh-install smoke。专用 CI 在 Node 20/22 × Ubuntu/Windows 上执行这些 witness。
+
+公共 calls/result shape 见 [Tool Artifacts v1](../15-contracts/tool-artifacts-v1.md)，系统 ownership 见 [工具执行系统](../10-architecture/tool-execution-system.md)。

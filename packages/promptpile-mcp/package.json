@@ -21,7 +21,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "npm run build && node --test dist/src/version.test.js dist/src/mcp-config.test.js dist/src/mcp/tool-name.test.js dist/src/http/execution.test.js dist/src/exec-calls/check-status.test.js dist/src/exec-calls/execution-claim.test.js dist/src/exec-calls/post-exec.test.js dist/src/exec-calls/scan-call-files.test.js dist/src/exec-calls/write-result-jsonl.test.js dist/src/commands/exec-calls.test.js dist/src/commands/layered-output-boundary.test.js",
+    "test": "npm run build && node --test dist/src/architecture-boundary.test.js dist/src/version.test.js dist/src/mcp-config.test.js dist/src/mcp/tool-name.test.js dist/src/http/execution.test.js dist/src/exec-calls/check-status.test.js dist/src/exec-calls/execution-claim.test.js dist/src/exec-calls/post-exec.test.js dist/src/exec-calls/scan-call-files.test.js dist/src/exec-calls/write-result-jsonl.test.js dist/src/commands/exec-calls.test.js dist/src/commands/layered-output-boundary.test.js",
     "test:smoke": "npm run build && npm run mcp:smoke",
     "test:packed": "npm run build && node dist/scripts/packed-smoke.js",
     "test:integration": "npm run build && node dist/scripts/integration-smoke.js",
