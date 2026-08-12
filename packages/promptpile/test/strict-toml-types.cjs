@@ -13,10 +13,15 @@ try {
   const cases = [
     ['[promptpile]\ncontinue = "tru"\n', /continue must be a TOML boolean/],
     ['[promptpile]\ntools_file = 123\n', /tools_file must be a TOML string/],
+    ['[promptpile]\noutput = 123\n', /output must be a TOML string/],
+    ['[promptpile]\noutput = true\n', /output must be a TOML string/],
     ['[promptpile]\nllm_api_temperature = "0.5"\n', /temperature must be a TOML number/],
     ['[promptpile]\nllm_api_extra_body = "{}"\n', /extra_body must be a TOML table/],
     ['[promptpile]\nmodell = "typo"\n', /unknown \[promptpile\] key: modell/],
-    ['[[llm_api]]\nname = "x"\nmodell = "typo"\n', /unknown \[\[llm_api\]\] key/]
+    ['[[llm_api]]\nname = "x"\nmodell = "typo"\n', /unknown \[\[llm_api\]\] key/],
+    ['promptpile = "invalid"\n', /promptpile must be a TOML table/],
+    ['llm_api = "invalid"\n', /llm_api must be an array of TOML tables/],
+    ['[[llm_api]]\nname = "Prod"\n[[llm_api]]\nname = "prod"\n', /duplicate case-insensitive llm_api profile name/]
   ];
   for (const [source, expected] of cases) {
     fs.writeFileSync(config, source);

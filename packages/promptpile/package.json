@@ -37,6 +37,9 @@
   ],
   "author": "",
   "license": "ISC",
+  "engines": {
+    "node": ">=20"
+  },
   "type": "commonjs",
   "files": [
     "dist",

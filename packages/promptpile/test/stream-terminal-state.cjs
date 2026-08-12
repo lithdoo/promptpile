@@ -29,6 +29,18 @@ const partial = createCompletionTerminalState();
 parseCompletionDataPayload('{"choices":[{"delta":{"content":"partial"}}]}', partial);
 assert.throws(() => validateCompletionTerminalState(partial), /without a terminal marker/);
 
+for (const finishReason of ['', '   ']) {
+  const blankFinish = createCompletionTerminalState();
+  parseCompletionDataPayload(JSON.stringify({
+    choices: [{ delta: {}, finish_reason: finishReason }]
+  }), blankFinish);
+  assert.throws(
+    () => validateCompletionTerminalState(blankFinish),
+    /without a terminal marker/,
+    `blank finish_reason ${JSON.stringify(finishReason)} must not prove terminal success`
+  );
+}
+
 const malformed = createCompletionTerminalState();
 assert.throws(() => parseCompletionDataPayload('{broken', malformed), /malformed non-empty data payload/);
 

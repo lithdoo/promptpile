@@ -144,12 +144,9 @@ const buildTomlLayer = (
     }
     out.outputDirectory = outputDirectory.trim();
   }
-  const outv = p.output;
-  if (typeof outv === 'string') {
-    const t = trim(outv);
-    if (t !== undefined) {
-      out.output = t;
-    }
+  const output = getStr(p, 'output');
+  if (output !== undefined) {
+    out.output = output;
   }
   const receipt = getStr(p, 'receipt');
   if (receipt !== undefined) {

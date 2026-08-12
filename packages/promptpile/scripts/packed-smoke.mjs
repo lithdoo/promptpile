@@ -2,9 +2,11 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-const packageRoot = path.resolve(import.meta.dirname, '..');
+const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
+const packageRoot = path.resolve(scriptDirectory, '..');
 const protocolRoot = path.resolve(packageRoot, '..', 'promptpile-protocol');
 const metadata = JSON.parse(fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
 const protocolMetadata = JSON.parse(fs.readFileSync(path.join(protocolRoot, 'package.json'), 'utf8'));

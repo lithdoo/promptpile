@@ -29,7 +29,16 @@ const run = (cwd, args) => new Promise((resolve, reject) => {
     request.on('end', () => {
       response.writeHead(200, { 'content-type': 'text/event-stream' });
       const partial = 'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n';
-      response.end(mode === 'malformed' ? `${partial}data: {broken\n\n` : partial);
+      if (mode === 'malformed') {
+        response.end(`${partial}data: {broken\n\n`);
+      } else if (mode === 'blank-finish' || mode === 'whitespace-finish') {
+        const finishReason = mode === 'blank-finish' ? '' : '   ';
+        response.end(`${partial}data: ${JSON.stringify({
+          choices: [{ delta: {}, finish_reason: finishReason }]
+        })}\n\n`);
+      } else {
+        response.end(partial);
+      }
     });
   });
   try {
@@ -42,18 +51,21 @@ const run = (cwd, args) => new Promise((resolve, reject) => {
     fs.writeFileSync(path.join(messages, '[0]user.md'), 'hello');
     const address = server.address();
     const common = ['-d', messages, '--api-key', 'key', '--api-base-url', `http://127.0.0.1:${address.port}/v1`, '--model', 'terminal-test', '--disable-tool', '--continue', '--quiet'];
-    for (const currentMode of ['partial', 'malformed']) {
+    for (const currentMode of ['partial', 'malformed', 'blank-finish', 'whitespace-finish']) {
       mode = currentMode;
       const output = path.join(root, `${currentMode}.md`);
       const receipt = path.join(root, `${currentMode}.receipt.json`);
       const result = await run(root, [...common, '-o', output, '--receipt', receipt]);
       assert.strictEqual(result.code, 1, result.stderr);
-      assert.match(result.stderr, currentMode === 'partial' ? /without a terminal marker/ : /malformed non-empty data payload/);
+      assert.match(
+        result.stderr,
+        currentMode === 'malformed' ? /malformed non-empty data payload/ : /without a terminal marker/
+      );
       assert.strictEqual(fs.existsSync(output), false);
       assert.strictEqual(fs.existsSync(path.join(messages, '[1]assistant.md')), false);
       assert.strictEqual(fs.existsSync(receipt), false);
     }
-    assert.strictEqual(requestCount, 2);
+    assert.strictEqual(requestCount, 4);
     console.log('stream-terminal-cli.cjs: ok');
   } finally {
     await new Promise(resolve => server.close(resolve));

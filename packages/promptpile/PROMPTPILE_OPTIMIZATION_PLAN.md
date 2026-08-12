@@ -702,9 +702,9 @@ successful terminal stream
 核心 contract 至少继续覆盖：
 
 ```text
-Node 18 / Ubuntu
+Node 20 / Ubuntu
 Node 22 / Ubuntu
-Node 18 / Windows
+Node 20 / Windows
 Node 22 / Windows
 ```
 
@@ -878,6 +878,6 @@ Phase 1–4 已落地，并完成本地 Phase 5 证据：
 - TypeScript 与 Node 类型定义已移至 `devDependencies`；
 - packed smoke 先打包 sibling protocol，再在独立目录安装，避免误判 registry `ETARGET`；
 - 本地 package tests 与 packed smoke 通过；
-- CI 已配置 Ubuntu/Windows × Node 18/22 contract 与 packed smoke gate。
+- CI 已配置 Ubuntu/Windows × Node 20/22 contract 与 packed smoke gate；主包 `engines` 与 Commander runtime dependency 均以 Node 20 为最低版本。
 
 最终 Freeze 只在上述 CI matrix 全绿后成立；此前保持 Freeze candidate。

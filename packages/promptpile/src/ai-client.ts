@@ -85,8 +85,8 @@ export const parseCompletionDataPayload = (
       'Chat Completions stream contained malformed non-empty data payload'
     );
   }
-  const finishReason = data.choices?.[0]?.finish_reason;
-  if (typeof finishReason === 'string') {
+  const finishReason = pickNonEmptyString(data.choices?.[0]?.finish_reason);
+  if (finishReason !== undefined) {
     state.sawFinishReason = true;
     state.finishReason = finishReason;
   }
@@ -283,8 +283,8 @@ export const callAIStream = async (
     let usage: CompletionUsage | undefined;
     const terminalState = createCompletionTerminalState();
     const observeMetadata = (data: ChatCompletionStreamChunk): void => {
-      const observedFinishReason = data.choices?.[0]?.finish_reason;
-      if (typeof observedFinishReason === 'string') finishReason = observedFinishReason;
+      const observedFinishReason = pickNonEmptyString(data.choices?.[0]?.finish_reason);
+      if (observedFinishReason !== undefined) finishReason = observedFinishReason;
       usage = normalizeUsage(data.usage) ?? usage;
     };
 

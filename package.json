@@ -16,6 +16,6 @@
     "docs:preview": "npx --yes vitepress@1.6.4 preview doc"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   }
 }

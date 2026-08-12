@@ -34,7 +34,7 @@
 - 通过 **`node-fetch`** 向兼容端点发起 `POST .../chat/completions` 请求（固定 **`stream: true`**）。
 - 模型若返回 **工具调用**，可在启用 `-o` 时一并写入 **`{basename}.calls.jsonl`**；正文流式写入 stdout，流结束后逐行打印每条 tool_call（JSON 对象一行）；`--quiet` 时不打印终端输出，但若配置了 `-o` 仍写入文件。
 - 可选在 **本轮成功结束**（含写 `-o`、`.calls.jsonl` 与可选 `--continue` 落盘）之后执行 **after-hook** 脚本（见 [完成后钩子](#完成后钩子after-hook)）。
-- 支持通过 **环境变量** 与 **命令行参数** 配置目录、模型、API Key、Base URL 等。
+- 支持通过 **CLI、TOML 与 LLM profile** 配置目录、模型、API Key、Base URL 等；普通环境变量不作为配置层。
 
 **本工具不执行工具函数**；不生成 `[idx]assistant.result.jsonl`，仅规定格式并在拼消息时读取。单次运行仍为 **一次** Chat Completions 请求（不自动根据工具结果发起第二轮请求）。
 
@@ -61,7 +61,7 @@
 
 ## 环境要求
 
-- **Node.js**：建议 **18+**（与当前 `@types/node` 及本地开发方式一致即可）。
+- **Node.js**：要求 **20+**；该声明与 runtime dependencies、CI matrix 和 packed artifact smoke 保持一致。
 - 依赖 **`node-fetch` v2**（CommonJS）；请求实现见 `src/ai-client.ts`。
 - 可访问大模型 API 的网络环境（或自建兼容网关）。
 

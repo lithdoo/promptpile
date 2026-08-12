@@ -54,7 +54,7 @@ const runCase = (name, phaseConfig, directoryConfig) => {
 
 try {
   const missingProfile = runCase('missing-profile', 'thought_llm_api = "missing"');
-  assert.match(missingProfile.stderr, /LLM API profile not found: missing/);
+  assert.match(missingProfile.stderr, /LLM API profile .*not found: missing/);
   assert.doesNotMatch(missingProfile.stderr, /AI API key is required/);
 
   const invalidTemperature = runCase(
@@ -90,7 +90,7 @@ try {
   );
   assert.match(
     layeredParser.stderr,
-    /LLM API profile not found: missing-layered/,
+    /LLM API profile .*not found: missing-layered/,
     'the real Promptpile parser accepts React repeated -d and --output-dir argv before profile validation'
   );
   assert.doesNotMatch(layeredParser.stderr, /unknown option|too many arguments/i);

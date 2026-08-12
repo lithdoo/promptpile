@@ -46,7 +46,11 @@ const optionalProfileString = (
 const parseLlmApis = (doc: Record<string, unknown>): LlmApiProfile[] => {
   const rawApis = doc.llm_api;
   const llmApis: LlmApiProfile[] = [];
+  if (rawApis !== undefined && !Array.isArray(rawApis)) {
+    throw new Error('llm_api must be an array of TOML tables ([[llm_api]])');
+  }
   if (Array.isArray(rawApis)) {
+    const normalizedNames = new Set<string>();
     for (const row of rawApis) {
       if (!isRecord(row)) {
         throw new Error('each [[llm_api]] entry must be a TOML table');
@@ -56,6 +60,11 @@ const parseLlmApis = (doc: Record<string, unknown>): LlmApiProfile[] => {
         throw new Error('each [[llm_api]] entry must have a non-empty string name');
       }
       const normalizedName = name.trim();
+      const lookupName = normalizedName.toLowerCase();
+      if (normalizedNames.has(lookupName)) {
+        throw new Error(`duplicate case-insensitive llm_api profile name: ${normalizedName}`);
+      }
+      normalizedNames.add(lookupName);
       for (const key of Object.keys(row)) {
         if (!LLM_API_PROFILE_KEYS.has(key)) {
           throw new Error(`unknown [[llm_api]] key in profile "${normalizedName}": ${key}`);
@@ -81,7 +90,9 @@ const parseLlmApis = (doc: Record<string, unknown>): LlmApiProfile[] => {
 
 export const loadPromptpileTomlTable = (absPath: string): Record<string, unknown> => {
   const doc = loadTomlDocument(absPath);
-  return isRecord(doc.promptpile) ? doc.promptpile : {};
+  if (doc.promptpile === undefined) return {};
+  if (!isRecord(doc.promptpile)) throw new Error('promptpile must be a TOML table ([promptpile])');
+  return doc.promptpile;
 };
 
 export const loadLlmApiProfilesFile = (absPath: string): LlmApiProfile[] =>
@@ -89,6 +100,9 @@ export const loadLlmApiProfilesFile = (absPath: string): LlmApiProfile[] =>
 
 export const loadTomlConfigFile = (absPath: string): ParsedTomlConfig => {
   const doc = loadTomlDocument(absPath);
+  if (doc.promptpile !== undefined && !isRecord(doc.promptpile)) {
+    throw new Error('promptpile must be a TOML table ([promptpile])');
+  }
   const promptpile = isRecord(doc.promptpile) ? doc.promptpile : {};
   const llmApis = parseLlmApis(doc);
   return { promptpile, llmApis };

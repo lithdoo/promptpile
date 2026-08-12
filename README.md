@@ -70,7 +70,7 @@ npm run build:agent-tools
 npm run test:agent-tools
 ```
 
-Node.js 18 or newer is required.
+Repository development requires Node.js 20 or newer. Independently published packages may declare a lower baseline where their own runtime dependency graph supports it.
 
 ## Documentation
 
