@@ -13,7 +13,7 @@ import { discoverArchives, readArchivedTurn, searchArchive } from './index';
 
 const SERVER_INFO = {
   name: 'promptpile-archive',
-  version: '0.1.0-beta.0',
+  version: '0.1.0-beta.1',
 } as const;
 
 const READ_ONLY_ANNOTATIONS = {

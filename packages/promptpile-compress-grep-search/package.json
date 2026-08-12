@@ -1,6 +1,6 @@
 {
   "name": "promptpile-compress-grep-search",
-  "version": "0.1.0-beta.0",
+  "version": "0.1.0-beta.1",
   "description": "Read-only Promptpile archive search domain and CLI",
   "repository": {
     "type": "git",
@@ -39,13 +39,13 @@
     "package:smoke": "npm run build && node scripts/package-smoke.cjs"
   },
   "dependencies": {
-    "promptpile-protocol": "0.1.0-beta.1",
+    "promptpile-protocol": "0.1.0-beta.2",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "promptpile-compress": "0.1.0-beta.0",
+    "promptpile-compress": "0.1.0-beta.1",
     "typescript": "^5.0.0"
   },
   "engines": {

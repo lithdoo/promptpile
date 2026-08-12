@@ -22,7 +22,7 @@ export const parseCli = async (argv = process.argv): Promise<number> => {
   const program = new Command()
     .name('promptpile-compress')
     .description(CLI_DESCRIPTION)
-    .version('0.1.0-beta.0')
+    .version('0.1.0-beta.1')
     .helpOption('-h, --help', '显示帮助')
     .exitOverride();
 

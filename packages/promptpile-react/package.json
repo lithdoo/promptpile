@@ -1,6 +1,6 @@
 {
   "name": "promptpile-react",
-  "version": "0.1.0-beta.2",
+  "version": "0.1.0-beta.3",
   "description": "在 promptpile 公共 CLI 之上的 ReAct agent 编排",
   "repository": {
     "type": "git",
@@ -45,8 +45,8 @@
   "dependencies": {
     "@iarna/toml": "^2.2.5",
     "commander": "^14.0.3",
-    "promptpile": "0.1.0-beta.1",
-    "promptpile-protocol": "0.1.0-beta.1"
+    "promptpile": "0.1.0-beta.2",
+    "promptpile-protocol": "0.1.0-beta.2"
   },
   "devDependencies": {
     "@types/node": "^25.5.2",

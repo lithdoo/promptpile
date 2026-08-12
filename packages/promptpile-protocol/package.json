@@ -1,6 +1,6 @@
 {
   "name": "promptpile-protocol",
-  "version": "0.1.0-beta.1",
+  "version": "0.1.0-beta.2",
   "description": "Shared pure protocol schemas and artifact conventions for Promptpile",
   "repository": {
     "type": "git",
@@ -17,11 +17,21 @@
   "types": "./dist/index.d.ts",
   "typesVersions": {
     "*": {
-      "conversation": ["dist/conversation.d.ts"],
-      "fingerprint": ["dist/fingerprint.d.ts"],
-      "tool": ["dist/tool.d.ts"],
-      "receipt": ["dist/receipt.d.ts"],
-      "*": ["dist/index.d.ts"]
+      "conversation": [
+        "dist/conversation.d.ts"
+      ],
+      "fingerprint": [
+        "dist/fingerprint.d.ts"
+      ],
+      "tool": [
+        "dist/tool.d.ts"
+      ],
+      "receipt": [
+        "dist/receipt.d.ts"
+      ],
+      "*": [
+        "dist/index.d.ts"
+      ]
     }
   },
   "exports": {

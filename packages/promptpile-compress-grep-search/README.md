@@ -78,6 +78,6 @@ npm run benchmark:check -w promptpile-compress-grep-search
 npm run package:smoke -w promptpile-compress-grep-search
 ```
 
-当前以 `0.1.0-beta.0` 公开预发布：实现、性能和隔离安装门已通过；Archive Protocol 仍处于演进期，继续通过真实使用与版本迁移演练验证兼容性。发布时使用 npm 的 `beta` dist-tag。
+当前以 `0.1.0-beta.1` 公开预发布：实现、性能和隔离安装门已通过；Archive Protocol 仍处于演进期，继续通过真实使用与版本迁移演练验证兼容性。发布时使用 npm 的 `beta` dist-tag。
 
 接口与 CLI 设计见 [`DESIGN.md`](./DESIGN.md)，实施进度见 [`TODO.md`](./TODO.md)。

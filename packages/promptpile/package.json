@@ -1,6 +1,6 @@
 {
   "name": "promptpile",
-  "version": "0.1.0-beta.1",
+  "version": "0.1.0-beta.2",
   "description": "Promptpile: assemble markdown/JSON messages and call Chat Completions APIs",
   "repository": {
     "type": "git",
@@ -47,7 +47,7 @@
     "package.json"
   ],
   "dependencies": {
-    "promptpile-protocol": "0.1.0-beta.1",
+    "promptpile-protocol": "0.1.0-beta.2",
     "@iarna/toml": "^2.2.5",
     "commander": "^14.0.3",
     "glob": "^13.0.6",

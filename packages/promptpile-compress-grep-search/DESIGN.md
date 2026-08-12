@@ -524,4 +524,4 @@ npm run package:smoke -w promptpile-compress-grep-search
 
 `package:smoke` 构建 tarball、拒绝 `src/` / tests、安装到隔离临时 consumer，并验证 license、`promptpile-archive` shim、真实 search 命令、`searchArchive` export，以及 MCP tools/list 和 tools/call。当前参考 tarball 为 17 files、约 49 KiB unpacked；literal search 不包含外部搜索二进制，MCP runtime dependency 仅为官方 SDK 与其 schema dependency。
 
-技术发布门槛已经满足，package 以 `0.1.0-beta.0` 公开预发布。Archive Protocol 仍处于演进期，beta 阶段继续通过真实上层使用和版本迁移演练验证兼容性；发布时必须使用 npm 的 `beta` dist-tag，避免成为默认 `latest`。
+技术发布门槛已经满足，package 以 `0.1.0-beta.1` 公开预发布。Archive Protocol 仍处于演进期，beta 阶段继续通过真实上层使用和版本迁移演练验证兼容性；发布时必须使用 npm 的 `beta` dist-tag，避免成为默认 `latest`。
