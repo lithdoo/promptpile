@@ -4,6 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const packageRoot = path.resolve(__dirname, '..');
+const protocolRoot = path.resolve(packageRoot, '..', 'promptpile-protocol');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ppcgs-package-smoke-'));
 
 const run = (command, args, options = {}) => {
@@ -27,6 +28,17 @@ try {
   if (!npmCli) throw new Error('npm_execpath is unavailable');
   const npm = (args, options) =>
     run(process.execPath, [npmCli, ...args], options);
+  // Pack the exact sibling protocol dependency so this smoke validates the
+  // release topology without requiring that version to already exist in the
+  // public registry.
+  const packedProtocol = npm([
+    'pack',
+    '--json',
+    '--pack-destination',
+    root,
+  ], { cwd: protocolRoot });
+  const protocolMetadata = JSON.parse(packedProtocol.stdout)[0];
+  const protocolTarball = path.join(root, protocolMetadata.filename);
   const packed = npm([
     'pack',
     '--json',
@@ -67,6 +79,7 @@ try {
       '--no-audit',
       '--no-fund',
       '--no-package-lock',
+      protocolTarball,
       tarball,
     ],
     { cwd: consumer }
