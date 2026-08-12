@@ -29,7 +29,7 @@ try {
       "process.stdin.on('data', chunk => { stdin += chunk; });",
       "process.stdin.on('end', () => {",
       "  const args = process.argv.slice(2);",
-      "  if (process.env.FAKE_PROMPTPILE_NODE_SHIM === '1') args.unshift('conversation');",
+      "  args.unshift('conversation');",
       "  fs.appendFileSync(process.env.FAKE_PROMPTPILE_LOG, JSON.stringify({ args, stdin }) + '\\n');",
       "  if (args[0] === 'conversation') {",
       "    console.error('synthetic append failure');",
@@ -40,23 +40,11 @@ try {
     ].join('\n')
   );
 
-  let fakeBin;
-  if (process.platform === 'win32') {
-    fakeBin = path.join(tmp, 'fake-promptpile.exe');
-    try {
-      fs.linkSync(process.execPath, fakeBin);
-    } catch {
-      fs.copyFileSync(process.execPath, fakeBin);
-    }
-    fs.copyFileSync(fakeJs, path.join(tmp, 'conversation'));
-  } else {
-    fakeBin = path.join(tmp, 'fake-promptpile');
-    fs.writeFileSync(
-      fakeBin,
-      `#!/bin/sh\nexec "${process.execPath}" "$(dirname "$0")/fake-promptpile.cjs" "$@"\n`
-    );
-    fs.chmodSync(fakeBin, 0o755);
-  }
+  // PROMPTPILE_BIN accepts a native executable. Point it at the current Node
+  // binary and provide the public `conversation` command as a script fixture.
+  // This avoids copying a running .exe, which Windows Node 20 may keep locked.
+  fs.copyFileSync(fakeJs, path.join(tmp, 'conversation'));
+  const fakeBin = process.execPath;
 
   const result = spawnSync(
     process.execPath,
@@ -77,8 +65,7 @@ try {
         ...process.env,
         NODE_NO_WARNINGS: '1',
         PROMPTPILE_BIN: fakeBin,
-        FAKE_PROMPTPILE_LOG: logPath,
-        FAKE_PROMPTPILE_NODE_SHIM: process.platform === 'win32' ? '1' : '0'
+        FAKE_PROMPTPILE_LOG: logPath
       }
     }
   );
@@ -100,10 +87,5 @@ try {
 
   console.log('promptpile-react input append failure tests ok');
 } finally {
-  fs.rmSync(tmp, {
-    recursive: true,
-    force: true,
-    maxRetries: 10,
-    retryDelay: 100
-  });
+  fs.rmSync(tmp, { recursive: true, force: true });
 }
