@@ -62,14 +62,14 @@ try {
     'thought_llm_api = "available"\nthought_llm_api_temperature = "invalid-temperature"'
   );
   assert.match(invalidTemperature.stderr, /temperature/i);
-  assert.match(invalidTemperature.stderr, /finite number|between 0 and 2/i);
+  assert.match(invalidTemperature.stderr, /finite number/i);
 
   const invalidExtraBody = runCase(
     'invalid-extra-body',
     'thought_llm_api = "available"\nthought_llm_api_extra_body = "[]"'
   );
-  assert.match(invalidExtraBody.stderr, /extra.body/i);
-  assert.match(invalidExtraBody.stderr, /JSON object/i);
+  assert.match(invalidExtraBody.stderr, /extra.body|extra_body/i);
+  assert.match(invalidExtraBody.stderr, /TOML table/i);
 
   const missingPhaseEnv = runCase(
     'missing-phase-env',
@@ -95,6 +95,30 @@ try {
   );
   assert.doesNotMatch(layeredParser.stderr, /unknown option|too many arguments/i);
   assert.ok(fs.statSync(path.join(layeredCwd, 'session')).isDirectory());
+
+  const inputCwd = path.join(tmp, 'input-artifact-preserved');
+  const inputMessages = path.join(inputCwd, 'messages');
+  const inputConfig = path.join(inputCwd, 'app.toml');
+  fs.mkdirSync(inputMessages, { recursive: true });
+  fs.writeFileSync(path.join(inputMessages, '[0]system.md'), 'system context');
+  fs.writeFileSync(inputConfig, baseConfig('thought_llm_api = "missing-after-append"'));
+  const inputFailure = spawnSync(
+    process.execPath,
+    [reactCli, '--config', inputConfig, '--input'],
+    {
+      cwd: inputCwd,
+      input: 'durable user input\n',
+      encoding: 'utf8',
+      env: { ...process.env, NODE_NO_WARNINGS: '1' },
+      timeout: 15_000
+    }
+  );
+  assert.strictEqual(inputFailure.status, 1, inputFailure.stderr);
+  assert.strictEqual(
+    fs.readFileSync(path.join(inputMessages, '[1]user.md'), 'utf8'),
+    'durable user input',
+    'a later model/config failure must not roll back the published user artifact'
+  );
 
   console.log('promptpile-react real Promptpile config error tests ok');
 } finally {

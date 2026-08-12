@@ -1,8 +1,7 @@
 import readline from 'readline';
 
 /**
- * 与 `packages/promptpile/src/index.ts` 中 `readUserInputFromTerminal` 一致：
- * 多行输入以 Ctrl+Z+Enter（Windows）或 Ctrl+D（Unix）结束。
+ * 读取一条多行终端消息；以 Ctrl+Z+Enter（Windows）或 Ctrl+D（Unix）结束。
  */
 export async function readUserInputFromTerminal(): Promise<string> {
   console.log(

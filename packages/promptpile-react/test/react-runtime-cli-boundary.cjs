@@ -33,7 +33,7 @@ fs.writeFileSync(
     "  if (argv.includes('--tool-choice')) {",
     '    const parsed = path.parse(output);',
     '    const calls = path.join(parsed.dir, `${parsed.name}.calls.jsonl`);',
-    '    const call = { function: { name: "react_check_decision", arguments: "{\\\"decision\\\":false}" } };',
+    '    const call = { id: "call-check", type: "function", function: { name: "react_check_decision", arguments: "{\\\"decision\\\":false}" } };',
     "    fs.writeFileSync(calls, JSON.stringify(call) + '\\n');",
     '  }',
     '}'

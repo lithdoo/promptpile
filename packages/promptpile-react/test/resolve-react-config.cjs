@@ -83,7 +83,7 @@ thought_llm_api = "deepseek"
 `
   );
   const cfgEnvOnly = resolveReactConfig(tmp, ['node', fakeScript, '--config', 'app.toml']);
-  assert.strictEqual(cfgEnvOnly.maxStep, Number.POSITIVE_INFINITY, 'ordinary process.env max_step is ignored');
+  assert.strictEqual(cfgEnvOnly.maxStep, 1, 'default max_step is one and ordinary process.env is ignored');
 
   const cfgCli = resolveReactConfig(tmp, [
     'node',
@@ -265,8 +265,8 @@ check_llm_api_temperature = 0.25
 dir = "${msgRel}"
 thought_llm_api = "missing-is-promptpile-owned"
 thought_llm_api_key_env = "THOUGHT_KEY_ENV"
-thought_llm_api_temperature = "invalid-temperature"
-thought_llm_api_extra_body = "[]"
+thought_llm_api_temperature = 0.4
+thought_llm_api_extra_body = { delegated = true }
 `
   );
   const cfgDelegatedValidation = resolveReactConfig(tmp, [
@@ -286,13 +286,13 @@ thought_llm_api_extra_body = "[]"
   );
   assert.deepStrictEqual(
     delegatedArgv.slice(delegatedArgv.indexOf('--temperature'), delegatedArgv.indexOf('--temperature') + 2),
-    ['--temperature', 'invalid-temperature'],
-    'Promptpile owns temperature validation'
+    ['--temperature', '0.4'],
+    'React preserves a strictly typed TOML number as CLI transport'
   );
   assert.deepStrictEqual(
     delegatedArgv.slice(delegatedArgv.indexOf('--extra-body'), delegatedArgv.indexOf('--extra-body') + 2),
-    ['--extra-body', '[]'],
-    'Promptpile owns extra-body validation'
+    ['--extra-body', '{"delegated":true}'],
+    'React serializes a strictly typed TOML table for Promptpile'
   );
 
   fs.writeFileSync(

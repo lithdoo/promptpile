@@ -49,7 +49,7 @@ fs.writeFileSync(
     '  const parsed = path.parse(destination);',
     '  const calls = path.join(parsed.dir, `${parsed.name}.calls.jsonl`);',
     '  const decision = state.check++ === 0;',
-    '  const call = { function: { name: "react_check_decision", arguments: JSON.stringify({ decision }) } };',
+    '  const call = { id: `call-${state.check}`, type: "function", function: { name: "react_check_decision", arguments: JSON.stringify({ decision }) } };',
     '  fs.writeFileSync(calls, JSON.stringify(call) + "\\n");',
     '}',
     'fs.writeFileSync(process.env.PPR_LAYERED_STATE, JSON.stringify(state));'

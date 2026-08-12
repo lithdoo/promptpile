@@ -43,7 +43,7 @@ const productionFiles = listTypeScriptSources(src);
 const privateBoundaryReferences = [];
 for (const file of productionFiles) {
   const content = fs.readFileSync(file, 'utf8');
-  if (content.includes('promptpile/dist/')) {
+  if (content.includes('promptpile/dist/') || content.includes('promptpile/src/')) {
     privateBoundaryReferences.push(path.relative(root, file));
   }
 }
@@ -78,6 +78,32 @@ for (const forbiddenResolverFragment of [
     `React must not resolve [[llm_api]] profiles locally: ${forbiddenResolverFragment}`
   );
 }
+
+const runtimeContract = fs.readFileSync(path.join(src, 'runtime.ts'), 'utf8');
+assert.ok(!runtimeContract.includes("'aborted'"), 'v1 runtime must not expose an unreachable aborted state');
+
+const resolverSource = fs.readFileSync(path.join(src, 'resolve-react-config.ts'), 'utf8');
+const entrySource = fs.readFileSync(path.join(src, 'index.ts'), 'utf8');
+assert.ok(!resolverSource.includes('POSITIVE_INFINITY'), 'React config must have no Infinity default');
+assert.ok(!entrySource.includes('Number.isFinite'), 'entry must have one session loop without Infinity branching');
+assert.ok(!entrySource.includes('while (true)'), 'input/continue must not create a process-level infinite loop');
+
+const processesSource = fs.readFileSync(path.join(src, 'react-processes.ts'), 'utf8');
+assert.ok(!processesSource.includes('completePromptpileInvokeSoft'), 'Final must use required child invocation semantics');
+
+const callsParserSource = fs.readFileSync(path.join(src, 'parse-observe-calls.ts'), 'utf8');
+assert.ok(callsParserSource.includes("from 'promptpile-protocol/tool'"), 'ToolCall shape must come from the public protocol package');
+
+const metadata = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+const protocolMetadata = JSON.parse(
+  fs.readFileSync(path.join(root, '..', 'promptpile-protocol', 'package.json'), 'utf8')
+);
+assert.strictEqual(metadata.main, undefined, 'package surface must remain CLI-only');
+assert.strictEqual(
+  metadata.dependencies['promptpile-protocol'],
+  protocolMetadata.version,
+  'protocol dependency must exactly match the workspace protocol artifact'
+);
 
 const invokerSource = fs.readFileSync(path.join(src, 'promptpile-invoker.ts'), 'utf8');
 assert.ok(

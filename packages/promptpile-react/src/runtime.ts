@@ -3,12 +3,11 @@ export type ReactRuntimeStopReason =
   | 'running'
   | 'max_step'
   | 'final'
-  | 'error'
-  | 'aborted';
+  | 'error';
 /** 实现类见 {@link PromptpileReactRuntime}（`./react-runtime`）。 */
 export interface IReactRuntime {
   maxStep: number;
-  /** 已成功完成的 `promptpile` 调用次数，从 0 起；与 `maxStep` 比较用 */
+  /** 已成功完成的 Thought + Observe + Check ReAct iteration 数量。 */
   currentStep: number;
   stopReason: ReactRuntimeStopReason;
   nextStep: () => Promise<void>;

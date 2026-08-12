@@ -38,7 +38,7 @@ jobs:
         run: npm test
 
       - name: Validate packed archive consumer
-        run: npm run package:smoke -w promptpile-compress-grep-search
+        run: npm run package:smoke -w promptpile-compress-grep-search && npm run package:smoke -w promptpile-react
 
       - name: Build documentation
         run: npm run docs:build

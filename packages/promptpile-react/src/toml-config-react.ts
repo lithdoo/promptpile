@@ -16,11 +16,41 @@ export interface ReactTomlLayers {
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
+const SHARED_KEYS = new Set([
+  'dirs', 'dir', 'output_dir', 'quiet', 'after_hook', 'tools_file',
+  'continue', 'input', 'llm_api', 'llm_api_temperature', 'llm_api_extra_body'
+]);
+
+const REACT_ONLY_KEYS = new Set([
+  'max_step', 'thought_prompt', 'observe_prompt', 'check_prompt', 'final_prompt',
+  ...['thought', 'observe', 'check', 'final'].flatMap(phase => [
+    `${phase}_llm_api`, `${phase}_llm_api_key`, `${phase}_llm_api_key_env`,
+    `${phase}_llm_api_model`, `${phase}_llm_api_base_url`,
+    `${phase}_llm_api_temperature`, `${phase}_llm_api_extra_body`
+  ])
+]);
+
+const tableOrEmpty = (doc: Record<string, unknown>, key: string): Record<string, unknown> => {
+  const value = doc[key];
+  if (value === undefined) {
+    return {};
+  }
+  if (!isRecord(value)) {
+    throw new Error(`[${key}] must be a TOML table`);
+  }
+  return value;
+};
+
 export const loadReactTomlConfig = (absPath: string): ReactTomlLayers => {
   const raw = fs.readFileSync(absPath, 'utf8');
   const doc = toml.parse(raw) as Record<string, unknown>;
-  const promptpile = isRecord(doc.promptpile) ? doc.promptpile : {};
-  const promptpileReact = isRecord(doc['promptpile-react']) ? doc['promptpile-react'] : {};
+  const promptpile = tableOrEmpty(doc, 'promptpile');
+  const promptpileReact = tableOrEmpty(doc, 'promptpile-react');
+  for (const key of Object.keys(promptpileReact)) {
+    if (!SHARED_KEYS.has(key) && !REACT_ONLY_KEYS.has(key)) {
+      throw new Error(`unknown [promptpile-react] key: ${key}`);
+    }
+  }
   return {
     promptpile,
     promptpileReact

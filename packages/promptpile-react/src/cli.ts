@@ -1,5 +1,16 @@
 import { Command } from 'commander';
+import fs from 'fs';
+import path from 'path';
 import type { ReactCliOverrides } from './types';
+
+const packageVersion = (): string => {
+  const metadataPath = path.resolve(__dirname, '..', 'package.json');
+  const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8')) as { version?: unknown };
+  if (typeof metadata.version !== 'string' || metadata.version.trim() === '') {
+    throw new Error(`Invalid package version metadata: ${metadataPath}`);
+  }
+  return metadata.version;
+};
 
 const trimmed = (v: unknown): string | undefined => {
   if (typeof v !== 'string') {
@@ -35,7 +46,7 @@ const buildProgram = (): Command => {
   program
     .name('promptpile-react')
     .description('Agent loop around the `promptpile` CLI (React-style orchestration; subprocess only)')
-    .version('1.0.0')
+    .version(packageVersion())
     .option('--config <path>', 'TOML config (relative to cwd); reads [promptpile-react] and shared keys')
     .option(
       '-d, --directory <path>',

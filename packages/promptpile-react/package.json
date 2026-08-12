@@ -1,6 +1,6 @@
 {
   "name": "promptpile-react",
-  "version": "0.1.0-beta.1",
+  "version": "0.1.0-beta.2",
   "description": "在 promptpile 公共 CLI 之上的 ReAct agent 编排",
   "repository": {
     "type": "git",
@@ -16,7 +16,6 @@
     "access": "public",
     "tag": "beta"
   },
-  "main": "dist/index.js",
   "bin": {
     "promptpile-react": "dist/index.js"
   },
@@ -37,18 +36,23 @@
   "scripts": {
     "build": "node scripts/clean-dist.mjs && tsc",
     "prepack": "npm run build",
+    "package:smoke": "node scripts/packed-smoke.mjs",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
-    "test": "npm run build && node test/architecture-boundary.cjs && node test/binary-resolution.cjs && node test/resolve-react-config.cjs && node test/layered-config-errors.cjs && node test/react-runtime-cli-boundary.cjs && node test/layered-runtime-cli-boundary.cjs && node test/real-promptpile-config-errors.cjs && node test/append-user-cli.cjs && node test/input-mode-append-failure.cjs"
+    "test": "npm run build && node test/architecture-boundary.cjs && node test/cli-package-version.cjs && node test/binary-resolution.cjs && node test/resolve-react-config.cjs && node test/react-config-strict.cjs && node test/layered-config-errors.cjs && node test/check-tool-protocol.cjs && node test/react-runtime-fsm.cjs && node test/react-runtime-cli-boundary.cjs && node test/layered-runtime-cli-boundary.cjs && node test/real-promptpile-config-errors.cjs && node test/append-user-cli.cjs && node test/input-mode-append-failure.cjs"
   },
   "dependencies": {
     "@iarna/toml": "^2.2.5",
-    "@types/node": "^25.5.2",
     "commander": "^14.0.3",
     "promptpile": "0.1.0-beta.1",
-    "typescript": "~5.9.3"
+    "promptpile-protocol": "0.1.0-beta.1"
   },
   "devDependencies": {
-    "ts-node": "^10.9.2"
+    "@types/node": "^25.5.2",
+    "ts-node": "^10.9.2",
+    "typescript": "~5.9.3"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

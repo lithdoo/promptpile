@@ -8,26 +8,28 @@ export const trim = (v: string | undefined): string | undefined => {
 
 export const getStr = (r: Record<string, unknown>, key: string): string | undefined => {
   const v = r[key];
+  if (v === undefined) {
+    return undefined;
+  }
   if (typeof v === 'string') {
-    return trim(v);
+    const value = trim(v);
+    if (value !== undefined) {
+      return value;
+    }
+    throw new Error(`${key} must be a non-empty string`);
   }
-  if (typeof v === 'number' || typeof v === 'boolean') {
-    return trim(String(v));
-  }
-  return undefined;
+  throw new Error(`${key} must be a string`);
 };
 
 export const getBool = (r: Record<string, unknown>, key: string): boolean | undefined => {
   const v = r[key];
+  if (v === undefined) {
+    return undefined;
+  }
   if (typeof v === 'boolean') {
     return v;
   }
-  if (typeof v === 'string') {
-    const normalized = v.trim().toLowerCase();
-    if (normalized === '') return undefined;
-    return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
-  }
-  return undefined;
+  throw new Error(`${key} must be a boolean`);
 };
 
 export const getRawCliValue = (
@@ -38,7 +40,10 @@ export const getRawCliValue = (
   if (v === undefined) {
     return undefined;
   }
-  return trim(String(v));
+  if (typeof v !== 'number' || !Number.isFinite(v)) {
+    throw new Error(`${key} must be a finite number`);
+  }
+  return String(v);
 };
 
 export const getJsonCliValue = (
@@ -49,28 +54,21 @@ export const getJsonCliValue = (
   if (v === undefined) {
     return undefined;
   }
-  if (typeof v === 'string') {
-    return trim(v);
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) {
+    throw new Error(`${key} must be a TOML table`);
   }
   return JSON.stringify(v);
 };
 
 export const getInt = (r: Record<string, unknown>, key: string): number | undefined => {
   const v = r[key];
-  if (typeof v === 'number' && Number.isInteger(v)) {
-    return v;
+  if (v === undefined) {
+    return undefined;
   }
-  if (typeof v === 'string') {
-    const s = v.trim();
-    if (s === '') {
-      return undefined;
-    }
-    const n = Number(s);
-    if (Number.isInteger(n)) {
-      return n;
-    }
+  if (typeof v !== 'number' || !Number.isInteger(v)) {
+    throw new Error(`${key} must be an integer`);
   }
-  return undefined;
+  return v;
 };
 
 export const pickStr = (

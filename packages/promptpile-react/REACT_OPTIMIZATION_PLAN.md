@@ -1,6 +1,6 @@
 # Promptpile React 编排优化与 Pre-Streaming Freeze 实施计划
 
-> 状态：实施前冻结稿  
+> 状态：v1 orchestration 已实施；本地 Freeze 证据完成，等待专用 CI 首次全矩阵绿灯
 > 日期：2026-08-12  
 > 审计基线：`4d4f7f8477936c94d183e674b3c2f643f28f0f62`  
 > 目标组件：`packages/promptpile-react`  
@@ -290,14 +290,14 @@ Thought success
 
 ### 4.5 Acceptance
 
-- [ ] `aborted` 从 v1 runtime state 删除；
-- [ ] `error` 后不执行 Final；
-- [ ] `currentStep` 只在 Thought/Observe/Check 全成功后 +1；
-- [ ] Check failure 不增加 step；
-- [ ] Check `false` → `final`；
-- [ ] Check `true` 且达到 max → `max_step`；
-- [ ] `running` 不能作为正常进程终态；
-- [ ] 状态转换有 dedicated pure/runtime tests。
+- [x] `aborted` 从 v1 runtime state 删除；
+- [x] `error` 后不执行 Final；
+- [x] `currentStep` 只在 Thought/Observe/Check 全成功后 +1；
+- [x] Check failure 不增加 step；
+- [x] Check `false` → `final`；
+- [x] Check `true` 且达到 max → `max_step`；
+- [x] `running` 不能作为正常进程终态；
+- [x] 状态转换有 dedicated pure/runtime tests。
 
 ---
 
@@ -377,12 +377,12 @@ streaming consumer
 
 ### 5.4 Acceptance
 
-- [ ] 默认 `maxStep === 1`；
-- [ ] runtime / CLI 无 Infinity special case；
-- [ ] `--max-step N` 精确执行至多 N 个完整 iteration；
-- [ ] Check `false` 可提前结束；
-- [ ] 达到 N 后状态稳定为 `max_step`；
-- [ ] README 不再描述“内部 Infinity 但入口只跑一轮”。
+- [x] 默认 `maxStep === 1`；
+- [x] runtime / CLI 无 Infinity special case；
+- [x] `--max-step N` 精确执行至多 N 个完整 iteration；
+- [x] Check `false` 可提前结束；
+- [x] 达到 N 后状态稳定为 `max_step`；
+- [x] README 不再描述“内部 Infinity 但入口只跑一轮”。
 
 ---
 
@@ -444,12 +444,12 @@ stopReason == error
 
 ### 6.4 Acceptance
 
-- [ ] error path never invokes Final；
-- [ ] empty final prompt skips Final without failure；
-- [ ] configured Final failure forces exit 1；
-- [ ] configured Final success is required for exit 0；
-- [ ] Final failure cannot be swallowed；
-- [ ] no “successful React session with failed configured Final” state exists。
+- [x] error path never invokes Final；
+- [x] empty final prompt skips Final without failure；
+- [x] configured Final failure forces exit 1；
+- [x] configured Final success is required for exit 0；
+- [x] Final failure cannot be swallowed；
+- [x] no “successful React session with failed configured Final” state exists。
 
 ---
 
@@ -493,11 +493,11 @@ Thought / Final child argv 可带 promptpile -c
 
 ### 7.3 Acceptance
 
-- [ ] `-i` 一次进程只消费一次用户输入；
-- [ ] `-c` 不控制 process-level while loop；
-- [ ] append-user failure → no React session；
-- [ ] append-user success 后模型失败不回滚 user artifact；
-- [ ] 文档删除 `-i/-c` 双重含义说明。
+- [x] `-i` 一次进程只消费一次用户输入；
+- [x] `-c` 不控制 process-level while loop；
+- [x] append-user failure → no React session；
+- [x] append-user success 后模型失败不回滚 user artifact；
+- [x] 文档删除 `-i/-c` 双重含义说明。
 
 ---
 
@@ -635,13 +635,13 @@ final_xxx
 
 ### 8.6 Acceptance
 
-- [ ] `[promptpile-react]` unknown key fail；
-- [ ] React 消费的 TOML 字段 strict typed；
-- [ ] `[promptpile]` 未消费的新字段不使 React 失败；
-- [ ] React 不解析 `[[llm_api]]`；
-- [ ] invalid profile 仍由 Promptpile public CLI fail；
-- [ ] per-phase provider surface 不再扩张；
-- [ ] docs 以 profile selector 为 canonical configuration。
+- [x] `[promptpile-react]` unknown key fail；
+- [x] React 消费的 TOML 字段 strict typed；
+- [x] `[promptpile]` 未消费的新字段不使 React 失败；
+- [x] React 不解析 `[[llm_api]]`；
+- [x] invalid profile 仍由 Promptpile public CLI fail；
+- [x] per-phase provider surface 不再扩张；
+- [x] docs 以 profile selector 为 canonical configuration。
 
 ---
 
@@ -703,11 +703,11 @@ public protocol
 
 ### 9.4 Acceptance
 
-- [ ] React 直接依赖 exact `promptpile-protocol`；
-- [ ] ToolCall shape 使用 `parseToolCallV1`；
-- [ ] malformed JSON / malformed ToolCall fail closed；
-- [ ] React-specific decision validation 留在 React；
-- [ ] 无 `promptpile/src` / `promptpile/dist` private import。
+- [x] React 直接依赖 exact `promptpile-protocol`；
+- [x] ToolCall shape 使用 `parseToolCallV1`；
+- [x] malformed JSON / malformed ToolCall fail closed；
+- [x] React-specific decision validation 留在 React；
+- [x] 无 `promptpile/src` / `promptpile/dist` private import。
 
 ---
 
@@ -1218,6 +1218,8 @@ promptpile-react
 
 ### Phase 0 — Freeze Plan
 
+**实施结果：完成。** 本文已进入实现基线，Streaming implementation 保持暂停。
+
 - 本文进入 main；
 - 不改 runtime；
 - Streaming implementation 暂停。
@@ -1225,6 +1227,8 @@ promptpile-react
 完成标准：核心状态机与 ownership 无开放设计问题。
 
 ### Phase 1 — FSM Simplification
+
+**实施结果：完成。** 证据：`test/react-runtime-fsm.cjs` 与 architecture boundary。
 
 1. 删除 `aborted`；
 2. 默认 maxStep=1；
@@ -1242,6 +1246,8 @@ one runtime state machine
 
 ### Phase 2 — Final / Input Semantics
 
+**实施结果：完成。** 证据：FSM、runtime CLI boundary、append-user/input failure tests。
+
 1. Final 改为 required phase；
 2. 删除 Final soft failure；
 3. empty final prompt 明确 skip；
@@ -1256,6 +1262,8 @@ exit 0
 ```
 
 ### Phase 3 — Config / Protocol Boundary
+
+**实施结果：完成。** 证据：`test/react-config-strict.cjs`、`test/check-tool-protocol.cjs`、real Promptpile config integration。
 
 1. strict React TOML；
 2. `[promptpile-react]` unknown-key rejection；
@@ -1274,6 +1282,8 @@ Protocol owns shared ToolCall shape
 
 ### Phase 4 — Package Surface
 
+**实施结果：完成。** 证据：CLI package version test 与 packed artifact smoke。
+
 1. CLI version single source；
 2. engines >=20；
 3. TypeScript/@types → devDependencies；
@@ -1282,6 +1292,8 @@ Protocol owns shared ToolCall shape
 
 ### Phase 5 — Evidence
 
+**实施结果：已落地。** `.github/workflows/promptpile-react-v1.yml` 固定 Node 20/22 × Ubuntu/Windows；本地 package tests、real Promptpile integration 与 packed smoke 已绿。
+
 1. root React tests；
 2. real Promptpile integration；
 3. Node20/22 × Ubuntu/Windows；
@@ -1289,6 +1301,8 @@ Protocol owns shared ToolCall shape
 5. docs audit。
 
 ### Phase 6 — Freeze
+
+**实施结果：代码与本地证据完成。** 最终发布 Freeze 由专用 CI 首次四格全绿自动满足；在此之前不进入 Streaming implementation。
 
 所有 checklist 通过后：
 
@@ -1306,72 +1320,88 @@ REACT_STREAMING_OUTPUT_PLAN.md re-audit
 
 ## 21. Final Freeze Checklist
 
+实施证据索引：
+
+```text
+FSM / Final               → test/react-runtime-fsm.cjs
+Input append failure      → test/input-mode-append-failure.cjs
+Config ownership          → test/react-config-strict.cjs + test/real-promptpile-config-errors.cjs
+ToolCall protocol         → test/check-tool-protocol.cjs
+CLI integration boundary  → test/react-runtime-cli-boundary.cjs + test/layered-runtime-cli-boundary.cjs
+Architecture              → test/architecture-boundary.cjs
+Version / CLI-only        → test/cli-package-version.cjs
+Packed artifact topology  → scripts/packed-smoke.mjs
+Platform matrix           → .github/workflows/promptpile-react-v1.yml
+```
+
+以下代码、本地测试与 artifact 条目已经满足；平台条目需以该 revision 的 GitHub Actions 四格结果作为最终发布证据。
+
 ### Ownership
 
-- [ ] React 只拥有 orchestration state machine；
-- [ ] 不 import Promptpile private runtime；
-- [ ] 不解析 Promptpile `[[llm_api]]`；
-- [ ] 不实现 Chat Completions/SSE/Receipt/OCC；
-- [ ] 不拥有 generic tool execution；
-- [ ] 不实现 Streaming/Event Protocol。
+- [x] React 只拥有 orchestration state machine；
+- [x] 不 import Promptpile private runtime；
+- [x] 不解析 Promptpile `[[llm_api]]`；
+- [x] 不实现 Chat Completions/SSE/Receipt/OCC；
+- [x] 不拥有 generic tool execution；
+- [x] 不实现 Streaming/Event Protocol。
 
 ### FSM
 
-- [ ] v1 state 只有 running/final/max_step/error；
-- [ ] default maxStep=1；
-- [ ] 无 Infinity special execution；
-- [ ] currentStep = completed iterations；
-- [ ] running 不能正常进程结束；
-- [ ] error 后不 Final。
+- [x] v1 state 只有 running/final/max_step/error；
+- [x] default maxStep=1；
+- [x] 无 Infinity special execution；
+- [x] currentStep = completed iterations；
+- [x] running 不能正常进程结束；
+- [x] error 后不 Final。
 
 ### Final
 
-- [ ] empty prompt → skip；
-- [ ] configured Final → required；
-- [ ] Final failure → error / exit non-zero；
-- [ ] Final only from final|max_step。
+- [x] empty prompt → skip；
+- [x] configured Final → required；
+- [x] Final failure → error / exit non-zero；
+- [x] Final only from final|max_step。
 
 ### Input / Continue
 
-- [ ] `-i` 单次输入；
-- [ ] `-c` 只表达 Conversation continuation；
-- [ ] 无隐式 process-level infinite loop；
-- [ ] append success 后的 user artifact 不因后续 model failure rollback。
+- [x] `-i` 单次输入；
+- [x] `-c` 只表达 Conversation continuation；
+- [x] 无隐式 process-level infinite loop；
+- [x] append success 后的 user artifact 不因后续 model failure rollback。
 
 ### Config
 
-- [ ] `[promptpile-react]` strict typed；
-- [ ] unknown React key fail；
-- [ ] consumed `[promptpile]` fields strict typed；
-- [ ] unrelated Promptpile fields 不被 React错误拒绝；
-- [ ] phase config 不继续膨胀；
-- [ ] profiles 是 canonical per-phase LLM configuration。
+- [x] `[promptpile-react]` strict typed；
+- [x] unknown React key fail；
+- [x] consumed `[promptpile]` fields strict typed；
+- [x] unrelated Promptpile fields 不被 React错误拒绝；
+- [x] phase config 不继续膨胀；
+- [x] profiles 是 canonical per-phase LLM configuration。
 
 ### Protocol / Integration
 
-- [ ] ToolCall shape 复用 `promptpile-protocol/tool`；
-- [ ] direct exact protocol dependency；
-- [ ] Promptpile public CLI 是唯一 runtime boundary；
-- [ ] public output/artifact parsing fail closed；
-- [ ] no sibling private imports。
+- [x] ToolCall shape 复用 `promptpile-protocol/tool`；
+- [x] direct exact protocol dependency；
+- [x] Promptpile public CLI 是唯一 runtime boundary；
+- [x] public output/artifact parsing fail closed；
+- [x] no sibling private imports。
 
 ### Package
 
-- [ ] version single source；
-- [ ] Node support 与 repo/CI/dependencies 一致；
-- [ ] runtime dependency 最小；
-- [ ] CLI-only public surface；
-- [ ] packed install smoke green。
+- [x] version single source；
+- [x] Node support 与 repo/CI/dependencies 一致；
+- [x] runtime dependency 最小；
+- [x] CLI-only public surface；
+- [x] packed install smoke green。
 
 ### Evidence
 
-- [ ] Node20 Ubuntu green；
-- [ ] Node22 Ubuntu green；
-- [ ] Node20 Windows green；
-- [ ] Node22 Windows green；
-- [ ] real Promptpile integration green；
-- [ ] README/examples 与实现一致；
-- [ ] broader monorepo workflows 无架构回退。
+- [ ] Node20 Ubuntu green（专用 CI 已配置，等待该 revision 运行）；
+- [ ] Node22 Ubuntu green（专用 CI 已配置，等待该 revision 运行）；
+- [ ] Node20 Windows green（专用 CI 已配置，等待该 revision 运行）；
+- [ ] Node22 Windows green（专用 CI 已配置，等待该 revision 运行）；
+- [x] real Promptpile integration green；
+- [x] README/examples 与实现一致；
+- [x] broader monorepo architecture guards green。
 
 ---
 

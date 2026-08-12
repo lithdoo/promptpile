@@ -30,7 +30,7 @@ export class PromptpileReactRuntime implements IReactRuntime {
     if (this.stopReason !== 'running') {
       return;
     }
-    if (Number.isFinite(this.maxStep) && this.currentStep >= this.maxStep) {
+    if (this.currentStep >= this.maxStep) {
       this.stopReason = 'max_step';
       return;
     }
@@ -44,7 +44,7 @@ export class PromptpileReactRuntime implements IReactRuntime {
         this.stopReason = 'final';
         return;
       }
-      if (Number.isFinite(this.maxStep) && this.currentStep >= this.maxStep) {
+      if (this.currentStep >= this.maxStep) {
         this.stopReason = 'max_step';
       }
     } catch {
@@ -53,7 +53,14 @@ export class PromptpileReactRuntime implements IReactRuntime {
   }
 
   async finalAnswer(): Promise<void> {
-    await this.reactFinalAnswerProcess();
+    if (this.stopReason !== 'final' && this.stopReason !== 'max_step') {
+      return;
+    }
+    try {
+      await this.reactFinalAnswerProcess();
+    } catch {
+      this.stopReason = 'error';
+    }
   }
 
   async reactThoughtProcess(): Promise<void> {

@@ -202,7 +202,11 @@ export const resolveReactConfig = (cwd: string, argv: string[]): ResolvedReactCo
     pickInt(
       cli.maxStep,
       reactToml.maxStep
-    ) ?? Number.POSITIVE_INFINITY;
+    ) ?? 1;
+  if (maxStep < 1) {
+    console.error('Error: max_step must be a positive integer');
+    process.exit(1);
+  }
 
   const toolsRel = pickStr(
     cli.toolsFile,

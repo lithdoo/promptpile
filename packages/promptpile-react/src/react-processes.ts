@@ -15,7 +15,6 @@ import {
   logCheckPhaseLlmOutput,
   logObservePhaseLlmOutput,
   reactDebugLog,
-  type ReactDumpPhase
 } from './react-debug-log';
 import { PromptpileReactInvocationError, type PromptpileReactPhase } from './react-errors';
 import type { ResolvedReactConfig } from './types';
@@ -55,29 +54,6 @@ export abstract class ReactProcess {
         `promptpile 退出码 ${r.status ?? 'null'}${extra}`
       );
     }
-  }
-
-  /** 不抛异常、不写 `stopReason`；供收尾阶段使用。 */
-  protected async completePromptpileInvokeSoft(
-    argv: string[],
-    phase: ReactDumpPhase
-  ): Promise<boolean> {
-    const r = await invokePromptpileAsync(this.ctx.spawn, argv, {
-      cwd: this.ctx.config.cwd,
-      quiet: this.ctx.config.quiet,
-      env: buildPromptpileChildEnv(phase)
-    });
-
-    if (r.error) {
-      this.logSpawnError(r);
-      return false;
-    }
-
-    if (r.status !== 0) {
-      return false;
-    }
-
-    return true;
   }
 
   protected unlinkQuiet(p: string | undefined): void {
@@ -269,7 +245,7 @@ export class CheckReactProcess extends ReactProcess {
   }
 }
 
-/** ReAct「收尾」：`prompts.final` 注入；子进程失败不抛。 */
+/** ReAct「收尾」：非空 `prompts.final` 是 required phase，失败时抛错。 */
 export class FinalReactProcess extends ReactProcess {
   constructor(ctx: ReactProcessContext, private readonly finalBody: string) {
     super(ctx);
@@ -292,7 +268,7 @@ export class FinalReactProcess extends ReactProcess {
       );
       fs.writeFileSync(tempPath, this.finalBody, 'utf8');
       argv.push('--insert-files', path.resolve(tempPath));
-      await this.completePromptpileInvokeSoft(argv, 'final');
+      await this.assertPromptpileSuccess(argv, 'final');
     } finally {
       this.unlinkQuiet(tempPath);
     }
