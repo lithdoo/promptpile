@@ -22,28 +22,25 @@ function writeResultLinesToPath(
   calls: ExecCallItem[],
   results: ExecCallResult[]
 ): void {
-  const byId = new Map(results.map((r) => [r.toolCallId, r]));
+  if (
+    results.length !== calls.length ||
+    results.some((result, index) => result.toolCallId !== calls[index]?.id)
+  ) {
+    throw new Error(
+      'writeResultJsonl: results 必须是已验证且与 calls 同序的完整向量'
+    );
+  }
   const lines: string[] = [];
 
-  for (const c of calls) {
-    const r = byId.get(c.id);
-    const content = r
-      ? resultContent(r)
-      : `错误：网关未返回 toolCallId=${c.id} 的结果`;
-
-    const execution = r
-      ? {
-          ok: r.ok,
-          attempts: r.attempts ?? 0,
-          duration_ms: r.durationMs ?? 0,
-          ...(r.error !== undefined ? { error: r.error } : {}),
-        }
-      : {
-          ok: false,
-          attempts: 0,
-          duration_ms: 0,
-          error: 'missing_gateway_result',
-        };
+  for (const [index, c] of calls.entries()) {
+    const r = results[index];
+    const content = resultContent(r);
+    const execution = {
+      ok: r.ok,
+      attempts: r.attempts ?? 0,
+      duration_ms: r.durationMs ?? 0,
+      ...(r.error !== undefined ? { error: r.error } : {}),
+    };
     const row: {
       tool_call_id: string;
       content: string;

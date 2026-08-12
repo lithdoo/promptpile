@@ -129,7 +129,7 @@ async function runExecCallsSingleFile(
 
   let body: ReturnType<typeof parseExecCallsResponseBody>;
   try {
-    body = parseExecCallsResponseBody(httpRes.bodyText);
+    body = parseExecCallsResponseBody(httpRes.bodyText, calls);
   } catch (e) {
     console.error(
       `promptpile-mcp: exec-calls ${e instanceof Error ? e.message : String(e)}`
@@ -214,7 +214,7 @@ async function runExecCallsDirectory(
 
     let body: ReturnType<typeof parseExecCallsResponseBody>;
     try {
-      body = parseExecCallsResponseBody(httpRes.bodyText);
+      body = parseExecCallsResponseBody(httpRes.bodyText, calls);
     } catch (e) {
       console.error(
         `promptpile-mcp: exec-calls ${e instanceof Error ? e.message : String(e)}`

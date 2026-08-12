@@ -16,18 +16,18 @@ const calls: ExecCallItem[] = [
 
 const results: ExecCallResult[] = [
   {
-    toolCallId: 'call-2',
-    ok: false,
-    error: 'failed',
-    attempts: 2,
-    durationMs: 25,
-  },
-  {
     toolCallId: 'call-1',
     ok: true,
     content: { value: 1 },
     attempts: 1,
     durationMs: 10,
+  },
+  {
+    toolCallId: 'call-2',
+    ok: false,
+    error: 'failed',
+    attempts: 2,
+    durationMs: 25,
   },
 ];
 
@@ -68,18 +68,15 @@ describe('writeResultJsonl', () => {
     }
   });
 
-  it('records missing gateway results as execution metadata', () => {
+  it('rejects an incomplete gateway result vector', () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ppm-missing-result-'));
     try {
       const output = path.join(directory, 'missing.result.jsonl');
-      writeResultJsonlToPath(output, calls.slice(0, 1), []);
-      const row = JSON.parse(fs.readFileSync(output, 'utf8'));
-      assert.deepStrictEqual(row.execution, {
-        ok: false,
-        attempts: 0,
-        duration_ms: 0,
-        error: 'missing_gateway_result',
-      });
+      assert.throws(
+        () => writeResultJsonlToPath(output, calls.slice(0, 1), []),
+        /完整向量/
+      );
+      assert.equal(fs.existsSync(output), false);
     } finally {
       fs.rmSync(directory, { recursive: true, force: true });
     }
@@ -90,7 +87,7 @@ describe('writeResultJsonl', () => {
     try {
       const callsPath = path.join(directory, '[2]assistant.calls.jsonl');
       fs.writeFileSync(callsPath, '', 'utf8');
-      writeResultJsonlForCallsFile(callsPath, calls.slice(0, 1), results);
+      writeResultJsonlForCallsFile(callsPath, calls.slice(0, 1), results.slice(0, 1));
 
       assert.ok(fs.existsSync(path.join(directory, '[2]assistant.result.jsonl')));
       assert.deepStrictEqual(temporaryFiles(directory), []);

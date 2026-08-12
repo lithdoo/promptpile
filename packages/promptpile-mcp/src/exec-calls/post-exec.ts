@@ -69,7 +69,42 @@ export async function postExecCalls(
   }
 }
 
-export function parseExecCallsResponseBody(bodyText: string): ExecCallsHttpBody {
+function parseExecCallResult(value: unknown, index: number): ExecCallResult {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`响应中 results[${index}] 须为对象`);
+  }
+  const row = value as Record<string, unknown>;
+  if (typeof row.toolCallId !== 'string' || row.toolCallId.trim() === '') {
+    throw new Error(`响应中 results[${index}].toolCallId 须为非空字符串`);
+  }
+  if (typeof row.ok !== 'boolean') {
+    throw new Error(`响应中 results[${index}].ok 须为 boolean`);
+  }
+  if (row.attempts !== undefined &&
+      (!Number.isInteger(row.attempts) || (row.attempts as number) < 0)) {
+    throw new Error(`响应中 results[${index}].attempts 须为非负整数`);
+  }
+  if (row.durationMs !== undefined &&
+      (typeof row.durationMs !== 'number' || !Number.isFinite(row.durationMs) || row.durationMs < 0)) {
+    throw new Error(`响应中 results[${index}].durationMs 须为非负有限数`);
+  }
+  if (row.error !== undefined && typeof row.error !== 'string') {
+    throw new Error(`响应中 results[${index}].error 须为字符串`);
+  }
+  return {
+    toolCallId: row.toolCallId,
+    ok: row.ok,
+    ...(row.content !== undefined ? { content: row.content } : {}),
+    ...(row.error !== undefined ? { error: row.error } : {}),
+    ...(row.attempts !== undefined ? { attempts: row.attempts as number } : {}),
+    ...(row.durationMs !== undefined ? { durationMs: row.durationMs } : {}),
+  };
+}
+
+export function parseExecCallsResponseBody(
+  bodyText: string,
+  calls: readonly ExecCallItem[]
+): ExecCallsHttpBody {
   let data: unknown;
   try {
     data = JSON.parse(bodyText) as unknown;
@@ -83,5 +118,18 @@ export function parseExecCallsResponseBody(bodyText: string): ExecCallsHttpBody 
   if (!Array.isArray(results)) {
     throw new Error('响应中 results 须为数组');
   }
-  return { results: results as ExecCallResult[] };
+  const parsed = results.map(parseExecCallResult);
+  const expected = new Set(calls.map((call) => call.id));
+  const seen = new Set<string>();
+  for (const result of parsed) {
+    if (!expected.has(result.toolCallId)) throw new Error(`响应包含未知 toolCallId: ${result.toolCallId}`);
+    if (seen.has(result.toolCallId)) throw new Error(`响应包含重复 toolCallId: ${result.toolCallId}`);
+    seen.add(result.toolCallId);
+  }
+  const missing = calls.filter((call) => !seen.has(call.id)).map((call) => call.id);
+  if (missing.length > 0 || parsed.length !== calls.length) {
+    throw new Error(`响应缺少 toolCallId: ${missing.join(', ')}`);
+  }
+  const byId = new Map(parsed.map((result) => [result.toolCallId, result]));
+  return { results: calls.map((call) => byId.get(call.id)!) };
 }

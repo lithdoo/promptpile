@@ -1,6 +1,34 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
-import { postExecCalls } from './post-exec';
+import { parseExecCallsResponseBody, postExecCalls } from './post-exec';
+
+const calls = [
+  { id: 'a', type: 'function' as const, function: { name: 'one', arguments: '{}' } },
+  { id: 'b', type: 'function' as const, function: { name: 'two', arguments: '{}' } },
+];
+
+describe('parseExecCallsResponseBody', () => {
+  it('validates completeness and restores input order', () => {
+    const parsed = parseExecCallsResponseBody(JSON.stringify({ results: [
+      { toolCallId: 'b', ok: false, error: 'no', attempts: 1, durationMs: 2 },
+      { toolCallId: 'a', ok: true, content: 'yes' },
+    ] }), calls);
+    assert.deepEqual(parsed.results.map((row) => row.toolCallId), ['a', 'b']);
+  });
+
+  it('rejects missing, duplicate, unknown, and malformed results', () => {
+    assert.throws(() => parseExecCallsResponseBody('{"results":[]}', calls), /缺少/);
+    assert.throws(() => parseExecCallsResponseBody(JSON.stringify({ results: [
+      { toolCallId: 'a', ok: true }, { toolCallId: 'a', ok: true },
+    ] }), calls), /重复/);
+    assert.throws(() => parseExecCallsResponseBody(JSON.stringify({ results: [
+      { toolCallId: 'a', ok: true }, { toolCallId: 'c', ok: true },
+    ] }), calls), /未知/);
+    assert.throws(() => parseExecCallsResponseBody(JSON.stringify({ results: [
+      { toolCallId: 'a', ok: 'true' }, { toolCallId: 'b', ok: true },
+    ] }), calls), /boolean/);
+  });
+});
 
 const originalFetch = globalThis.fetch;
 

@@ -1,3 +1,5 @@
+import type { ToolCallV1 } from 'promptpile-protocol/tool';
+
 /** OpenAI Chat Completions 形态的工具条目（与 promptpile tools-loader 对齐）。 */
 export type OpenAiToolEntry = {
   type: 'function';
@@ -8,10 +10,8 @@ export type OpenAiToolEntry = {
   };
 };
 
-export type ExecCallItem = {
-  id: string;
+export type ExecCallItem = ToolCallV1 & {
   type: 'function';
-  function: { name: string; arguments: string };
 };
 
 export type ExecCallResult = {
