@@ -6,85 +6,110 @@
   "required": ["schema_version", "type", "session_id", "sequence"],
   "properties": {
     "schema_version": { "const": 1 },
-    "type": {
-      "enum": ["session.started", "phase.started", "phase.completed", "final.delta", "session.completed", "session.failed"]
-    },
+    "type": { "enum": ["session.started", "phase.started", "phase.completed", "final.delta", "session.completed", "session.failed"] },
     "session_id": { "type": "string", "minLength": 1 },
-    "sequence": { "type": "integer", "minimum": 0 }
-    ,"max_steps": { "type": "integer", "minimum": 1 }
-    ,"phase": { "enum": ["startup", "thought", "observe", "check", "final"] }
-    ,"step_index": { "type": "integer", "minimum": 0 }
-    ,"steps_completed": { "type": "integer", "minimum": 0 }
-    ,"continue": { "type": "boolean" }
-    ,"content": { "type": "string" }
-    ,"stop_reason": { "enum": ["final", "max_step"] }
-    ,"final": { "type": "object" }
-    ,"error": { "type": "object" }
+    "sequence": { "type": "integer", "minimum": 0 },
+    "max_steps": { "type": "integer", "minimum": 1 },
+    "phase": { "enum": ["startup", "thought", "observe", "check", "final"] },
+    "step_index": { "type": "integer", "minimum": 0 },
+    "steps_completed": { "type": "integer", "minimum": 0 },
+    "continue": { "type": "boolean" },
+    "content": { "type": "string" },
+    "stop_reason": { "enum": ["final", "max_step"] },
+    "final": { "$ref": "#/$defs/finalResult" },
+    "error": { "$ref": "#/$defs/error" }
   },
-  "allOf": [
+  "oneOf": [
     {
-      "if": { "properties": { "type": { "const": "session.started" } } },
-      "then": { "required": ["max_steps"], "properties": { "max_steps": { "type": "integer", "minimum": 1 } } }
+      "properties": { "type": { "const": "session.started" } },
+      "required": ["max_steps"],
+      "not": { "anyOf": [
+        { "required": ["phase"] }, { "required": ["step_index"] }, { "required": ["steps_completed"] },
+        { "required": ["continue"] }, { "required": ["content"] }, { "required": ["stop_reason"] },
+        { "required": ["final"] }, { "required": ["error"] }
+      ] }
     },
     {
-      "if": { "properties": { "type": { "const": "final.delta" } } },
-      "then": { "required": ["content"], "properties": { "content": { "type": "string" } } }
+      "properties": { "type": { "const": "phase.started" }, "phase": { "enum": ["thought", "observe", "check"] } },
+      "required": ["phase", "step_index"],
+      "not": { "anyOf": [
+        { "required": ["max_steps"] }, { "required": ["steps_completed"] }, { "required": ["continue"] },
+        { "required": ["content"] }, { "required": ["stop_reason"] }, { "required": ["final"] }, { "required": ["error"] }
+      ] }
     },
     {
-      "if": { "properties": { "type": { "enum": ["phase.started", "phase.completed"] } } },
-      "then": {
-        "required": ["phase"],
-        "properties": { "phase": { "enum": ["thought", "observe", "check", "final"] } },
-        "oneOf": [
-          { "properties": { "phase": { "enum": ["thought", "observe", "check"] } }, "required": ["step_index"] },
-          { "properties": { "phase": { "const": "final" } }, "required": ["steps_completed"] }
-        ]
-      }
+      "properties": { "type": { "const": "phase.started" }, "phase": { "const": "final" } },
+      "required": ["phase", "steps_completed"],
+      "not": { "anyOf": [
+        { "required": ["max_steps"] }, { "required": ["step_index"] }, { "required": ["continue"] },
+        { "required": ["content"] }, { "required": ["stop_reason"] }, { "required": ["final"] }, { "required": ["error"] }
+      ] }
     },
     {
-      "if": {
-        "properties": {
-          "type": { "const": "phase.completed" },
-          "phase": { "const": "check" }
-        },
-        "required": ["type", "phase"]
-      },
-      "then": { "required": ["continue"] }
+      "properties": { "type": { "const": "phase.completed" }, "phase": { "enum": ["thought", "observe"] } },
+      "required": ["phase", "step_index"],
+      "not": { "anyOf": [
+        { "required": ["max_steps"] }, { "required": ["steps_completed"] }, { "required": ["continue"] },
+        { "required": ["content"] }, { "required": ["stop_reason"] }, { "required": ["final"] }, { "required": ["error"] }
+      ] }
     },
     {
-      "if": { "properties": { "type": { "const": "session.completed" } } },
-      "then": {
-        "required": ["stop_reason", "steps_completed", "final"],
-        "properties": {
-          "stop_reason": { "enum": ["final", "max_step"] },
-          "steps_completed": { "type": "integer", "minimum": 0 },
-          "final": {
-            "oneOf": [
-              { "type": "object", "required": ["status", "content"], "properties": { "status": { "const": "completed" }, "content": { "type": "string" } }, "additionalProperties": false },
-              { "type": "object", "required": ["status"], "properties": { "status": { "const": "skipped" } }, "additionalProperties": false }
-            ]
-          }
-        }
-      }
+      "properties": { "type": { "const": "phase.completed" }, "phase": { "const": "check" } },
+      "required": ["phase", "step_index", "continue"],
+      "not": { "anyOf": [
+        { "required": ["max_steps"] }, { "required": ["steps_completed"] }, { "required": ["content"] },
+        { "required": ["stop_reason"] }, { "required": ["final"] }, { "required": ["error"] }
+      ] }
     },
     {
-      "if": { "properties": { "type": { "const": "session.failed" } } },
-      "then": {
-        "required": ["phase", "steps_completed", "error"],
-        "properties": {
-          "phase": { "enum": ["startup", "thought", "observe", "check", "final"] },
-          "steps_completed": { "type": "integer", "minimum": 0 },
-          "error": {
-            "type": "object",
-            "required": ["code", "message"],
-            "properties": {
-              "code": { "enum": ["promptpile_spawn_failed", "promptpile_exit_nonzero", "phase_output_missing", "check_decision_invalid", "final_stream_invalid", "internal_error"] },
-              "message": { "type": "string" }
-            },
-            "additionalProperties": false
-          }
-        }
-      }
+      "properties": { "type": { "const": "phase.completed" }, "phase": { "const": "final" } },
+      "required": ["phase", "steps_completed"],
+      "not": { "anyOf": [
+        { "required": ["max_steps"] }, { "required": ["step_index"] }, { "required": ["continue"] },
+        { "required": ["content"] }, { "required": ["stop_reason"] }, { "required": ["final"] }, { "required": ["error"] }
+      ] }
+    },
+    {
+      "properties": { "type": { "const": "final.delta" } },
+      "required": ["content"],
+      "not": { "anyOf": [
+        { "required": ["max_steps"] }, { "required": ["phase"] }, { "required": ["step_index"] },
+        { "required": ["steps_completed"] }, { "required": ["continue"] }, { "required": ["stop_reason"] },
+        { "required": ["final"] }, { "required": ["error"] }
+      ] }
+    },
+    {
+      "properties": { "type": { "const": "session.completed" } },
+      "required": ["stop_reason", "steps_completed", "final"],
+      "not": { "anyOf": [
+        { "required": ["max_steps"] }, { "required": ["phase"] }, { "required": ["step_index"] },
+        { "required": ["continue"] }, { "required": ["content"] }, { "required": ["error"] }
+      ] }
+    },
+    {
+      "properties": { "type": { "const": "session.failed" } },
+      "required": ["phase", "steps_completed", "error"],
+      "not": { "anyOf": [
+        { "required": ["max_steps"] }, { "required": ["step_index"] }, { "required": ["continue"] },
+        { "required": ["content"] }, { "required": ["stop_reason"] }, { "required": ["final"] }
+      ] }
     }
-  ]
+  ],
+  "$defs": {
+    "finalResult": {
+      "oneOf": [
+        { "type": "object", "required": ["status", "content"], "properties": { "status": { "const": "completed" }, "content": { "type": "string" } }, "additionalProperties": false },
+        { "type": "object", "required": ["status"], "properties": { "status": { "const": "skipped" } }, "additionalProperties": false }
+      ]
+    },
+    "error": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "enum": ["promptpile_spawn_failed", "promptpile_exit_nonzero", "phase_output_missing", "check_decision_invalid", "final_stream_invalid", "internal_error"] },
+        "message": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  }
 }

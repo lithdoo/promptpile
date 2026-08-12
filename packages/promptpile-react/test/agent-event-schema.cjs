@@ -18,11 +18,21 @@ const valid = [
   { ...base, type: 'session.failed', phase: 'check', steps_completed: 0, error: { code: 'check_decision_invalid', message: 'invalid' } }
 ];
 for (const event of valid) assert.strictEqual(validate(event), true, JSON.stringify(validate.errors));
+assert.strictEqual(
+  validate({ ...valid[0], future_optional_field: { ignored: true } }),
+  true,
+  'unknown optional fields remain forward-compatible'
+);
 for (const event of [
   { ...base, type: 'session.completed', stop_reason: 'error', steps_completed: 0, final: { status: 'skipped' } },
   { ...base, type: 'session.completed', stop_reason: 'final', steps_completed: 1, final: { status: 'completed' } },
   { ...base, type: 'session.failed', phase: 'check', steps_completed: 0, error: { code: 'unknown', message: 'x' } },
   { ...base, type: 'phase.started', phase: 'final', step_index: 1 }
   ,{ ...base, type: 'phase.completed', phase: 'check', step_index: 0 }
+  ,{ ...base, type: 'usage.updated', usage: 1 }
+  ,{ ...base, type: 'session.started', max_steps: 1, phase: 'thought' }
+  ,{ ...base, type: 'final.delta', content: 'x', error: { code: 'internal_error', message: 'x' } }
+  ,{ ...base, type: 'session.completed', stop_reason: 'final', steps_completed: 1, final: { status: 'skipped' }, error: { code: 'internal_error', message: 'x' } }
+  ,{ ...base, type: 'session.failed', phase: 'final', steps_completed: 1, error: { code: 'internal_error', message: 'x' }, stop_reason: 'final', final: { status: 'skipped' } }
 ]) assert.strictEqual(validate(event), false, `unexpectedly valid: ${JSON.stringify(event)}`);
 console.log('promptpile-react agent event schema tests ok');

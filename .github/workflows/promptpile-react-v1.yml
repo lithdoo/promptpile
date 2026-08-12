@@ -8,6 +8,7 @@ on:
       - 'packages/promptpile-protocol/**'
       - 'package.json'
       - 'package-lock.json'
+      - 'REACT_STREAMING_OUTPUT_PLAN.md'
       - '.github/workflows/promptpile-react-v1.yml'
   pull_request:
 

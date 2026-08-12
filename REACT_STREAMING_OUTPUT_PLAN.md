@@ -332,9 +332,9 @@ interface ReactEventBaseV1 {
 
 - consumer MUST ignore unknown fields；
 - producer MAY 在 v1 event object 中新增 optional fields，但不得改变已有字段语义；
-- producer MAY 在未来 v1.x 增加新的 non-terminal event type；consumer SHOULD ignore unknown non-terminal types；
-- v1 terminal event set 是 closed set：`session.completed | session.failed`；
-- 新增或改变 terminal event type、破坏字段语义、改变 terminal semantics 必须提升 `schema_version`。
+- `schema_version = 1` 的 event vocabulary 是冻结的 6-event closed set；
+- 新增任何 event type（包括 non-terminal）、改变既有字段语义或 terminal semantics，必须提升 `schema_version`；
+- optional fields 可以 additive，但 consumer MUST ignore 不认识的字段。
 
 ---
 
