@@ -3,6 +3,7 @@ import path from 'path';
 import { resultAbsPathForCallFile, stemFromCallsBasename } from './calls-paths';
 import { parseCallJsonlFile } from './parse-call-jsonl';
 import { parseToolResultLineV1 } from 'promptpile-protocol/tool';
+import { observeExecutionClaim } from './execution-claim';
 
 export type CallsStatus = 'pending' | 'partial' | 'complete' | 'invalid';
 
@@ -13,6 +14,7 @@ export type CallsStatusReport = {
   calls: number;
   results: number;
   missing: string[];
+  executionClaim?: string;
   error?: string;
 };
 
@@ -73,8 +75,13 @@ export function checkCallsStatus(
     ? path.resolve(explicitResultPath)
     : fallbackResultPath;
 
+  const withClaim = (report: CallsStatusReport): CallsStatusReport => ({
+    ...report,
+    executionClaim: observeExecutionClaim(resultPath),
+  });
+
   if (!fs.existsSync(callsPath)) {
-    return invalidReport(callsPath, resultPath, `promptpile-mcp: calls 文件不存在: ${callsPath}`);
+    return withClaim(invalidReport(callsPath, resultPath, `promptpile-mcp: calls 文件不存在: ${callsPath}`));
   }
   if (!fs.statSync(callsPath).isFile()) {
     return invalidReport(callsPath, resultPath, `promptpile-mcp: calls 路径不是普通文件: ${callsPath}`);
@@ -102,14 +109,14 @@ export function checkCallsStatus(
   }
 
   if (!fs.existsSync(resultPath)) {
-    return {
+    return withClaim({
       status: 'pending',
       callsPath,
       resultPath,
       calls: callIds.length,
       results: 0,
       missing: [...callIds],
-    };
+    });
   }
   if (!fs.statSync(resultPath).isFile()) {
     return invalidReport(callsPath, resultPath, 'promptpile-mcp: result 路径不是普通文件', callIds.length);
@@ -143,14 +150,14 @@ export function checkCallsStatus(
   }
 
   const missing = callIds.filter((id) => !resultSet.has(id));
-  return {
+  return withClaim({
     status: missing.length === 0 ? 'complete' : 'partial',
     callsPath,
     resultPath,
     calls: callIds.length,
     results: resultIds.length,
     missing,
-  };
+  });
 }
 
 export function statusExitCode(status: CallsStatus): number {

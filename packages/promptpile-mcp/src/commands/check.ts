@@ -8,6 +8,8 @@ export async function runCheck(opts: CheckCliOptions): Promise<number> {
   console.log(`calls: ${report.calls}`);
   console.log(`results: ${report.results}`);
   console.log(`result: ${report.resultPath}`);
+  console.log(`execution_claim: ${report.executionClaim ? 'present' : 'absent'}`);
+  if (report.executionClaim) console.log(`claim: ${report.executionClaim}`);
   if (report.missing.length > 0) {
     console.log(`missing: ${report.missing.join(', ')}`);
   }

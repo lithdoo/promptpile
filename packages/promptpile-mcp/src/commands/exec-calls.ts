@@ -11,27 +11,29 @@ import {
 } from '../exec-calls/calls-paths';
 import { parseCallJsonlFile } from '../exec-calls/parse-call-jsonl';
 import {
+  acquireExecutionClaim,
+  releaseExecutionClaim,
+  type ExecutionClaim,
+} from '../exec-calls/execution-claim';
+import {
   parseExecCallsResponseBody,
   postExecCalls,
   truncateBody,
 } from '../exec-calls/post-exec';
 import { scanCallsJsonlFiles } from '../exec-calls/scan-call-files';
-import {
-  writeResultJsonlForCallsFile,
-  writeResultJsonlToPath,
-} from '../exec-calls/write-result-jsonl';
+import { writeResultJsonlToPath } from '../exec-calls/write-result-jsonl';
 
-function warnSkippedResult(
+function reportInvalidExistingResult(
   callsPath: string,
   report: CallsStatusReport
 ): void {
   if (report.status === 'partial') {
     console.warn(
-      `promptpile-mcp: warning: result 不完整，缺少 ${report.missing.join(', ')}；已跳过 ${callsPath}。使用 check 查看状态，确认后通过 --overwrite-results 重新执行。`
+      `promptpile-mcp: result 不完整，缺少 ${report.missing.join(', ')}；拒绝执行 ${callsPath}。确认副作用后可显式使用 --overwrite-results。`
     );
   } else if (report.status === 'invalid') {
     console.warn(
-      `promptpile-mcp: warning: result 状态无效（${report.error ?? 'unknown'}）；已跳过 ${callsPath}。使用 check 查看状态，确认后通过 --overwrite-results 重新执行。`
+      `promptpile-mcp: result 状态无效（${report.error ?? 'unknown'}）；拒绝执行 ${callsPath}。确认副作用后可显式使用 --overwrite-results。`
     );
   }
 }
@@ -51,6 +53,110 @@ export type ExecCallsCliOptions = {
   requestTimeoutMs?: number;
   signal?: AbortSignal;
 };
+
+const PRE_EXECUTION_HTTP_STATUSES = new Set([400, 401, 404, 405, 413, 415]);
+
+function releaseBeforeExecution(claim: ExecutionClaim): void {
+  releaseExecutionClaim(claim);
+}
+
+async function executeCallsFile(
+  callsPath: string,
+  resultOutPath: string,
+  opts: ExecCallsCliOptions,
+  baseUrlNorm: string,
+  token: string | undefined,
+  overwrite: boolean
+): Promise<'written' | 'skipped' | 'failed'> {
+  const parent = path.dirname(resultOutPath);
+  if (!fs.existsSync(parent) || !fs.statSync(parent).isDirectory()) {
+    console.error(`promptpile-mcp: result 父目录不存在或不是目录: ${parent}`);
+    return 'failed';
+  }
+
+  if (!overwrite && fs.existsSync(resultOutPath)) {
+    const report = checkCallsStatus(callsPath, resultOutPath);
+    if (report.status === 'complete') {
+      console.log(`promptpile-mcp: 已存在完整 result，安全跳过: ${resultOutPath}`);
+      return 'skipped';
+    }
+    reportInvalidExistingResult(callsPath, report);
+    return 'failed';
+  }
+
+  let claim: ExecutionClaim;
+  try {
+    claim = acquireExecutionClaim(callsPath, resultOutPath);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    return 'failed';
+  }
+
+  // Close the pre-check/acquire TOCTOU seam.
+  if (!overwrite && fs.existsSync(resultOutPath)) {
+    const report = checkCallsStatus(callsPath, resultOutPath);
+    if (report.status === 'complete') {
+      try { releaseBeforeExecution(claim); } catch (error) {
+        console.warn(`promptpile-mcp: warning: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      return 'skipped';
+    }
+    try { releaseBeforeExecution(claim); } catch { /* the original failure remains primary */ }
+    reportInvalidExistingResult(callsPath, report);
+    return 'failed';
+  }
+
+  let calls;
+  try {
+    calls = parseCallJsonlFile(callsPath);
+    if (calls.length === 0) throw new Error(`promptpile-mcp: calls 文件为空: ${callsPath}`);
+    const ids = new Set(calls.map((call) => call.id));
+    if (ids.size !== calls.length) throw new Error(`promptpile-mcp: calls 包含重复 id: ${callsPath}`);
+  } catch (error) {
+    try { releaseBeforeExecution(claim); } catch { /* parser failure remains primary */ }
+    console.error(error instanceof Error ? error.message : String(error));
+    return 'failed';
+  }
+
+  let httpRes;
+  try {
+    httpRes = await postExecCalls(baseUrlNorm, token, calls, {
+      signal: opts.signal,
+      timeoutMs: opts.requestTimeoutMs,
+    });
+  } catch (error) {
+    console.error(`promptpile-mcp: gateway 执行状态不确定，claim 已保留: ${error instanceof Error ? error.message : String(error)}`);
+    return 'failed';
+  }
+  if (!httpRes.ok) {
+    if (PRE_EXECUTION_HTTP_STATUSES.has(httpRes.status)) {
+      try { releaseBeforeExecution(claim); } catch { /* HTTP failure remains primary */ }
+    }
+    console.error(`promptpile-mcp: exec-calls HTTP ${httpRes.status}: ${truncateBody(httpRes.bodyText)}`);
+    return 'failed';
+  }
+
+  let body: ReturnType<typeof parseExecCallsResponseBody>;
+  try {
+    body = parseExecCallsResponseBody(httpRes.bodyText, calls);
+  } catch (error) {
+    console.error(`promptpile-mcp: gateway 响应不确定，claim 已保留: ${error instanceof Error ? error.message : String(error)}`);
+    return 'failed';
+  }
+  try {
+    writeResultJsonlToPath(resultOutPath, calls, body.results);
+  } catch (error) {
+    console.error(`promptpile-mcp: result 发布失败，claim 已保留: ${error instanceof Error ? error.message : String(error)}`);
+    return 'failed';
+  }
+  try {
+    releaseExecutionClaim(claim);
+  } catch (error) {
+    console.warn(`promptpile-mcp: warning: result 已发布，但 claim 清理失败: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  console.log(`promptpile-mcp: 已写入 ${resultOutPath}`);
+  return 'written';
+}
 
 async function runExecCallsSingleFile(
   opts: ExecCallsCliOptions,
@@ -91,55 +197,8 @@ async function runExecCallsSingleFile(
     resultOutPath = resultAbsPathForCallFile(inputPath, stem);
   }
 
-  if (!overwrite && fs.existsSync(resultOutPath)) {
-    const report = checkCallsStatus(inputPath, resultOutPath);
-    if (report.status === 'partial' || report.status === 'invalid') {
-      warnSkippedResult(inputPath, report);
-    } else {
-      console.error(
-        `promptpile-mcp: 已存在 result，跳过（使用 --overwrite-results 可覆盖）: ${resultOutPath}`
-      );
-    }
-    return 0;
-  }
-
-  let calls;
-  try {
-    calls = parseCallJsonlFile(inputPath);
-  } catch (e) {
-    console.error(e instanceof Error ? e.message : String(e));
-    return 1;
-  }
-
-  if (calls.length === 0) {
-    console.error(`promptpile-mcp: 跳过空文件: ${inputPath}`);
-    return 1;
-  }
-
-  const httpRes = await postExecCalls(baseUrlNorm, token, calls, {
-    signal: opts.signal,
-    timeoutMs: opts.requestTimeoutMs,
-  });
-  if (!httpRes.ok) {
-    console.error(
-      `promptpile-mcp: exec-calls HTTP ${httpRes.status}: ${truncateBody(httpRes.bodyText)}`
-    );
-    return 1;
-  }
-
-  let body: ReturnType<typeof parseExecCallsResponseBody>;
-  try {
-    body = parseExecCallsResponseBody(httpRes.bodyText, calls);
-  } catch (e) {
-    console.error(
-      `promptpile-mcp: exec-calls ${e instanceof Error ? e.message : String(e)}`
-    );
-    return 1;
-  }
-
-  writeResultJsonlToPath(resultOutPath, calls, body.results);
-  console.log(`promptpile-mcp: 已写入 ${resultOutPath}`);
-  return 0;
+  const outcome = await executeCallsFile(inputPath, resultOutPath, opts, baseUrlNorm, token, overwrite);
+  return outcome === 'failed' ? 1 : 0;
 }
 
 async function runExecCallsDirectory(
@@ -166,74 +225,16 @@ async function runExecCallsDirectory(
     return 1;
   }
 
-  if (!overwrite) {
-    for (const ref of allRefs) {
-      if (!fs.existsSync(ref.resultAbsPath)) continue;
-      const report = checkCallsStatus(ref.absPath, ref.resultAbsPath);
-      warnSkippedResult(ref.absPath, report);
-    }
-  }
-
-  const toProcess = overwrite
-    ? allRefs
-    : allRefs.filter((r) => !fs.existsSync(r.resultAbsPath));
-
-  if (toProcess.length === 0) {
-    console.error(
-      'promptpile-mcp: 全部 *.calls.jsonl 已有配对 result，未执行（使用 --overwrite-results 可覆盖）'
-    );
-    return 0;
-  }
-
   let wroteAny = false;
-  for (const { absPath, resultAbsPath } of toProcess) {
+  let failed = false;
+  for (const { absPath, resultAbsPath } of allRefs) {
     if (opts.signal?.aborted) return 130;
-    let calls;
-    try {
-      calls = parseCallJsonlFile(absPath);
-    } catch (e) {
-      console.error(e instanceof Error ? e.message : String(e));
-      return 1;
-    }
-
-    if (calls.length === 0) {
-      console.error(`promptpile-mcp: 跳过空文件: ${absPath}`);
-      continue;
-    }
-
-    const httpRes = await postExecCalls(baseUrlNorm, token, calls, {
-      signal: opts.signal,
-      timeoutMs: opts.requestTimeoutMs,
-    });
-    if (!httpRes.ok) {
-      console.error(
-        `promptpile-mcp: exec-calls HTTP ${httpRes.status}: ${truncateBody(httpRes.bodyText)}`
-      );
-      return 1;
-    }
-
-    let body: ReturnType<typeof parseExecCallsResponseBody>;
-    try {
-      body = parseExecCallsResponseBody(httpRes.bodyText, calls);
-    } catch (e) {
-      console.error(
-        `promptpile-mcp: exec-calls ${e instanceof Error ? e.message : String(e)}`
-      );
-      return 1;
-    }
-
-    writeResultJsonlForCallsFile(absPath, calls, body.results);
-    wroteAny = true;
-    console.log(`promptpile-mcp: 已写入 ${resultAbsPath}`);
+    const outcome = await executeCallsFile(absPath, resultAbsPath, opts, baseUrlNorm, token, overwrite);
+    if (outcome === 'written') wroteAny = true;
+    if (outcome === 'failed') failed = true;
   }
-
-  if (!wroteAny) {
-    console.error(
-      'promptpile-mcp: 所有 call 文件均为空，未写入任何 result.jsonl'
-    );
-    return 1;
-  }
-
+  if (failed) return 1;
+  if (!wroteAny) console.log('promptpile-mcp: 所有选中项均已有完整 result，未执行');
   return 0;
 }
 
