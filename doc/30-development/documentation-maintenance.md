@@ -4,34 +4,41 @@
 > 状态：Normative  
 > 稳定程度：Stable  
 > 主要定义：代码变更时需要同步哪些文档  
-> 最近复核：2026-08-05
+> 最近复核：2026-08-12
 
 完整治理规则见 [CONVENTIONS](../CONVENTIONS.md)。
 
-## 修改公开 CLI
+## Public contract 变更
 
-1. 更新 [CLI Contract v1](../15-contracts/cli-contract-v1.md)；
-2. 更新对应 package 文档与相关 Guide；
-3. 增加/修改 CLI regression tests；
-4. 如为 breaking change，写迁移说明。
+1. 先更新 `doc/15-contracts` 的唯一 normative 定义；
+2. 更新 owning package 的 machine schema/fixture/projection；
+3. 更新 producer/consumer implementation；
+4. 增加 regression/conformance/integration evidence；
+5. 更新 `doc/20-packages` 与相关 Guide；
+6. incompatible change 必须定义新版本与迁移。
 
-## 修改 conversation 文件语义
+Conversation/Fingerprint/Tool/Receipt 的纯公共投影还需要同步 `promptpile-protocol`。Agent Event Protocol 的 machine schema 则由 `promptpile-react` 自己拥有；不要因为 human spec 位于 Contracts 就错误转移 schema ownership。
 
-1. 更新 [Conversation Protocol v1](../15-contracts/conversation-protocol-v1.md)；
-2. 检查 MCP/React/Compress consumer；
-3. 更新 contract/integration tests。
+## Architecture boundary 变更
 
-## 修改 archive 文件语义
+系统职责变化先修改 `10-architecture`，再传播到 Contracts/Packages/Tests。不要因为代码复用方便，把 runtime lifecycle 塞进 protocol package，也不要让 orchestrator 穿透 owning package 私有实现。
 
-1. 先更新 [Archive Protocol v1](../15-contracts/archive-protocol-v1.md)；
-2. 检查 `promptpile-compress` producer/restore；
-3. 检查所有独立 archive consumer，包括 grep/vector search；
-4. 更新 cross-package conformance fixtures；
-5. breaking change 必须定义版本与迁移策略。
+## Package 内部实现
 
-## 修改 package 内部实现
+若 public contract 与系统 ownership 都不变，只更新对应 package 文档/README 与测试；不要把内部 helper 或文件布局复制进 Architecture/Contracts。
 
-如果 public contract 不变，只更新对应 `20-packages` 文档、package README/设计文档和测试；不要为了描述内部代码把细节复制进 architecture/contracts。
+## Plan 生命周期
+
+Active plan 必须明确 non-normative，不能被 canonical docs 当作现行规则。实现落地并形成 executable evidence 后：
+
+```text
+stable fact → architecture / contracts / package docs
+lasting rationale → ADR
+phase/checklist/temporary blocker → Git history
+completed plan file → delete
+```
+
+仓库不维护 `doc/archive` 或 `doc/tracking` 作为第二套状态源。
 
 ## 文档站
 
@@ -41,4 +48,4 @@ npm run docs:build
 npm run docs:preview
 ```
 
-VitePress 版本在 npm script 中固定，避免 Pages 与本地构建使用不同 generator 版本。
+VitePress sidebar 必须只链接 canonical current docs 与 ADR。

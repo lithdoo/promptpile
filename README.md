@@ -1,29 +1,28 @@
 # promptpile
 
-Promptpile is a **file-native, CLI-first lightweight agent runtime ecosystem**. Conversation state lives in inspectable files; one `promptpile` invocation performs one Chat Completions request; orchestration, tool execution, compression and archive retrieval are composed outside the core through public CLI and versioned artifacts.
+Promptpile is a **file-native, CLI-first lightweight agent runtime ecosystem**. Conversation state lives in inspectable files; one `promptpile` invocation performs one Chat Completions request; orchestration, tool execution, snapshotting, compression and archive retrieval are composed outside the core through public CLI and versioned artifacts.
 
 **Documentation:** https://lithdoo.github.io/promptpile/
 
 ```text
                      orchestration
              promptpile-react / promptpile-plan
-                         │ CLI
+                         │ public CLI
                          ▼
                     promptpile
                     │       │
               artifacts     LLM API
                     │
-          ┌─────────┴───────────────┐
-          │                         │
-   promptpile-mcp          context lifecycle
-   tool execution          │
-                           ├─ promptpile-compress
-                           │    compress / restore
-                           │
-                           └─ Archive Protocol
-                                └─ promptpile-compress-grep-search
-                                   read-only archive reader
+     ┌──────────────┼────────────────────┐
+     │              │                    │
+promptpile-fork  promptpile-mcp    context lifecycle
+ snapshot        tool execution     │
+                                   ├─ promptpile-compress
+                                   └─ Archive Protocol
+                                        └─ promptpile-compress-grep-search
 ```
+
+`promptpile-protocol` is the pure executable projection of stable Conversation, Fingerprint, Tool and Receipt protocol semantics. It is shared by runtime packages but owns no filesystem, model execution, orchestration or lifecycle policy.
 
 Layered Conversation I/O separates immutable context from the writable session:
 
@@ -33,32 +32,32 @@ base / reference layers ──read──┐
 session output layer ──read/write┘           │
                                              ├─► promptpile-mcp (calls/results)
                                              ├─► promptpile-compress (lifecycle)
-                                             └─► promptpile-archive (read-only history)
+                                             └─► promptpile-fork (explicit physical snapshot)
 ```
-
-The output directory is the handoff boundary for downstream tools. MCP execution, compression/restore, and archive retrieval each receive that one physical directory (or an exact calls file); they do not jointly scan all input layers.
 
 ## Packages and projects
 
 | Component | Role | Status |
 | --- | --- | --- |
+| [`promptpile-protocol`](./packages/promptpile-protocol/) | Pure protocol parser/types/schema projection | Beta / v1 surface stable |
 | [`promptpile`](./packages/promptpile/) | File-driven single-completion CLI | Beta / active |
-| [`promptpile-react`](./packages/promptpile-react/) | ReAct orchestration over the public CLI | Beta / active |
+| [`promptpile-fork`](./packages/promptpile-fork/) | Byte-exact Conversation prefix snapshot | Beta / Fork v1 frozen |
+| [`promptpile-react`](./packages/promptpile-react/) | ReAct orchestration + structured Agent Event stream | Beta / active, event v1 frozen |
 | [`promptpile-mcp`](./packages/promptpile-mcp/) | MCP gateway, tool export and call execution | Beta / active |
-| [`promptpile-compress`](./packages/promptpile-compress/) | Conversation compression / restore; Archive Protocol producer/restore implementation | Beta |
-| [`promptpile-compress-grep-search`](./packages/promptpile-compress-grep-search/) | Read-only Archive Protocol reader and literal search CLI | Beta |
+| [`promptpile-compress`](./packages/promptpile-compress/) | Conversation compression / restore; Archive Protocol producer | Beta |
+| [`promptpile-compress-grep-search`](./packages/promptpile-compress-grep-search/) | Read-only Archive Protocol reader/search | Beta |
 | [`promptpile-plan`](./packages/promptpile-plan/) | Plan-and-execute orchestration | Scaffold |
 | [`agent-lite-tools`](./agent-lite-tools/) | Supporting file/search/shell/web tool packages | Supporting |
 
 ## Architecture rules
 
-- Message and tool shapes currently follow OpenAI Chat Completions.
-- `promptpile` does **not** execute model-generated tools and does not automatically run a second completion.
-- `promptpile-react` integrates only through documented CLI/stdin/artifacts; it does not import `promptpile/dist/*` internals or assume a fixed build path.
+- `promptpile` performs exactly one Chat Completions request per root invocation, does not execute model-generated tools, and does not automatically run a second completion.
+- `promptpile-react` integrates through documented CLI/stdin/artifacts; `stream-json` emits Agent Event Protocol v1 and does not expose Thought/Observe/Check content.
+- `promptpile-fork` reads one physical Conversation source and publishes an independent selected-prefix snapshot through one terminal directory rename.
+- `promptpile-protocol` contains only pure public protocol semantics; runtime/lifecycle ownership remains in its packages.
 - Layered completion has one writable output directory; downstream mutators operate only on that directory or an exact artifact path.
-- `promptpile-compress` owns lifecycle mutation, not history-search implementations.
 - Archive readers consume the documented Archive Protocol and must not depend on `promptpile-compress` private code.
-- Cross-package compatibility is documented as versioned contracts under [`doc/15-contracts`](./doc/15-contracts/README.md).
+- Cross-package compatibility is documented under [`doc/15-contracts`](./doc/15-contracts/README.md).
 
 ## Development
 
@@ -80,7 +79,7 @@ npm run docs:build
 npm run docs:preview
 ```
 
-The VitePress site is built from [`doc/`](./doc/) and deployed from `main` to GitHub Pages by GitHub Actions.
+The VitePress site is built from [`doc/`](./doc/) and deployed from `main` to GitHub Pages. Current architecture/contracts/packages are the documentation truth; completed migration/freeze plans are retained only in Git history.
 
 ## Examples
 
