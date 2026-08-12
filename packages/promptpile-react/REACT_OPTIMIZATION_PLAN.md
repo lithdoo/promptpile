@@ -1,6 +1,6 @@
 # Promptpile React 编排优化与 Pre-Streaming Freeze 实施计划
 
-> 状态：v1 orchestration 已实施；本地 Freeze 证据完成，等待专用 CI 首次全矩阵绿灯
+> 状态：v1 orchestration 已实施 / Freeze 完成
 > 日期：2026-08-12  
 > 审计基线：`4d4f7f8477936c94d183e674b3c2f643f28f0f62`  
 > 目标组件：`packages/promptpile-react`  
@@ -1292,7 +1292,7 @@ Protocol owns shared ToolCall shape
 
 ### Phase 5 — Evidence
 
-**实施结果：已落地。** `.github/workflows/promptpile-react-v1.yml` 固定 Node 20/22 × Ubuntu/Windows；本地 package tests、real Promptpile integration 与 packed smoke 已绿。
+**实施结果：完成。** `.github/workflows/promptpile-react-v1.yml` 固定 Node 20/22 × Ubuntu/Windows；package tests、real Promptpile integration、packed smoke 与四格 CI 均已绿。
 
 1. root React tests；
 2. real Promptpile integration；
@@ -1302,7 +1302,7 @@ Protocol owns shared ToolCall shape
 
 ### Phase 6 — Freeze
 
-**实施结果：代码与本地证据完成。** 最终发布 Freeze 由专用 CI 首次四格全绿自动满足；在此之前不进入 Streaming implementation。
+**实施结果：完成。** 专用 CI 已在同一 revision 上实现 Node 20/22 × Ubuntu/Windows 四格全绿，v1 orchestration 正式 Freeze。下一步仅重新审查 `REACT_STREAMING_OUTPUT_PLAN.md`，不继续修改本轮 orchestration contract。
 
 所有 checklist 通过后：
 
@@ -1334,7 +1334,7 @@ Packed artifact topology  → scripts/packed-smoke.mjs
 Platform matrix           → .github/workflows/promptpile-react-v1.yml
 ```
 
-以下代码、本地测试与 artifact 条目已经满足；平台条目需以该 revision 的 GitHub Actions 四格结果作为最终发布证据。
+以下代码、测试、artifact 与平台证据均已满足。CI 证据由 `Promptpile React v1` workflow 的同一 revision 四格结果提供。
 
 ### Ownership
 
@@ -1395,10 +1395,10 @@ Platform matrix           → .github/workflows/promptpile-react-v1.yml
 
 ### Evidence
 
-- [ ] Node20 Ubuntu green（专用 CI 已配置，等待该 revision 运行）；
-- [ ] Node22 Ubuntu green（专用 CI 已配置，等待该 revision 运行）；
-- [ ] Node20 Windows green（专用 CI 已配置，等待该 revision 运行）；
-- [ ] Node22 Windows green（专用 CI 已配置，等待该 revision 运行）；
+- [x] Node20 Ubuntu green；
+- [x] Node22 Ubuntu green；
+- [x] Node20 Windows green；
+- [x] Node22 Windows green；
 - [x] real Promptpile integration green；
 - [x] README/examples 与实现一致；
 - [x] broader monorepo architecture guards green。
