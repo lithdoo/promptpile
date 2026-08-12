@@ -19,53 +19,46 @@ import type {
   Turn,
   TokenizerAdapter,
 } from './types';
+import {
+  classifyConversationArtifactNameV1,
+  compareConversationArtifactsV1,
+  type ConversationArtifactFileKindV1,
+} from 'promptpile-protocol/conversation';
 
-const MESSAGE_PATTERN = /^\[(\d+)\](.+?)\.(md|json)$/;
-const ASSISTANT_SIDE_CAR_PATTERN =
-  /^\[(\d+)\]assistant\.(calls|result)\.jsonl$/;
-const ASSISTANT_EXTRA_PATTERN = /^\[(\d+)\]assistant\.extra\.json$/;
+const localKind = (kind: ConversationArtifactFileKindV1): MessageFileKind => {
+  if (kind === 'assistant_call') return 'calls';
+  if (kind === 'assistant_result') return 'result';
+  if (kind === 'assistant_extra') return 'extra';
+  return 'message';
+};
+
+const protocolSortEntry = (file: ScannedFile) => ({
+  idx: file.idx,
+  role: file.role,
+  extension: file.extension,
+  fileKind: file.fileKind === 'calls'
+    ? 'assistant_call' as const
+    : file.fileKind === 'result'
+      ? 'assistant_result' as const
+      : file.fileKind === 'extra'
+        ? 'assistant_extra' as const
+        : 'message' as const,
+  relativePath: file.name,
+});
 
 export const parseMessageFileName = (
   directory: string,
   name: string
 ): ScannedFile | null => {
-  const sideCarMatch = name.match(ASSISTANT_SIDE_CAR_PATTERN);
-  if (sideCarMatch) {
-    return {
-      name,
-      path: path.join(directory, name),
-      idx: Number.parseInt(sideCarMatch[1], 10),
-      role: 'assistant',
-      extension: 'jsonl',
-      fileKind: sideCarMatch[2] as MessageFileKind,
-    };
-  }
-
-  const extraMatch = name.match(ASSISTANT_EXTRA_PATTERN);
-  if (extraMatch) {
-    return {
-      name,
-      path: path.join(directory, name),
-      idx: Number.parseInt(extraMatch[1], 10),
-      role: 'assistant',
-      extension: 'json',
-      fileKind: 'extra',
-    };
-  }
-
-  const messageMatch = name.match(MESSAGE_PATTERN);
-  if (messageMatch) {
-    return {
-      name,
-      path: path.join(directory, name),
-      idx: Number.parseInt(messageMatch[1], 10),
-      role: messageMatch[2] as MessageRole,
-      extension: messageMatch[3] as MessageExtension,
-      fileKind: 'message',
-    };
-  }
-
-  return null;
+  const recognized = classifyConversationArtifactNameV1(name);
+  return recognized ? {
+    name,
+    path: path.join(directory, name),
+    idx: recognized.idx,
+    role: recognized.role as MessageRole,
+    extension: recognized.extension as MessageExtension,
+    fileKind: localKind(recognized.fileKind),
+  } : null;
 };
 
 export const estimateTurnTokens = (
@@ -99,7 +92,9 @@ export const scanTurns = async (
 
   const turns: Turn[] = [];
   for (const [idx, files] of byIdx) {
-    files.sort((a, b) => a.name.localeCompare(b.name));
+    files.sort((a, b) =>
+      compareConversationArtifactsV1(protocolSortEntry(a), protocolSortEntry(b))
+    );
     const turn = {
       idx,
       files,

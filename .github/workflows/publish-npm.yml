@@ -47,6 +47,7 @@ jobs:
         shell: bash
         run: |
           packages=(
+            promptpile-protocol
             promptpile
             promptpile-mcp
             promptpile-compress

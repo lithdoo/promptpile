@@ -3,32 +3,12 @@ import { atomicWriteFileSync } from './atomic-file';
 import type { CompletionArtifactLedger } from './completion-artifact-ledger';
 import type { CompletionUsage } from './types';
 import type { ResolvedInvocationContextV1 } from './invocation-context';
+import type {
+  CompletionReceiptHookV1,
+  CompletionReceiptV1
+} from 'promptpile-protocol/receipt';
 
-export type CompletionReceiptHookV1 =
-  | { status: 'skipped'; failureMode: AfterHookFailureMode; reason: 'not_configured' | 'default_not_found' }
-  | { status: 'invalid_explicit'; failureMode: 'warn'; attempted: string; reason: string }
-  | { status: 'succeeded'; failureMode: AfterHookFailureMode; path: string; exitCode: 0 }
-  | { status: 'spawn_failed'; failureMode: 'warn'; path: string; errorCode?: string }
-  | { status: 'exited_nonzero'; failureMode: 'warn'; path: string; exitCode: number }
-  | { status: 'signaled'; failureMode: 'warn'; path: string; signal: string };
-
-export interface CompletionReceiptV1 {
-  schemaVersion: 1;
-  status: 'completed';
-  invocationId: string | null;
-  artifacts: {
-    assistant: string | null;
-    calls: string | null;
-    extra: string | null;
-    mainOutput: string | null;
-    mainCalls: string | null;
-    mainExtra: string | null;
-  };
-  model: string;
-  finishReason: string | null;
-  usage: CompletionUsage | null;
-  hook: CompletionReceiptHookV1;
-}
+export type { CompletionReceiptHookV1, CompletionReceiptV1 } from 'promptpile-protocol/receipt';
 
 export const buildCompletionReceiptHookV1 = (
   observation: AfterHookObservationV1,

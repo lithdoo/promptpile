@@ -1,0 +1,14 @@
+{
+  "calls": [
+    { "value": { "id": "c1", "type": "function", "function": { "name": "read", "arguments": "{}" } }, "valid": true },
+    { "value": { "id": "c1", "type": "custom", "function": { "name": "read", "arguments": "{}" }, "future": true }, "valid": true },
+    { "value": { "id": "c1", "type": "function", "function": { "name": "read", "arguments": {} } }, "valid": false },
+    { "value": null, "valid": false }
+  ],
+  "results": [
+    { "value": { "tool_call_id": "c1", "content": "ok" }, "valid": true },
+    { "value": { "tool_call_id": "c1", "content": "ok", "name": "read", "future": true }, "valid": true },
+    { "value": { "tool_call_id": "c1", "content": 1 }, "valid": false },
+    { "value": { "tool_call_id": "c1", "content": "ok", "name": 1 }, "valid": false }
+  ]
+}

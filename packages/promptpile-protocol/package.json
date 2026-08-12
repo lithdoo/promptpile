@@ -12,7 +12,52 @@
     "url": "https://github.com/lithdoo/promptpile/issues"
   },
   "license": "ISC",
+  "type": "commonjs",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "conversation": ["dist/conversation.d.ts"],
+      "tool": ["dist/tool.d.ts"],
+      "receipt": ["dist/receipt.d.ts"],
+      "*": ["dist/index.d.ts"]
+    }
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./conversation": {
+      "types": "./dist/conversation.d.ts",
+      "default": "./dist/conversation.js"
+    },
+    "./tool": {
+      "types": "./dist/tool.d.ts",
+      "default": "./dist/tool.js"
+    },
+    "./receipt": {
+      "types": "./dist/receipt.d.ts",
+      "default": "./dist/receipt.js"
+    },
+    "./schemas/completion-receipt-v1.json": "./dist/schemas/completion-receipt-v1.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "package.json"
+  ],
+  "scripts": {
+    "clean": "node scripts/clean-dist.mjs",
+    "build": "npm run clean && tsc && node scripts/copy-schemas.mjs",
+    "test": "npm run build && node test/conversation.cjs && node test/tool.cjs && node test/receipt-schema.cjs && node test/zero-side-effect.cjs && node test/architecture.cjs && node test/package-surface.cjs",
+    "prepack": "npm run build"
+  },
   "engines": {
     "node": ">=18"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "~5.9.3"
   }
 }

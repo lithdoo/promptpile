@@ -1,8 +1,12 @@
 import fs from 'fs';
 import path from 'path';
 import type { FileInfo } from './types';
+import {
+  MAX_CONVERSATION_INDEX_V1,
+  parseConversationIndexV1
+} from 'promptpile-protocol/conversation';
 
-export const MAX_CONVERSATION_INDEX = Number.MAX_SAFE_INTEGER;
+export const MAX_CONVERSATION_INDEX = MAX_CONVERSATION_INDEX_V1;
 
 export class ConversationIndexExhaustedError extends Error {
   readonly code = 'index_exhausted';
@@ -14,11 +18,7 @@ export class ConversationIndexExhaustedError extends Error {
 }
 
 /** Parse the protocol's frozen non-negative safe-integer index domain. */
-export const parseConversationIndex = (raw: string): number | undefined => {
-  if (!/^\d+$/.test(raw)) return undefined;
-  const index = Number(raw);
-  return Number.isSafeInteger(index) && index >= 0 ? index : undefined;
-};
+export const parseConversationIndex = parseConversationIndexV1;
 
 export const parseExpectedConversationIndex = (raw: string): number => {
   const parsed = parseConversationIndex(raw);

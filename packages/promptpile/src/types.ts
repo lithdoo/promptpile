@@ -1,5 +1,6 @@
 import type { AfterHookFailureMode } from './after-hook-policy';
 import type { InvocationId } from './invocation-context';
+import type { CompletionUsageV1, ToolCallV1, ToolResultLineV1 } from 'promptpile-protocol';
 
 /**
  * Synthetic `tool` message `content` when `[idx]assistant.calls.jsonl` lists a `tool_call_id` but
@@ -9,14 +10,7 @@ export const formatMissingToolResultContent = (idx: number, toolCallId: string):
   `错误：未在 [${idx}]assistant.result.jsonl 中找到 tool_call_id=${toolCallId}`;
 
 /** OpenAI-style tool call on an assistant message. */
-export interface ToolCall {
-  id: string;
-  type: string;
-  function: {
-    name: string;
-    arguments: string;
-  };
-}
+export type ToolCall = ToolCallV1;
 
 /**
  * Chat Completions message shape (subset used by promptpile).
@@ -37,11 +31,7 @@ export interface AssistantExtraPayload {
 }
 
 /** One line in `[idx]assistant.result.jsonl`. */
-export interface ToolResultLine {
-  tool_call_id: string;
-  content: string;
-  name?: string;
-}
+export type ToolResultLine = ToolResultLineV1;
 
 export type MissingToolResultsPolicy = 'warn' | 'error' | 'ignore';
 
@@ -171,8 +161,4 @@ export interface AiCallResult {
   usage: CompletionUsage | undefined;
 }
 
-export interface CompletionUsage {
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
-}
+export type CompletionUsage = CompletionUsageV1;

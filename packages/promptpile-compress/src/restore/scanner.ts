@@ -1,20 +1,14 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { ArchiveDir } from './types';
+import { classifyConversationArtifactNameV1 } from 'promptpile-protocol/conversation';
 
-const FILE_PATTERN = /^\[(\d+)\](.+?)\.(md|json)$/;
-const ASSISTANT_CALL_PATTERN = /^\[(\d+)\]assistant\.calls\.jsonl$/;
-const ASSISTANT_RESULT_PATTERN = /^\[(\d+)\]assistant\.result\.jsonl$/;
-const ASSISTANT_EXTRA_PATTERN = /^\[(\d+)\]assistant\.extra\.json$/;
 const ARCHIVE_DIR_PATTERN = /^\[(\d+)\]system\.md\.archive$/;
 
 export const STAGING_DIR = '.promptpile-compress.staging';
 
 export const isMessageFileName = (name: string): boolean =>
-  ASSISTANT_CALL_PATTERN.test(name) ||
-  ASSISTANT_RESULT_PATTERN.test(name) ||
-  ASSISTANT_EXTRA_PATTERN.test(name) ||
-  FILE_PATTERN.test(name);
+  classifyConversationArtifactNameV1(name) !== undefined;
 
 export const findArchiveDirs = async (directory: string): Promise<ArchiveDir[]> => {
   const entries = await fs.readdir(directory, { withFileTypes: true });

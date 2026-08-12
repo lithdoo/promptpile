@@ -1,0 +1,25 @@
+{
+  "indices": [
+    { "raw": "0", "value": 0 },
+    { "raw": "01", "value": 1 },
+    { "raw": "9007199254740991", "value": 9007199254740991 },
+    { "raw": "", "invalid": true },
+    { "raw": " 1", "invalid": true },
+    { "raw": "+1", "invalid": true },
+    { "raw": "-1", "invalid": true },
+    { "raw": "1.0", "invalid": true },
+    { "raw": "1e2", "invalid": true },
+    { "raw": "9007199254740992", "invalid": true }
+  ],
+  "names": [
+    { "name": "[1]user.md", "value": { "idx": 1, "role": "user", "extension": "md", "fileKind": "message" } },
+    { "name": "[01]assistant.json", "value": { "idx": 1, "role": "assistant", "extension": "json", "fileKind": "message" } },
+    { "name": "[2]assistant.calls.jsonl", "value": { "idx": 2, "role": "assistant", "extension": "jsonl", "fileKind": "assistant_call" } },
+    { "name": "[2]assistant.extra.json", "value": { "idx": 2, "role": "assistant", "extension": "json", "fileKind": "assistant_extra" } },
+    { "name": "[2]assistant.result.jsonl", "value": { "idx": 2, "role": "assistant", "extension": "jsonl", "fileKind": "assistant_result" } },
+    { "name": "[2]Assistant.calls.jsonl", "invalid": true },
+    { "name": "[2]assistant.calls.JSONL", "invalid": true },
+    { "name": "[9007199254740992]user.md", "invalid": true },
+    { "name": "folder/[2]user.md", "invalid": true }
+  ]
+}

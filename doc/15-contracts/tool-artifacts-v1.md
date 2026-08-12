@@ -23,6 +23,8 @@ Conversation 内：
 
 每行表示一个 tool call，需要稳定的 call id、function name 与 arguments 以便 executor 关联结果。
 
+公共结构投影接受 `id`、`type`、`function.name`、`function.arguments` 为字符串；未知附加字段被忽略，以允许 producer 增量扩展。具体 executor 可以进一步限制其支持的 call type；`promptpile-mcp` 当前只执行 `type: "function"`。这类执行能力限制不改变公共 artifact shape。
+
 ## Result 文件
 
 ```text
@@ -30,6 +32,8 @@ Conversation 内：
 ```
 
 Conversation 中即 `[idx]assistant.result.jsonl`。每条 result 通过 tool call id 唯一对应一条调用；Promptpile 后续把结果转成 `tool` message。
+
+公共 result 行要求 `tool_call_id` 与 `content` 为字符串，`name` 若存在也必须为字符串；未知附加字段被忽略。重复、未知或缺失 id 的完整性判断属于读取该组 artifacts 的 owner policy。
 
 ## Physical-directory ownership
 

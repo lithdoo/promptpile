@@ -1,6 +1,6 @@
 # Promptpile Protocol Package 实施计划
 
-> 状态：实施前冻结稿  
+> 状态：v1 已实施 / CI matrix 验证后 Freeze
 > 日期：2026-08-12  
 > 目标包：`packages/promptpile-protocol`  
 > 核心结论：建立极小、无运行时副作用、零 runtime dependency 的公共协议投影包；只接纳已经稳定、可纯函数/纯数据表达、且存在真实跨包复用价值的协议语义。

@@ -1,0 +1,38 @@
+name: Protocol Contract
+
+on:
+  push:
+    paths:
+      - 'packages/promptpile-protocol/**'
+      - 'fixtures/conversation-protocol-v1/**'
+      - 'fixtures/tool-artifacts-v1/**'
+      - 'doc/15-contracts/**'
+      - 'packages/promptpile/**'
+      - 'packages/promptpile-mcp/**'
+      - 'packages/promptpile-compress/**'
+      - 'package.json'
+      - 'package-lock.json'
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: [18, 22]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm test -w promptpile-protocol
+      - run: npm test -w promptpile
+      - run: npm test -w promptpile-mcp
+      - run: npm test -w promptpile-compress

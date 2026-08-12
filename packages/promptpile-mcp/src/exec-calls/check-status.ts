@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { resultAbsPathForCallFile, stemFromCallsBasename } from './calls-paths';
 import { parseCallJsonlFile } from './parse-call-jsonl';
+import { parseToolResultLineV1 } from 'promptpile-protocol/tool';
 
 export type CallsStatus = 'pending' | 'partial' | 'complete' | 'invalid';
 
@@ -47,20 +48,10 @@ function parseResultIds(resultPath: string): string[] {
         `promptpile-mcp: ${path.basename(resultPath)} 第 ${index + 1} 行不是合法 JSON`
       );
     }
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      throw new Error(
-        `promptpile-mcp: ${path.basename(resultPath)} 第 ${index + 1} 行须为对象`
-      );
-    }
-    const row = value as Record<string, unknown>;
-    if (typeof row.tool_call_id !== 'string' || row.tool_call_id === '') {
+    const row = parseToolResultLineV1(value);
+    if (!row || row.tool_call_id === '') {
       throw new Error(
         `promptpile-mcp: ${path.basename(resultPath)} 第 ${index + 1} 行缺少 tool_call_id`
-      );
-    }
-    if (typeof row.content !== 'string') {
-      throw new Error(
-        `promptpile-mcp: ${path.basename(resultPath)} 第 ${index + 1} 行缺少字符串 content`
       );
     }
     ids.push(row.tool_call_id);

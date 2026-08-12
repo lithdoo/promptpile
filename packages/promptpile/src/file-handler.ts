@@ -19,6 +19,7 @@ import {
 } from './conversation-index';
 import { ConversationTargetCollisionError } from './conversation-conflict';
 import { classifyConversationArtifactName } from './conversation-artifact-name';
+import { compareConversationArtifactsV1, parseToolResultLineV1 } from 'promptpile-protocol';
 
 const readUtf8FileFromDisk = (filePath: string): string =>
   fs.readFileSync(filePath, 'utf8');
@@ -60,21 +61,8 @@ export const conversationArtifactTier = (f: FileInfo): number => {
   return 0;
 };
 
-export const compareConversationArtifacts = (a: FileInfo, b: FileInfo): number => {
-  if (a.idx !== b.idx) {
-    return a.idx - b.idx;
-  }
-  const ta = conversationArtifactTier(a);
-  const tb = conversationArtifactTier(b);
-  if (ta !== tb) {
-    return ta - tb;
-  }
-  const ra = compareUtf8Bytes(a.role, b.role);
-  if (ra !== 0) {
-    return ra;
-  }
-  return compareUtf8Bytes(a.relativePath, b.relativePath);
-};
+export const compareConversationArtifacts = (a: FileInfo, b: FileInfo): number =>
+  compareConversationArtifactsV1(a, b);
 
 /** Scan only direct files in the message directory; nested directories are intentionally ignored. */
 export const scanDirectory = (directory: string, directoryIndex = 0): FileInfo[] => {
@@ -170,14 +158,11 @@ const parseAssistantResultFile = (raw: string): ToolResultLine[] => {
     if (typeof rec.content !== 'string') {
       throw new Error(`assistant.result.jsonl line ${i + 1} must include string "content"`);
     }
-    const line: ToolResultLine = {
-      tool_call_id: rec.tool_call_id,
-      content: rec.content
-    };
-    if (typeof rec.name === 'string') {
-      line.name = rec.name;
+    const parsed = parseToolResultLineV1(obj);
+    if (!parsed) {
+      throw new Error(`assistant.result.jsonl line ${i + 1} has invalid optional fields`);
     }
-    out.push(line);
+    out.push(parsed);
   }
   return out;
 };

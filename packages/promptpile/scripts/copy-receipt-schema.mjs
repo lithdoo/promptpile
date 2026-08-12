@@ -12,5 +12,6 @@ const source = path.resolve(
   'completion-receipt-v1.schema.json'
 );
 const destination = path.join(packageRoot, 'dist', 'completion-receipt-v1.schema.json');
+const protocolCopy = path.join(packageRoot, '..', 'promptpile-protocol', 'dist', 'schemas', 'completion-receipt-v1.json');
 
-fs.copyFileSync(source, destination);
+fs.copyFileSync(fs.existsSync(protocolCopy) ? protocolCopy : source, destination);
