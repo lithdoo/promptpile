@@ -29,7 +29,10 @@ jobs:
           cache: npm
 
       - name: Install lifecycle packages
-        run: npm ci --ignore-scripts --workspace=promptpile-compress --workspace=promptpile-compress-grep-search
+        run: npm ci --ignore-scripts --workspace=promptpile-protocol --workspace=promptpile-compress --workspace=promptpile-compress-grep-search
+
+      - name: Build Promptpile protocol
+        run: npm run build -w promptpile-protocol
 
       - name: Test producer, restore, lock, and recovery
         run: npm run test -w promptpile-compress

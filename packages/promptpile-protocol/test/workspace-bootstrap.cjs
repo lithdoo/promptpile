@@ -24,12 +24,13 @@ const workflowRoot = path.join(repositoryRoot, '.github', 'workflows');
 for (const name of fs.readdirSync(workflowRoot)) {
   if (!name.endsWith('.yml')) continue;
   const source = fs.readFileSync(path.join(workflowRoot, name), 'utf8');
-  if (!/npm run build -w promptpile(?:\s|$)/m.test(source)) continue;
   const protocolBuild = source.search(/npm run build -w promptpile-protocol/);
   const promptpileBuild = source.search(/npm run build -w promptpile(?:\s|$)/m);
-  assert(protocolBuild >= 0, `${name} must build protocol before promptpile`);
-  assert(
-    protocolBuild < promptpileBuild,
-    `${name} must preserve protocol -> promptpile build order`
-  );
+  if (promptpileBuild >= 0) {
+    assert(protocolBuild >= 0, `${name} must build protocol before promptpile`);
+    assert(protocolBuild < promptpileBuild, `${name} must preserve protocol -> promptpile build order`);
+  }
+  if (/npm run test -w promptpile-compress(?:\s|$)/m.test(source)) {
+    assert(protocolBuild >= 0, `${name} must build protocol before promptpile-compress`);
+  }
 }
