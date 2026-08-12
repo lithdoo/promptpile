@@ -1,0 +1,48 @@
+name: Promptpile MCP v1
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/promptpile-mcp/**'
+      - 'packages/promptpile-protocol/**'
+      - 'packages/promptpile/**'
+      - 'doc/10-architecture/tool-execution-system.md'
+      - 'doc/15-contracts/tool-artifacts-v1.md'
+      - 'doc/20-packages/promptpile-mcp.md'
+      - '.github/workflows/promptpile-mcp-v1.yml'
+      - 'package.json'
+      - 'package-lock.json'
+  pull_request:
+    paths:
+      - 'packages/promptpile-mcp/**'
+      - 'packages/promptpile-protocol/**'
+      - 'packages/promptpile/**'
+      - 'doc/10-architecture/tool-execution-system.md'
+      - 'doc/15-contracts/tool-artifacts-v1.md'
+      - 'doc/20-packages/promptpile-mcp.md'
+      - '.github/workflows/promptpile-mcp-v1.yml'
+      - 'package.json'
+      - 'package-lock.json'
+
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: [20, 22]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build -w promptpile-protocol
+      - run: npm test -w promptpile-protocol
+      - run: npm run build -w promptpile
+      - run: npm test -w promptpile-mcp
+      - run: npm run test:integration -w promptpile-mcp
+      - run: npm run test:packed -w promptpile-mcp
