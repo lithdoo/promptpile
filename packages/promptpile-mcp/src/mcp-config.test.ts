@@ -24,11 +24,13 @@ describe('parseOptionalPort', () => {
 });
 
 describe('parseGatewayTable', () => {
-  it('coerces string port', () => {
-    assert.deepEqual(parseGatewayTable({ port: '3000' }), { port: 3000, token: undefined });
+  it('accepts an exact integer port', () => {
+    assert.deepEqual(parseGatewayTable({ port: 3000 }), { port: 3000, token: undefined });
   });
-  it('rejects non-numeric string', () => {
+  it('rejects strings and fractional ports', () => {
     assert.throws(() => parseGatewayTable({ port: 'abc' }));
+    assert.throws(() => parseGatewayTable({ port: '3000' }));
+    assert.throws(() => parseGatewayTable({ port: 3000.5 }));
   });
 });
 
@@ -100,21 +102,10 @@ describe('readMcpConfig', () => {
     }
   });
 
-  it('warns when version is not 1', () => {
+  it('rejects unsupported versions', () => {
     const p = path.join(dir, 'v2.toml');
     fs.writeFileSync(p, 'version = 2\n[gateway]\nport = 8080\n');
-    const warns: string[] = [];
-    const orig = console.warn;
-    console.warn = (...a: unknown[]) => {
-      warns.push(a.map(String).join(' '));
-    };
-    try {
-      const c = readMcpConfig(p);
-      assert.equal(c.version, 2);
-      assert.ok(warns.some((w) => w.includes('version=2')));
-    } finally {
-      console.warn = orig;
-    }
+    assert.throws(() => readMcpConfig(p), /version/);
   });
 
   it('rejects invalid failure_policy', () => {
@@ -163,5 +154,35 @@ describe('readMcpConfig', () => {
       '[gateway]\nport = 8080\n\n[servers.bad__id]\ncommand = "x"\n',
     );
     assert.throws(() => readMcpConfig(p), /表键不得包含/);
+  });
+
+  it('rejects wrong table shapes and unknown keys', () => {
+    const documents = [
+      '{"gateway":false}',
+      '{"typo":1}',
+      '{"gateway":{"typo":1}}',
+      '{"servers":{"x":{"command":"x","typo":1}}}',
+    ];
+    for (const [index, document] of documents.entries()) {
+      const p = path.join(dir, `shape-${index}.json`);
+      fs.writeFileSync(p, document);
+      assert.throws(() => readMcpConfig(p));
+    }
+  });
+
+  it('rejects wrong booleans, fractional integers, duplicate retry tools, nested env, and empty command', () => {
+    const documents = [
+      { behavior: { flat_names: 'true' } },
+      { defaults: { init_timeout_ms: 1.5 } },
+      { execution: { concurrency: 1.5 } },
+      { execution: { retry_safe_tools: ['x', 'x'] } },
+      { servers: { x: { command: 'x', env: { BAD: { nested: true } } } } },
+      { servers: { x: { command: '  ' } } },
+    ];
+    for (const [index, document] of documents.entries()) {
+      const p = path.join(dir, `strict-${index}.json`);
+      fs.writeFileSync(p, JSON.stringify(document));
+      assert.throws(() => readMcpConfig(p));
+    }
   });
 });

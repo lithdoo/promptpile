@@ -55,45 +55,37 @@ export type McpFileConfig = {
 };
 
 function parseVersion(raw: unknown): number {
-  if (raw === undefined || raw === null) return 1;
-  let v: number;
-  if (typeof raw === 'number' && Number.isInteger(raw) && raw >= 1) {
-    v = raw;
-  } else if (typeof raw === 'string' && /^\d+$/.test(raw.trim())) {
-    v = parseInt(raw.trim(), 10);
-    if (v < 1) throw new Error('promptpile-mcp: version 须为 >= 1 的整数');
-  } else {
-    throw new Error('promptpile-mcp: version 须为正整数');
-  }
-  if (v !== 1) {
-    console.warn(
-      `promptpile-mcp: 配置 version=${v} 非当前支持的 schema（预期 1），后续字段可能有兼容性问题`,
-    );
-  }
-  return v;
+  if (raw === undefined) return 1;
+  if (raw !== 1) throw new Error('promptpile-mcp: version 须为整数 1');
+  return 1;
+}
+
+function table(raw: unknown, context: string): Record<string, unknown> | undefined {
+  if (raw === undefined) return undefined;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error(`promptpile-mcp: ${context} 须为表`);
+  return raw as Record<string, unknown>;
+}
+function knownKeys(value: Record<string, unknown>, allowed: string[], context: string): void {
+  for (const key of Object.keys(value)) if (!allowed.includes(key)) throw new Error(`promptpile-mcp: ${context} 未知字段: ${key}`);
 }
 
 function parseDefaults(raw: unknown): McpDefaults {
-  if (!raw || typeof raw !== 'object') {
+  const d = table(raw, '[defaults]');
+  if (!d) {
     return { init_timeout_ms: DEFAULT_INIT_MS, list_timeout_ms: DEFAULT_LIST_MS };
   }
-  const d = raw as Record<string, unknown>;
-  const init =
-    typeof d.init_timeout_ms === 'number' && Number.isFinite(d.init_timeout_ms) && d.init_timeout_ms > 0
-      ? Math.floor(d.init_timeout_ms)
-      : DEFAULT_INIT_MS;
-  const list =
-    typeof d.list_timeout_ms === 'number' && Number.isFinite(d.list_timeout_ms) && d.list_timeout_ms > 0
-      ? Math.floor(d.list_timeout_ms)
-      : DEFAULT_LIST_MS;
+  knownKeys(d, ['init_timeout_ms', 'list_timeout_ms'], '[defaults]');
+  const init = positiveInteger(d.init_timeout_ms, DEFAULT_INIT_MS, 'defaults.init_timeout_ms');
+  const list = positiveInteger(d.list_timeout_ms, DEFAULT_LIST_MS, 'defaults.list_timeout_ms');
   return { init_timeout_ms: init, list_timeout_ms: list };
 }
 
 function parseBehavior(raw: unknown): McpBehavior {
-  if (!raw || typeof raw !== 'object') {
+  const b = table(raw, '[behavior]');
+  if (!b) {
     return { failure_policy: 'best-effort', flat_names: false };
   }
-  const b = raw as Record<string, unknown>;
+  knownKeys(b, ['failure_policy', 'flat_names'], '[behavior]');
   const fp = b.failure_policy;
   let failure_policy: FailurePolicy;
   if (fp === undefined) {
@@ -107,6 +99,7 @@ function parseBehavior(raw: unknown): McpBehavior {
       `promptpile-mcp: behavior.failure_policy 须为 "strict" 或 "best-effort"，收到: ${JSON.stringify(fp)}`,
     );
   }
+  if (b.flat_names !== undefined && typeof b.flat_names !== 'boolean') throw new Error('promptpile-mcp: behavior.flat_names 须为 boolean');
   return {
     failure_policy,
     flat_names: b.flat_names === true,
@@ -132,7 +125,8 @@ function positiveInteger(
 }
 
 function parseExecution(raw: unknown): McpExecution {
-  if (!raw || typeof raw !== 'object') {
+  const e = table(raw, '[execution]');
+  if (!e) {
     return {
       concurrency: DEFAULT_EXEC_CONCURRENCY,
       call_timeout_ms: DEFAULT_CALL_TIMEOUT_MS,
@@ -142,7 +136,7 @@ function parseExecution(raw: unknown): McpExecution {
       retry_safe_tools: [],
     };
   }
-  const e = raw as Record<string, unknown>;
+  knownKeys(e, ['concurrency','call_timeout_ms','failure_policy','retry_max_attempts','retry_base_delay_ms','retry_safe_tools'], '[execution]');
   const failure = e.failure_policy ?? 'continue';
   if (failure !== 'continue' && failure !== 'fail_fast') {
     throw new Error('promptpile-mcp: execution.failure_policy 须为 "continue" 或 "fail_fast"');
@@ -155,6 +149,7 @@ function parseExecution(raw: unknown): McpExecution {
   ) {
     throw new Error('promptpile-mcp: execution.retry_safe_tools 须为非空字符串数组');
   }
+  if (safe && new Set((safe as string[]).map((x) => x.trim())).size !== safe.length) throw new Error('promptpile-mcp: execution.retry_safe_tools 不得重复');
   return {
     concurrency: positiveInteger(e.concurrency, DEFAULT_EXEC_CONCURRENCY, 'execution.concurrency'),
     call_timeout_ms: positiveInteger(e.call_timeout_ms, DEFAULT_CALL_TIMEOUT_MS, 'execution.call_timeout_ms'),
@@ -171,9 +166,10 @@ function parseExecution(raw: unknown): McpExecution {
 }
 
 function parseEnvTable(raw: unknown, context: string): Record<string, string> | undefined {
-  if (!raw || typeof raw !== 'object') return undefined;
+  const env = table(raw, `${context}.env`);
+  if (!env) return undefined;
   const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+  for (const [k, v] of Object.entries(env)) {
     if (typeof v === 'string') {
       out[k] = v;
     } else if (typeof v === 'number' && Number.isFinite(v)) {
@@ -181,7 +177,7 @@ function parseEnvTable(raw: unknown, context: string): Record<string, string> | 
     } else if (typeof v === 'boolean') {
       out[k] = v ? 'true' : 'false';
     } else {
-      console.warn(`promptpile-mcp: ${context} env.${k} 已跳过（须为 string、number 或 boolean）`);
+      throw new Error(`promptpile-mcp: ${context} env.${k} 须为 string、finite number 或 boolean`);
     }
   }
   return Object.keys(out).length ? out : undefined;
@@ -215,12 +211,13 @@ function parseTransport(serverId: string, raw: unknown): McpServerTransport | un
 }
 
 function parseServerEntry(serverId: string, raw: unknown): McpServerEntry {
-  if (!raw || typeof raw !== 'object') {
+  const s = table(raw, `[servers.${serverId}]`);
+  if (!s) {
     throw new Error(`promptpile-mcp: [servers.${serverId}] 须为表`);
   }
-  const s = raw as Record<string, unknown>;
+  knownKeys(s, ['command','args','env','cwd','init_timeout_ms','list_timeout_ms','transport'], `[servers.${serverId}]`);
   const command = s.command;
-  if (typeof command !== 'string' || command.length === 0) {
+  if (typeof command !== 'string' || command.trim().length === 0) {
     throw new Error(`promptpile-mcp: [servers.${serverId}] 缺少非空 command`);
   }
   const args = s.args;
@@ -236,16 +233,16 @@ function parseServerEntry(serverId: string, raw: unknown): McpServerEntry {
   let init_timeout_ms: number | undefined;
   let list_timeout_ms: number | undefined;
   if (s.init_timeout_ms !== undefined) {
-    if (typeof s.init_timeout_ms !== 'number' || !Number.isFinite(s.init_timeout_ms) || s.init_timeout_ms <= 0) {
+    if (!Number.isInteger(s.init_timeout_ms) || (s.init_timeout_ms as number) <= 0) {
       throw new Error(`promptpile-mcp: [servers.${serverId}] init_timeout_ms 无效`);
     }
-    init_timeout_ms = Math.floor(s.init_timeout_ms);
+    init_timeout_ms = s.init_timeout_ms as number;
   }
   if (s.list_timeout_ms !== undefined) {
-    if (typeof s.list_timeout_ms !== 'number' || !Number.isFinite(s.list_timeout_ms) || s.list_timeout_ms <= 0) {
+    if (!Number.isInteger(s.list_timeout_ms) || (s.list_timeout_ms as number) <= 0) {
       throw new Error(`promptpile-mcp: [servers.${serverId}] list_timeout_ms 无效`);
     }
-    list_timeout_ms = Math.floor(s.list_timeout_ms);
+    list_timeout_ms = s.list_timeout_ms as number;
   }
   const transport = parseTransport(serverId, s.transport);
   const entry: McpServerEntry = {
@@ -277,6 +274,7 @@ function parseServers(raw: unknown): Record<string, McpServerEntry> {
 /** Read `[gateway]`, `[defaults]`, `[behavior]`, `[servers.*]` from the same file as launch. */
 export function readMcpConfig(configPath: string): McpFileConfig {
   const doc = loadConfigDocument(configPath);
+  knownKeys(doc, ['version','gateway','defaults','behavior','execution','servers'], '顶层配置');
   return {
     version: parseVersion(doc.version),
     gateway: parseGatewayTable(doc.gateway),

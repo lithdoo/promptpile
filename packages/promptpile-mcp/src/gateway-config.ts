@@ -38,16 +38,17 @@ export function parseOptionalPort(port: unknown, ctx: string): number | undefine
 }
 
 export function parseGatewayTable(gw: unknown): GatewayFileConfig {
-  if (!gw || typeof gw !== 'object') {
+  if (gw === undefined) {
     return {};
   }
+  if (!gw || typeof gw !== 'object' || Array.isArray(gw)) throw new Error('promptpile-mcp: [gateway] 须为表');
   const g = gw as Record<string, unknown>;
-  let port: number | undefined;
-  try {
-    port = parseOptionalPort(g.port, 'promptpile-mcp: [gateway]');
-  } catch (e) {
-    throw e instanceof Error ? e : new Error(String(e));
+  for (const key of Object.keys(g)) if (!['port', 'token'].includes(key)) throw new Error(`promptpile-mcp: [gateway] 未知字段: ${key}`);
+  if (g.port !== undefined && (!Number.isInteger(g.port) || (g.port as number) < MIN_PORT || (g.port as number) > MAX_PORT)) {
+    throw new Error(`promptpile-mcp: [gateway] port 须为 ${MIN_PORT}-${MAX_PORT} 的整数`);
   }
+  let port: number | undefined;
+  port = g.port as number | undefined;
   const token = g.token;
   if (token !== undefined && typeof token !== 'string') {
     throw new Error('promptpile-mcp: [gateway] token 须为字符串');
