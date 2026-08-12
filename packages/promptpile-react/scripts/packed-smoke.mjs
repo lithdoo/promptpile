@@ -35,6 +35,9 @@ try {
   const installedRoot = path.join(consumer, 'node_modules', 'promptpile-react');
   const cli = path.join(installedRoot, 'dist', 'index.js');
   const metadata = JSON.parse(fs.readFileSync(path.join(installedRoot, 'package.json'), 'utf8'));
+  if (!fs.existsSync(path.join(installedRoot, 'schema', 'agent-event-v1.schema.json'))) {
+    throw new Error('packed artifact is missing schema/agent-event-v1.schema.json');
+  }
   const invoke = args => spawnSync(process.execPath, [cli, ...args], { cwd: consumer, encoding: 'utf8' });
 
   const help = invoke(['--help']);
@@ -72,6 +75,12 @@ try {
     '    const call = { id: "packed-check", type: "function", function: { name: "react_check_decision", arguments: "{\\"decision\\":false}" } };',
     '    fs.writeFileSync(calls, JSON.stringify(call) + "\\n");',
     '  }',
+    '}',
+    "const fdIndex = argv.indexOf('--output-pile-fd');",
+    'if (fdIndex >= 0) {',
+    "  const stream = fs.createWriteStream('', { fd: Number(argv[fdIndex + 1]), encoding: 'utf8' });",
+    "  stream.write(JSON.stringify({ type: 'assistant_delta', content: 'packed final' }) + '\\n');",
+    "  stream.end(JSON.stringify({ type: 'assistant_done' }) + '\\n');",
     '}'
   ].join('\n'));
   const smoke = spawnSync(process.execPath, [cli, '-d', messages], {
@@ -81,6 +90,23 @@ try {
   });
   if (smoke.status !== 0) {
     throw new Error(`packed orchestration smoke failed (status=${smoke.status}, error=${smoke.error?.message ?? 'none'}):\nstdout=${smoke.stdout}\nstderr=${smoke.stderr}`);
+  }
+
+  const finalPrompt = path.join(messages, 'final.md');
+  const reactConfig = path.join(consumer, 'react.toml');
+  fs.writeFileSync(finalPrompt, 'final instructions');
+  fs.writeFileSync(reactConfig, `[promptpile-react]\ndirs=["${messages.replace(/\\/g, '\\\\')}"]\nfinal_prompt="final.md"\n`);
+  const streaming = spawnSync(process.execPath, [cli, '--config', reactConfig, '--output-format', 'stream-json'], {
+    cwd: consumer,
+    encoding: 'utf8',
+    env: { ...process.env, PROMPTPILE_BIN: '' }
+  });
+  if (streaming.status !== 0) {
+    throw new Error(`packed streaming smoke failed:\nstdout=${streaming.stdout}\nstderr=${streaming.stderr}`);
+  }
+  const events = streaming.stdout.trim().split(/\r?\n/).map(JSON.parse);
+  if (events[0]?.type !== 'session.started' || events.at(-1)?.type !== 'session.completed') {
+    throw new Error(`packed streaming smoke emitted an invalid trace: ${streaming.stdout}`);
   }
 
   console.log('promptpile-react packed artifact smoke ok');

@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import fs from 'fs';
 import path from 'path';
-import type { ReactCliOverrides } from './types';
+import type { ReactCliOverrides, ReactOutputFormat } from './types';
 
 const packageVersion = (): string => {
   const metadataPath = path.resolve(__dirname, '..', 'package.json');
@@ -41,6 +41,11 @@ const collectDirectory = (value: string, previous: string[]): string[] => [
   value
 ];
 
+const parseOutputFormat = (value: string): ReactOutputFormat => {
+  if (value === 'terminal' || value === 'stream-json') return value;
+  throw new Error('--output-format must be terminal or stream-json');
+};
+
 const buildProgram = (): Command => {
   const program = new Command();
   program
@@ -77,7 +82,13 @@ const buildProgram = (): Command => {
       '--after-hook-path <path>',
       'After-success hook for Thought phase only (CLI relative cwd)'
     )
-    .option('--max-step <n>', 'Max successful ReAct iterations (this package only)');
+    .option('--max-step <n>', 'Max successful ReAct iterations (this package only)')
+    .option(
+      '--output-format <format>',
+      'Output format: terminal | stream-json',
+      parseOutputFormat,
+      'terminal'
+    );
   return program;
 };
 
@@ -107,6 +118,7 @@ export const parseReactCli = (argv: string[]): ReactCliOverrides => {
     maxStep?: string;
     temperature?: string;
     extraBody?: string;
+    outputFormat?: ReactOutputFormat;
   };
 
   const inputDirectories = o.directory?.map((value, index) => {
@@ -138,7 +150,8 @@ export const parseReactCli = (argv: string[]): ReactCliOverrides => {
     continueMode: o.continue === true ? true : undefined,
     maxStep: parseMaxStepCli(o.maxStep),
     temperature: trimmed(o.temperature),
-    extraBody: trimmed(o.extraBody)
+    extraBody: trimmed(o.extraBody),
+    outputFormat: o.outputFormat ?? 'terminal'
   };
 };
 

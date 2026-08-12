@@ -7,6 +7,7 @@ import { CHECK_DECISION_TOOL_NAME, writeCheckToolsToml } from './check-decision-
 import { callsPathForMainOutput, parseObserveDecisionFromCallsFileStrict } from './parse-observe-calls';
 import {
   invokePromptpileAsync,
+  invokePromptpileFinalStream,
   type PromptpileInvokeResult,
   type PromptpileSpawnConfig
 } from './promptpile-invoker';
@@ -35,6 +36,7 @@ export abstract class ReactProcess {
     const r = await invokePromptpileAsync(this.ctx.spawn, argv, {
       cwd: this.ctx.config.cwd,
       quiet: this.ctx.config.quiet,
+      forwardStdout: this.ctx.config.outputFormat === 'terminal',
       env: buildPromptpileChildEnv(phase)
     });
 
@@ -42,16 +44,16 @@ export abstract class ReactProcess {
       this.logSpawnError(r);
       throw new PromptpileReactInvocationError(
         phase,
-        r.error.message || '无法启动 promptpile'
+        r.error.message || '无法启动 promptpile',
+        'promptpile_spawn_failed'
       );
     }
 
     if (r.status !== 0) {
-      const tail = r.stderr.trim().slice(-500);
-      const extra = tail !== '' ? `: ${tail}` : '';
       throw new PromptpileReactInvocationError(
         phase,
-        `promptpile 退出码 ${r.status ?? 'null'}${extra}`
+        `promptpile exited with status ${r.status ?? 'null'}`,
+        'promptpile_exit_nonzero'
       );
     }
   }
@@ -158,7 +160,7 @@ export class ObserveReactProcess extends ReactProcess {
         text = fs.readFileSync(resolvedOut, 'utf8').trim();
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        throw new PromptpileReactInvocationError('observe', msg);
+        throw new PromptpileReactInvocationError('observe', msg, 'phase_output_missing');
       }
 
       logObservePhaseLlmOutput(resolvedOut);
@@ -221,7 +223,7 @@ export class CheckReactProcess extends ReactProcess {
         cont = parseObserveDecisionFromCallsFileStrict(callsPath, CHECK_DECISION_TOOL_NAME);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        throw new PromptpileReactInvocationError('check', msg);
+        throw new PromptpileReactInvocationError('check', msg, 'check_decision_invalid');
       }
       try {
         if (fs.existsSync(callsPath)) {
@@ -251,10 +253,10 @@ export class FinalReactProcess extends ReactProcess {
     super(ctx);
   }
 
-  async run(): Promise<void> {
+  async run(onDelta?: (content: string) => Promise<void>): Promise<{ status: 'skipped' } | { status: 'completed'; content: string }> {
     if (this.finalBody.trim() === '') {
       reactDebugLog('phase=final skip');
-      return;
+      return { status: 'skipped' };
     }
 
     reactDebugLog('phase=final');
@@ -268,7 +270,27 @@ export class FinalReactProcess extends ReactProcess {
       );
       fs.writeFileSync(tempPath, this.finalBody, 'utf8');
       argv.push('--insert-files', path.resolve(tempPath));
-      await this.assertPromptpileSuccess(argv, 'final');
+      if (onDelta === undefined) {
+        await this.assertPromptpileSuccess(argv, 'final');
+        return { status: 'completed', content: '' };
+      }
+      argv.push('--output-pile-fd', '3', '--output-pile-format', 'json');
+      const result = await invokePromptpileFinalStream(this.ctx.spawn, argv, {
+        cwd: this.ctx.config.cwd,
+        quiet: this.ctx.config.quiet,
+        env: buildPromptpileChildEnv('final'),
+        onDelta
+      });
+      if (result.error) {
+        throw new PromptpileReactInvocationError('final', result.error.message, 'promptpile_spawn_failed');
+      }
+      if (result.streamError) {
+        throw new PromptpileReactInvocationError('final', result.streamError.message, 'final_stream_invalid');
+      }
+      if (result.status !== 0) {
+        throw new PromptpileReactInvocationError('final', `promptpile 退出码 ${result.status ?? 'null'}`, 'promptpile_exit_nonzero');
+      }
+      return { status: 'completed', content: result.content };
     } finally {
       this.unlinkQuiet(tempPath);
     }

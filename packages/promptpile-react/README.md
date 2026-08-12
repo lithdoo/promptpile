@@ -1,5 +1,22 @@
 # promptpile-react
 
+## Structured streaming output
+
+The default output remains the existing human-facing terminal mode. For a
+machine-readable, real-time projection of the ReAct session, use:
+
+```bash
+promptpile-react -d ./messages --output-format stream-json
+```
+
+`stream-json` reserves stdout for Agent Event Protocol v1 JSONL. Human
+diagnostics and child stderr remain on stderr; `--quiet` never suppresses
+protocol events. The package-local normative schema is published at
+`schema/agent-event-v1.schema.json`.
+
+The v1 stream exposes orchestration facts and Final answer deltas only. It does
+not expose Thought, Observe, Check text, tool arguments, or hidden reasoning.
+
 `promptpile-react` 是建立在 `promptpile` 公共 CLI 之上的轻量 ReAct 编排器。它只负责阶段顺序、继续/停止决策和提示词注入；Chat Completions、Conversation I/O、OCC、Receipt 与 artifact publication 均由 `promptpile` 负责。
 
 ## 执行模型

@@ -1,6 +1,6 @@
 # Promptpile React 结构化流式输出 Implementation Freeze 计划
 
-> 状态：Implementation Freeze / 待实施  
+> 状态：Implemented / CI validation
 > 日期：2026-08-12  
 > 审计基线：`d6677207418b077d2a771acbbf41795d7736bd74`  
 > 目标组件：`packages/promptpile-react`  

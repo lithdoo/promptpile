@@ -98,6 +98,11 @@ const metadata = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'ut
 const protocolMetadata = JSON.parse(
   fs.readFileSync(path.join(root, '..', 'promptpile-protocol', 'package.json'), 'utf8')
 );
+assert.strictEqual(
+  fs.existsSync(path.join(root, '..', 'promptpile-protocol', 'schema', 'agent-event-v1.schema.json')),
+  false,
+  'Agent Event Protocol schema must remain package-local to promptpile-react'
+);
 assert.strictEqual(metadata.main, undefined, 'package surface must remain CLI-only');
 assert.strictEqual(
   metadata.dependencies['promptpile-protocol'],

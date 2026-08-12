@@ -320,6 +320,7 @@ export const resolveReactConfig = (cwd: string, argv: string[]): ResolvedReactCo
     inputMode,
     continueMode,
     maxStep,
+    outputFormat: cli.outputFormat ?? 'terminal',
     toolsFileForCli,
     afterHookForCli,
     phases: { thought, observe, check, final: finalPhase },

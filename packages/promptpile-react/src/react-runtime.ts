@@ -8,58 +8,103 @@ import {
 } from './react-processes';
 import type { IReactRuntime, ReactRuntimeStopReason } from './runtime';
 import { getPromptpileSpawnConfig, type PromptpileSpawnConfig } from './promptpile-invoker';
+import { PromptpileReactInvocationError } from './react-errors';
+import type { ReactFinalResultV1, ReactRuntimeFailureV1 } from './react-event-protocol';
 
-/**
- * 配置来自 {@link resolveReactConfig}；子进程 argv 由 {@link buildPhaseArgv} 按阶段生成（无 `--config`）。
- */
+export type ReactPhaseStartedFact =
+  | { phase: 'thought' | 'observe' | 'check'; stepIndex: number }
+  | { phase: 'final'; stepsCompleted: number };
+export type ReactPhaseCompletedFact =
+  | { phase: 'thought' | 'observe'; stepIndex: number }
+  | { phase: 'check'; stepIndex: number; continue: boolean }
+  | { phase: 'final'; stepsCompleted: number };
+
+export interface ReactRuntimeObserver {
+  phaseStarted(fact: ReactPhaseStartedFact): Promise<void>;
+  phaseCompleted(fact: ReactPhaseCompletedFact): Promise<void>;
+  finalDelta(content: string): Promise<void>;
+}
+
+const noopObserver: ReactRuntimeObserver = {
+  phaseStarted: async () => undefined,
+  phaseCompleted: async () => undefined,
+  finalDelta: async () => undefined
+};
+
+/** Frozen Thought -> Observe -> Check FSM with a read-only observation seam. */
 export class PromptpileReactRuntime implements IReactRuntime {
   maxStep: number;
   currentStep = 0;
   stopReason: ReactRuntimeStopReason = 'running';
+  failure?: ReactRuntimeFailureV1;
+  finalResult?: ReactFinalResultV1;
 
   private readonly config: ResolvedReactConfig;
   private readonly spawn: PromptpileSpawnConfig;
+  private readonly observer: ReactRuntimeObserver;
 
-  constructor(config: ResolvedReactConfig, spawn?: PromptpileSpawnConfig) {
+  constructor(
+    config: ResolvedReactConfig,
+    spawn?: PromptpileSpawnConfig,
+    observer: ReactRuntimeObserver = noopObserver
+  ) {
     this.config = config;
     this.maxStep = config.maxStep;
     this.spawn = spawn ?? getPromptpileSpawnConfig();
+    this.observer = observer;
   }
 
   async nextStep(): Promise<void> {
-    if (this.stopReason !== 'running') {
-      return;
-    }
+    if (this.stopReason !== 'running') return;
     if (this.currentStep >= this.maxStep) {
       this.stopReason = 'max_step';
       return;
     }
 
+    let phase: 'thought' | 'observe' | 'check' = 'thought';
     try {
+      await this.observer.phaseStarted({ phase, stepIndex: this.currentStep });
       await this.reactThoughtProcess();
+      await this.observer.phaseCompleted({ phase, stepIndex: this.currentStep });
+
+      phase = 'observe';
+      await this.observer.phaseStarted({ phase, stepIndex: this.currentStep });
       const observeText = await this.reactObserveProcess();
+      await this.observer.phaseCompleted({ phase, stepIndex: this.currentStep });
+
+      phase = 'check';
+      await this.observer.phaseStarted({ phase, stepIndex: this.currentStep });
       const continueOuter = await this.reactCheckProcess(observeText);
+      await this.observer.phaseCompleted({ phase, stepIndex: this.currentStep, continue: continueOuter });
+
       this.currentStep += 1;
       if (!continueOuter) {
         this.stopReason = 'final';
-        return;
-      }
-      if (this.currentStep >= this.maxStep) {
+      } else if (this.currentStep >= this.maxStep) {
         this.stopReason = 'max_step';
       }
-    } catch {
-      this.stopReason = 'error';
+    } catch (error) {
+      this.recordFailure(error, phase);
     }
   }
 
   async finalAnswer(): Promise<void> {
-    if (this.stopReason !== 'final' && this.stopReason !== 'max_step') {
-      return;
-    }
+    if (this.stopReason !== 'final' && this.stopReason !== 'max_step') return;
     try {
-      await this.reactFinalAnswerProcess();
-    } catch {
-      this.stopReason = 'error';
+      if (this.config.prompts.final.trim() === '') {
+        await this.reactFinalAnswerProcess();
+        this.finalResult = { status: 'skipped' };
+        return;
+      }
+      await this.observer.phaseStarted({ phase: 'final', stepsCompleted: this.currentStep });
+      this.finalResult = await this.reactFinalAnswerProcess(
+        this.config.outputFormat === 'stream-json'
+          ? content => this.observer.finalDelta(content)
+          : undefined
+      );
+      await this.observer.phaseCompleted({ phase: 'final', stepsCompleted: this.currentStep });
+    } catch (error) {
+      this.recordFailure(error, 'final');
     }
   }
 
@@ -75,14 +120,37 @@ export class PromptpileReactRuntime implements IReactRuntime {
     return new CheckReactProcess(this.reactProcessCtx(), this.config.prompts.check).run(observeText);
   }
 
-  async reactFinalAnswerProcess(): Promise<void> {
-    await new FinalReactProcess(this.reactProcessCtx(), this.config.prompts.final).run();
+  async reactFinalAnswerProcess(onDelta?: (content: string) => Promise<void>): Promise<ReactFinalResultV1> {
+    return new FinalReactProcess(this.reactProcessCtx(), this.config.prompts.final).run(onDelta);
+  }
+
+  private recordFailure(error: unknown, phase: 'thought' | 'observe' | 'check' | 'final'): void {
+    const invocation = error instanceof PromptpileReactInvocationError ? error : undefined;
+    const code = invocation?.code ?? 'internal_error';
+    this.failure = {
+      phase,
+      code,
+      message: this.publicFailureMessage(code, phase),
+      cause: error
+    };
+    this.stopReason = 'error';
+  }
+
+  private publicFailureMessage(
+    code: ReactRuntimeFailureV1['code'],
+    phase: 'thought' | 'observe' | 'check' | 'final'
+  ): string {
+    switch (code) {
+      case 'promptpile_spawn_failed': return `promptpile could not be started for ${phase}`;
+      case 'promptpile_exit_nonzero': return `promptpile failed during ${phase}`;
+      case 'phase_output_missing': return `${phase} required output was missing`;
+      case 'check_decision_invalid': return 'react_check_decision output was invalid';
+      case 'final_stream_invalid': return 'Final output stream was invalid or incomplete';
+      default: return `React ${phase} phase failed`;
+    }
   }
 
   private reactProcessCtx(): ReactProcessContext {
-    return {
-      spawn: this.spawn,
-      config: this.config
-    };
+    return { spawn: this.spawn, config: this.config };
   }
 }

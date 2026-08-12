@@ -3,70 +3,122 @@ import { parseCli } from './cli';
 import { appendUserFromTerminal } from './append-user-message';
 import { readUserInputFromTerminal } from './read-user-input';
 import { reactDebugLog } from './react-debug-log';
-import { PromptpileReactRuntime } from './react-runtime';
 import {
-  getPromptpileSpawnConfig,
-  type PromptpileSpawnConfig
-} from './promptpile-invoker';
+  PromptpileReactRuntime,
+  type ReactPhaseCompletedFact,
+  type ReactPhaseStartedFact,
+  type ReactRuntimeObserver
+} from './react-runtime';
+import { getPromptpileSpawnConfig, type PromptpileSpawnConfig } from './promptpile-invoker';
 import { resolveReactConfig } from './resolve-react-config';
 import type { ResolvedReactConfig } from './types';
+import { ReactEventWriterV1 } from './react-event-writer';
 
 async function runOneReactSession(runtime: PromptpileReactRuntime): Promise<void> {
   reactDebugLog('session start maxStep=', String(runtime.maxStep));
-  while (runtime.stopReason === 'running') {
-    await runtime.nextStep();
-  }
-
+  while (runtime.stopReason === 'running') await runtime.nextStep();
   await runtime.finalAnswer();
   reactDebugLog('session end stopReason=', runtime.stopReason);
+}
+
+const createStreamObserver = (writer: ReactEventWriterV1): ReactRuntimeObserver => ({
+  phaseStarted: async (fact: ReactPhaseStartedFact) => {
+    if (fact.phase === 'final') {
+      await writer.emit({ type: 'phase.started', phase: 'final', steps_completed: fact.stepsCompleted });
+    } else {
+      await writer.emit({ type: 'phase.started', phase: fact.phase, step_index: fact.stepIndex });
+    }
+  },
+  phaseCompleted: async (fact: ReactPhaseCompletedFact) => {
+    if (fact.phase === 'final') {
+      await writer.emit({ type: 'phase.completed', phase: 'final', steps_completed: fact.stepsCompleted });
+    } else if (fact.phase === 'check') {
+      await writer.emit({ type: 'phase.completed', phase: 'check', step_index: fact.stepIndex, continue: fact.continue });
+    } else {
+      await writer.emit({ type: 'phase.completed', phase: fact.phase, step_index: fact.stepIndex });
+    }
+  },
+  finalDelta: content => writer.emit({ type: 'final.delta', content })
+});
+
+async function runStreamJsonSession(config: ResolvedReactConfig, spawn: PromptpileSpawnConfig): Promise<void> {
+  const writer = new ReactEventWriterV1();
+  await writer.emit({ type: 'session.started', max_steps: config.maxStep });
+  const runtime = new PromptpileReactRuntime(config, spawn, createStreamObserver(writer));
+  await runOneReactSession(runtime);
+
+  if (runtime.stopReason === 'error') {
+    const failure = runtime.failure ?? {
+      phase: 'startup' as const,
+      code: 'internal_error' as const,
+      message: 'React session failed'
+    };
+    if (writer.isWritable()) {
+      await writer.emit({
+        type: 'session.failed',
+        phase: failure.phase,
+        steps_completed: runtime.currentStep,
+        error: { code: failure.code, message: failure.message }
+      });
+    }
+    process.exitCode = 1;
+    return;
+  }
+
+  if (runtime.stopReason === 'running') {
+    throw new Error('React session ended without a terminal runtime state');
+  }
+
+  await writer.emit({
+    type: 'session.completed',
+    stop_reason: runtime.stopReason,
+    steps_completed: runtime.currentStep,
+    final: runtime.finalResult ?? { status: 'skipped' }
+  });
+  process.exitCode = 0;
+}
+
+async function runResolvedSession(config: ResolvedReactConfig, spawn: PromptpileSpawnConfig): Promise<void> {
+  if (config.outputFormat === 'stream-json') {
+    await runStreamJsonSession(config, spawn);
+    return;
+  }
+  const runtime = new PromptpileReactRuntime(config, spawn);
+  await runOneReactSession(runtime);
+  process.exitCode = runtime.stopReason === 'error' ? 1 : 0;
 }
 
 async function main(): Promise<void> {
   parseCli();
   const config = resolveReactConfig(process.cwd(), process.argv);
+  const spawn = getPromptpileSpawnConfig();
 
   if (config.inputMode) {
-    await runInputMode(config, getPromptpileSpawnConfig());
+    await runInputMode(config, spawn);
     return;
   }
-
-  const runtime = new PromptpileReactRuntime(config);
-  await runOneReactSession(runtime);
-  process.exitCode = runtime.stopReason === 'error' ? 1 : 0;
+  await runResolvedSession(config, spawn);
 }
 
-async function runInputMode(
-  config: ResolvedReactConfig,
-  spawn: PromptpileSpawnConfig
-): Promise<void> {
+async function runInputMode(config: ResolvedReactConfig, spawn: PromptpileSpawnConfig): Promise<void> {
   const userContent = await readUserInputFromTerminal();
   if (!userContent) {
     console.error('Error: Empty input. Nothing was written.');
     process.exitCode = 1;
     return;
   }
-
   try {
-    await appendUserFromTerminal(
-      spawn,
-      config.outputDirectoryAbs ?? config.directoryAbs,
-      userContent,
-      config.cwd
-    );
+    await appendUserFromTerminal(spawn, config.outputDirectoryAbs ?? config.directoryAbs, userContent, config.cwd);
     reactDebugLog('input userAppended');
-  } catch (e) {
-    console.error('Error:', e instanceof Error ? e.message : e);
+  } catch (error) {
+    console.error('Error:', error instanceof Error ? error.message : error);
     process.exitCode = 1;
     return;
   }
-
-  const runtime = new PromptpileReactRuntime(config, spawn);
-  await runOneReactSession(runtime);
-
-  process.exitCode = runtime.stopReason === 'error' ? 1 : 0;
+  await runResolvedSession(config, spawn);
 }
 
-main().catch((e) => {
-  console.error('Error:', e);
+main().catch(error => {
+  console.error('Error:', error instanceof Error ? error.message : error);
   process.exitCode = 1;
 });

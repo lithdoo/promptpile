@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/lithdoo/promptpile/schema/agent-event-v1.schema.json",
+  "title": "Promptpile React Agent Event Protocol v1",
+  "type": "object",
+  "required": ["schema_version", "type", "session_id", "sequence"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "type": {
+      "enum": ["session.started", "phase.started", "phase.completed", "final.delta", "session.completed", "session.failed"]
+    },
+    "session_id": { "type": "string", "minLength": 1 },
+    "sequence": { "type": "integer", "minimum": 0 }
+    ,"max_steps": { "type": "integer", "minimum": 1 }
+    ,"phase": { "enum": ["startup", "thought", "observe", "check", "final"] }
+    ,"step_index": { "type": "integer", "minimum": 0 }
+    ,"steps_completed": { "type": "integer", "minimum": 0 }
+    ,"continue": { "type": "boolean" }
+    ,"content": { "type": "string" }
+    ,"stop_reason": { "enum": ["final", "max_step"] }
+    ,"final": { "type": "object" }
+    ,"error": { "type": "object" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "type": { "const": "session.started" } } },
+      "then": { "required": ["max_steps"], "properties": { "max_steps": { "type": "integer", "minimum": 1 } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "final.delta" } } },
+      "then": { "required": ["content"], "properties": { "content": { "type": "string" } } }
+    },
+    {
+      "if": { "properties": { "type": { "enum": ["phase.started", "phase.completed"] } } },
+      "then": {
+        "required": ["phase"],
+        "properties": { "phase": { "enum": ["thought", "observe", "check", "final"] } },
+        "oneOf": [
+          { "properties": { "phase": { "enum": ["thought", "observe", "check"] } }, "required": ["step_index"] },
+          { "properties": { "phase": { "const": "final" } }, "required": ["steps_completed"] }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": { "const": "phase.completed" },
+          "phase": { "const": "check" }
+        },
+        "required": ["type", "phase"]
+      },
+      "then": { "required": ["continue"] }
+    },
+    {
+      "if": { "properties": { "type": { "const": "session.completed" } } },
+      "then": {
+        "required": ["stop_reason", "steps_completed", "final"],
+        "properties": {
+          "stop_reason": { "enum": ["final", "max_step"] },
+          "steps_completed": { "type": "integer", "minimum": 0 },
+          "final": {
+            "oneOf": [
+              { "type": "object", "required": ["status", "content"], "properties": { "status": { "const": "completed" }, "content": { "type": "string" } }, "additionalProperties": false },
+              { "type": "object", "required": ["status"], "properties": { "status": { "const": "skipped" } }, "additionalProperties": false }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "session.failed" } } },
+      "then": {
+        "required": ["phase", "steps_completed", "error"],
+        "properties": {
+          "phase": { "enum": ["startup", "thought", "observe", "check", "final"] },
+          "steps_completed": { "type": "integer", "minimum": 0 },
+          "error": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": {
+              "code": { "enum": ["promptpile_spawn_failed", "promptpile_exit_nonzero", "phase_output_missing", "check_decision_invalid", "final_stream_invalid", "internal_error"] },
+              "message": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    }
+  ]
+}

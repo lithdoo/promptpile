@@ -30,7 +30,10 @@ export interface ReactCliOverrides {
   inputMode?: boolean;
   continueMode?: boolean;
   maxStep?: number;
+  outputFormat?: ReactOutputFormat;
 }
+
+export type ReactOutputFormat = 'terminal' | 'stream-json';
 
 export interface ResolvedReactConfig {
   cwd: string;
@@ -45,6 +48,7 @@ export interface ResolvedReactConfig {
   inputMode: boolean;
   continueMode: boolean;
   maxStep: number;
+  outputFormat: ReactOutputFormat;
   toolsFileForCli?: string;
   afterHookForCli?: string;
   phases: {

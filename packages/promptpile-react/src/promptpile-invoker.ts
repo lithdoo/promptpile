@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
+import type { Readable } from 'stream';
+import { FinalOutputPileDecoder } from './final-output-pile-decoder';
 
 const STDERR_CAP = 32 * 1024;
 
@@ -10,6 +12,11 @@ export type PromptpileInvokeResult = {
   /** Non-streaming capture only; streaming path leaves empty (already written to TTY). */
   stdout: string;
   stderr: string;
+};
+
+export type PromptpileFinalStreamResult = PromptpileInvokeResult & {
+  content: string;
+  streamError?: Error;
 };
 
 /** 如何启动 promptpile 子进程（可能为全局命令或 node + 内置脚本）。 */
@@ -110,7 +117,7 @@ function appendStderrCapped(store: { value: string }, s: string): void {
 export function invokePromptpileAsync(
   spawnConfig: PromptpileSpawnConfig,
   cliArgs: string[],
-  options: { cwd?: string; quiet: boolean; env?: NodeJS.ProcessEnv; stdin?: string }
+  options: { cwd?: string; quiet: boolean; env?: NodeJS.ProcessEnv; stdin?: string; forwardStdout?: boolean }
 ): Promise<PromptpileInvokeResult> {
   const cwd = options.cwd ?? process.cwd();
   const argv = [...spawnConfig.argvPrefix, ...cliArgs];
@@ -141,7 +148,7 @@ export function invokePromptpileAsync(
 
     child.stdout?.on('data', (chunk: string | Buffer) => {
       const s = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
-      if (!options.quiet) {
+      if (!options.quiet && options.forwardStdout !== false) {
         process.stdout.write(s);
       }
     });
@@ -186,4 +193,71 @@ export function invokePromptpileAsync(
       }
     }
   });
+}
+
+/** Final-only private fd3 transport. Child stdout is always drained and never forwarded. */
+export async function invokePromptpileFinalStream(
+  spawnConfig: PromptpileSpawnConfig,
+  cliArgs: string[],
+  options: {
+    cwd?: string;
+    quiet: boolean;
+    env?: NodeJS.ProcessEnv;
+    stdin?: string;
+    onDelta: (content: string) => Promise<void>;
+  }
+): Promise<PromptpileFinalStreamResult> {
+  const stderrStore = { value: '' };
+  const child = spawn(spawnConfig.command, [...spawnConfig.argvPrefix, ...cliArgs], {
+    cwd: options.cwd ?? process.cwd(),
+    env: options.env ?? process.env,
+    stdio: [options.stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe', 'pipe'],
+    windowsHide: true
+  });
+  let content = '';
+  let spawnError: NodeJS.ErrnoException | undefined;
+  let streamError: Error | undefined;
+  let stdinError: NodeJS.ErrnoException | undefined;
+
+  child.stdout?.resume();
+  child.stderr?.setEncoding('utf8');
+  child.stderr?.on('data', (chunk: string | Buffer) => {
+    const text = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+    appendStderrCapped(stderrStore, text);
+    if (!options.quiet) process.stderr.write(text);
+  });
+  child.on('error', error => { spawnError = error; });
+  child.stdin?.on('error', error => { stdinError = error; });
+
+  const transport = child.stdio[3] as Readable | null;
+  const decoder = new FinalOutputPileDecoder(async delta => {
+    await options.onDelta(delta);
+    content += delta;
+  });
+  const consume = (async () => {
+    if (!transport) throw new Error('Final fd3 transport was not created');
+    for await (const chunk of transport) await decoder.push(Buffer.from(chunk));
+    await decoder.finish();
+  })().catch(error => {
+    streamError = error instanceof Error ? error : new Error(String(error));
+    transport?.destroy();
+    if (child.exitCode === null && child.signalCode === null) child.kill();
+  });
+
+  if (options.stdin !== undefined) {
+    try { child.stdin?.end(options.stdin, 'utf8'); } catch (error) {
+      stdinError = error as NodeJS.ErrnoException;
+    }
+  }
+
+  const status = await new Promise<number | null>(resolve => child.once('close', resolve));
+  await consume;
+  return {
+    status,
+    error: spawnError ?? (status === 0 ? stdinError : undefined),
+    stdout: '',
+    stderr: stderrStore.value,
+    content,
+    streamError
+  };
 }
