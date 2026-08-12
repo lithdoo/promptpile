@@ -1,9 +1,7 @@
 # promptpile-protocol
 
-Pure, dependency-free TypeScript projection of stable Promptpile protocol schemas and artifact conventions.
+Pure TypeScript executable projection of stable Promptpile public protocol semantics.
 
-Status: v1 implemented. Public domains are `conversation`, `tool`, `receipt`, and the Completion Receipt v1 schema export.
+Current public domains are `conversation`, `fingerprint`, `tool`, and `receipt`, plus the Completion Receipt v1 schema export. The package is CommonJS, supports Node.js 18 and newer, performs no I/O on import, has no runtime dependencies, and does not own filesystem, execution, configuration, orchestration, or lifecycle policy.
 
-The package is CommonJS, supports Node.js 18 and newer, performs no I/O on import, and has no runtime dependencies. Filesystem discovery, mutation, execution, configuration, orchestration, and lifecycle policy remain with their owning packages.
-
-See [PROTOCOL_PACKAGE_PLAN.md](./PROTOCOL_PACKAGE_PLAN.md) for the frozen design and acceptance criteria.
+Normative human contracts live under [`doc/15-contracts`](../../doc/15-contracts/README.md). Package ownership and the protocol admission boundary are documented in [`doc/20-packages/promptpile-protocol.md`](../../doc/20-packages/promptpile-protocol.md).
