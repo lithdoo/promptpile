@@ -1,186 +1,306 @@
-# Promptpile React 结构化流式输出设计计划
+# Promptpile React 结构化流式输出 Implementation Freeze 计划
 
-> 状态：讨论草案  
-> 日期：2026-08-07  
-> 目标组件：`promptpile-react`；依赖 `promptpile` 的 public CLI 与 output pile  
-> 核心提案：由 React 编排层定义版本化 Agent Event Protocol，并通过 `text`、`json`、`stream-json` 三种机器输出模式提供稳定结果
+> 状态：Implementation Freeze / 待实施  
+> 日期：2026-08-12  
+> 审计基线：`d6677207418b077d2a771acbbf41795d7736bd74`  
+> 目标组件：`packages/promptpile-react`  
+> 前置事实：React orchestration v1 已 Freeze；`promptpile` public CLI 与 output pile 是唯一 runtime integration boundary  
+> 本文件用途：冻结 Streaming v1 的 ownership、public contract、transport、failure model、测试与 Freeze criteria；本文件完成不等于 Streaming 实现已经 Freeze
 
-## 1. 摘要
+---
 
-`promptpile` 已经能够将模型正文以增量形式写到 stdout，也能通过
-`--output-pile-file` 或 `--output-pile-fd` 输出 `text`/JSONL 旁路流。
-`promptpile-react` 当前没有自己的结果协议：Thought、Observe、Check、Final
-各阶段启动的 `promptpile` 子进程会把 stdout/stderr 直接转发到 React 进程。
+## 0. 最终架构结论
 
-直接转发适合观察开发过程，但不适合作为 Agent API：
+`promptpile-react` Streaming v1 不是新的 Agent runtime，也不是第二套状态机。
 
-- 调用方无法可靠区分阶段、轮次和最终回答；
-- 多个模型调用的正文可能连续混在 stdout；
-- tool call JSON、普通文本和诊断信息缺少统一 envelope；
-- quiet 模式会同时失去用户可见进度，但不会产生替代的结构化结果；
-- Final 失败目前是 soft failure，调用方可能无法判断是否获得了完整最终回答；
-- 没有稳定的 session/turn/phase/error/completed 生命周期事件。
+它的唯一职责是：
 
-本提案让 `promptpile-react` 成为对外协议的所有者：底层 `promptpile`
-output pile 只作为子进程传输通道，React 将其映射为版本化 JSONL 事件，
-不把子进程的原始输出形状直接暴露给上层调用方。
+> **把已经 Freeze 的 React orchestration state machine 投影成一个非持久化、只读、实时、版本化的 public event stream。**
+
+固定架构：
 
 ```text
-promptpile child output pile (fd 3, JSONL)
-                  │
-                  ▼
-       promptpile-react event mapper
-                  │
-                  ▼
-   Agent Event Protocol v1 (stdout JSONL)
+promptpile-protocol
+= 跨包纯数据 / parser / canonical contract
+
+promptpile
+= exactly one Chat Completions execution primitive
++ Conversation I/O
++ durable artifact publication
++ output pile transport
+
+promptpile-react Frozen FSM
+= orchestration domain truth
+        │
+        ▼
+promptpile-react Agent Event Protocol v1
+= observable projection / result delivery
+        │
+        ▼
+stdout JSONL
 ```
 
-## 2. 目标
+核心定理：
 
-1. 为脚本、IDE、UI 和上层 Agent 提供稳定、可版本化的 React 输出协议。
-2. 明确区分 session、turn、step、phase、最终消息和错误。
-3. Final 正文可以低延迟增量传输。
-4. 机器模式下 stdout 只包含约定格式，不混入日志或子进程原始输出。
-5. stderr 继续承载 warning、diagnostic 和人工调试信息。
-6. 保持 `promptpile-react` 只依赖 `promptpile` 的公共 CLI、继承 fd 和版本化 artifacts。
-7. 默认不公开 Thought 或隐藏推理正文。
-8. 每次运行恰好产生一个 terminal event，并让 terminal event 与进程退出码一致。
-9. 保留当前面向终端的多阶段实时观察能力，避免无迁移路径的行为破坏。
-10. 为将来的 tool lifecycle、usage、重试和双向输入保留兼容扩展点。
-
-## 3. 非目标
-
-- 不把 React 改造成常驻 RPC server。
-- 第一版不实现 `--input-format stream-json` 或单进程多轮双向会话。
-- 不把 Conversation Protocol 或磁盘 artifacts 替换成事件流。
-- 不让 output pile 成为完成事实或可恢复状态的权威来源。
-- 不在第一版流式输出 tool arguments；当前底层 output pile 只提供 assistant text delta。
-- 不把内部 Thought 文本作为稳定公共 API。
-- 不承诺 exactly-once 事件投递、断线续传或跨进程 replay。
-- 不让 React 依赖 `promptpile/dist/*`、内部 TypeScript 类型或固定构建路径。
-- 不把业务系统的 project/run/operation 字段加入通用 Promptpile 协议。
-
-## 4. 当前行为与问题
-
-当前 `invokePromptpileAsync()` 使用：
-
-```ts
-stdio: [stdinMode, 'pipe', 'pipe']
+```text
+event does not create domain state
+event only projects already-defined domain facts
 ```
 
-非 quiet 时，子进程 stdout/stderr 分别实时写入父进程 stdout/stderr；结束后
-stdout 不保留，stderr 仅保存截断 tail。四个阶段的行为是：
+因此：
 
-| 阶段 | 当前结果来源 | 当前终端行为 |
-| --- | --- | --- |
-| Thought | 子进程退出状态；可由 `-c` 写 Conversation artifacts | stdout 实时转发 |
-| Observe | 临时 `-o` 文件 | stdout 仍实时转发，文件结束后读取 |
-| Check | 临时 `-o` 和 `.calls.jsonl` | stdout 仍实时转发，calls 决定是否继续 |
-| Final | 子进程退出状态 | stdout 实时转发；调用 API 返回 `void` |
+```text
+session.completed
+不能把一次失败 session 变成成功
 
-因此当前 stdout 更接近调试控制台，而不是一个“React 返回消息”。尤其是
-Observe 与 Check 的模型输出属于内部控制流，不应被机器消费者误认为最终回答。
+session.failed
+不能创造一个 React runtime 原本不存在的 terminal reason
+```
 
-## 5. CLI 设计
+React Streaming v1 不得反向修改已经 Freeze 的 orchestration ownership。
 
-### 5.1 输出格式
+---
+
+## 1. Frozen React baseline
+
+本计划只能投影以下已经 Freeze 的 runtime model：
+
+```text
+iteration = Thought → Observe → Check
+
+runtime state = running | final | max_step | error
+```
+
+固定语义：
+
+- `currentStep` 是已经成功完成的完整 iteration 数量；
+- `Check=false`：当前 iteration 成功完成，然后进入 `final`；
+- `Check=true` 且达到 `maxStep`：当前 iteration 成功完成，然后进入 `max_step`；
+- `Thought` / `Observe` / `Check` 任一失败：立即进入 `error`，不得执行 Final；
+- `final|max_step` 后，Final prompt 非空时 Final 是 required phase；
+- required Final 失败：进程失败；
+- Final prompt 为空：明确 skip，session 仍可以成功；
+- 成功进程的 orchestration terminal state 只能是 `final|max_step`；
+- `-i` 是一次 append + 一次 session + exit，不是进程内 multi-turn session。
+
+Streaming v1 不得重新引入：
+
+```text
+cancelled
+no_final_prompt
+turn state
+Final soft failure
+process-level interactive loop
+```
+
+如果未来需要这些能力，必须先修改 React orchestration contract，再决定是否新增 event projection。
+
+---
+
+## 2. Ownership
+
+### 2.1 React runtime owns
+
+- phase order；
+- `currentStep` / `maxStep`；
+- Check continue decision；
+- `final|max_step|error` terminal cause；
+- Final configured / skipped / required；
+- structured phase failure metadata；
+- Agent Event Protocol v1；
+- stdout/stderr ownership；
+- event sequence；
+- session id；
+- parent event writer 与 Final output-pile decoder。
+
+### 2.2 Promptpile owns
+
+- Chat Completions request / SSE；
+- completion success/failure；
+- Conversation I/O / allocator / OCC；
+- durable output publication；
+- Receipt；
+- output pile writer；
+- Promptpile CLI exit code；
+- Promptpile artifact semantics。
+
+### 2.3 Protocol package owns
+
+仅继续拥有已经 admission 的跨包 public contracts。
+
+Agent Event Protocol v1 **不进入 `promptpile-protocol`**。当前只有 `promptpile-react` 拥有 session / step / phase / Final orchestration semantics，因此 event schema 由 `promptpile-react` package 自己 version。
+
+只有出现真实第二个独立 producer/consumer，并且该 contract 确实成为跨包 normative protocol 后，才重新评估 protocol admission。
+
+---
+
+## 3. v1 scope
+
+Streaming v1 只新增：
+
+```text
+--output-format terminal
+--output-format stream-json
+```
+
+其中：
+
+```text
+terminal
+= 现有人工可观察输出模式
+
+stream-json
+= Agent Event Protocol v1 JSONL machine contract
+```
+
+默认值固定为：
+
+```text
+terminal
+```
+
+v1 不切换默认值。
+
+`-q/--quiet` 继续只是人工诊断 policy，不是 transport switch；它不得抑制 `stream-json` protocol events。
+
+---
+
+## 4. Explicit non-goals / Post-Freeze candidates
+
+以下全部不进入 Streaming v1：
+
+- `--output-format text`；
+- `--output-format json`；
+- `--include-internal-events`；
+- process-level multi-turn input；
+- `turn.started` / `turn.completed`；
+- `session.cancelled`；
+- `no_final_prompt` stop reason；
+- `message_id`；
+- generic `assistant.*` message lifecycle；
+- Thought / Observe / Check 正文公开；
+- hidden reasoning / `reasoning_content`；
+- tool argument delta；
+- tool lifecycle events；
+- usage events；
+- retry events；
+- durable event log；
+- replay / resume / exactly-once delivery；
+- websocket / RPC server；
+- public `AsyncIterable<ReactEventV1>` JavaScript API；
+- output file result contract；
+- named-pipe / temp-file transport fallback。
+
+这些能力未来只能作为 additive proposal 单独进入设计，不得在 v1 实现过程中顺手加入。
+
+---
+
+## 5. Public CLI contract
 
 新增：
 
 ```text
---output-format <format>
+--output-format <terminal|stream-json>
 ```
 
-支持：
-
-| 格式 | stdout 语义 | 主要用途 |
-| --- | --- | --- |
-| `terminal` | 保持现有多阶段实时输出 | 人工运行、兼容旧行为 |
-| `text` | 只输出最终回答正文 | shell pipe、简单自动化 |
-| `json` | 结束时输出单个 JSON result envelope | CI、脚本 |
-| `stream-json` | 每行一个 Agent Event Protocol v1 事件 | IDE、UI、上层 Agent |
-
-兼容策略：
-
-- 未显式设置时，Beta 阶段先使用 `terminal`，保持当前行为；
-- 新的脚本和集成应显式选择 `text`、`json` 或 `stream-json`；
-- 稳定版前可以评估将默认值切换为 `text`，但必须单独记录破坏性变更；
-- `-q/--quiet` 不改变机器输出结果，只控制人工诊断；在机器模式中不能让
-  `-q` 吞掉 protocol event。
-
-示例：
-
-```bash
-# 最终纯文本
-promptpile-react --config ./agent.toml --output-format text
-
-# 单个 JSON 结果
-promptpile-react --config ./agent.toml --output-format json | jq
-
-# 实时 JSONL 事件
-promptpile-react --config ./agent.toml --output-format stream-json | jq -c
-```
-
-### 5.2 可选内部事件
-
-第一版可以预留但不必实现：
+固定规则：
 
 ```text
---include-internal-events
+missing option → terminal
+terminal       → current human-facing behavior
+stream-json    → stdout is protocol-only JSONL
+other value    → CLI validation failure
 ```
 
-默认行为只暴露 phase lifecycle、Final assistant delta 和 terminal result。
-启用内部事件后也不应直接输出隐藏 chain-of-thought；可以暴露阶段状态、耗时、
-artifact 引用和受控摘要。
+CLI option / config parsing失败发生在 protocol writer 建立之前时：
 
-## 6. stdout、stderr 与退出码不变量
+```text
+stderr diagnostic
++ non-zero exit
++ zero protocol events
+```
 
-### 6.1 stdout 纯净性
+这不是 `session.failed`，因为 session protocol 尚未开始。
 
-| 模式 | stdout 允许内容 |
-| --- | --- |
-| `terminal` | 兼容现有人工输出 |
-| `text` | UTF-8 最终回答正文 |
-| `json` | 一个合法 JSON 文档 |
-| `stream-json` | 零到多个完整 JSONL 事件，每行一个 JSON object |
+v1 不新增 TOML `output_format` 字段。output format 先保持 CLI invocation concern，避免配置文件把展示/transport policy 固化成 orchestration domain state。若未来存在真实持久化需求，再单独 admission。
 
-在 `json`/`stream-json` 模式下，以下内容禁止写入 stdout：
+---
 
-- Commander help 以外的普通日志；
-- React debug 日志；
-- 子进程 stderr；
-- 子进程原始 stdout；
-- 未包装的 tool call JSON；
-- Node stack trace。
+## 6. stdout / stderr ownership
 
-### 6.2 stderr
+### 6.1 `terminal`
 
-stderr 用于：
+保持现有行为，不因为 Streaming 实现重写人工 CLI contract。
 
-- 配置错误与诊断；
-- 子进程 stderr；
-- debug 日志；
-- 人类可读 warning；
-- 无法建立结构化 writer 时的启动失败。
+### 6.2 `stream-json`
 
-机器调用方不应依赖 stderr 自然语言文本做状态判断。
+父进程 stdout 必须满足：
 
-### 6.3 退出码
+```text
+stdout = Agent Event Protocol v1 JSONL only
+```
 
-| 结果 | 退出码 |
-| --- | --- |
-| `session.completed` | `0` |
-| `session.failed` | 非 `0` |
-| 被 SIGINT/SIGTERM 取消 | 非 `0`，并尽力发送 `session.failed`/`session.cancelled` |
+禁止进入 parent stdout：
 
-如果 stdout 自身写入失败，例如消费者提前关闭 pipe，进程应停止继续生成事件并以
-非零状态退出，不能报告成功。
+- React debug log；
+- Promptpile child 原始 stdout；
+- Promptpile child stderr；
+- Node stack trace；
+- tool call raw JSON；
+- Observe / Check 临时结果；
+- Thought 正文；
+- 未包装文本。
 
-## 7. Agent Event Protocol v1
+child stdout 在 machine mode 中必须被 drain/capture，但**永远不得 forward 到 parent stdout**。
 
-### 7.1 公共 envelope
+child stderr：
 
-所有 JSONL 事件包含：
+- 可按现有 quiet/debug policy 写入 parent stderr；
+- 可以继续保留 capped tail 供错误诊断；
+- machine consumer 不得依赖 stderr 自然语言判断 domain result。
+
+固定定理：
+
+```text
+quiet ≠ machine transport
+quiet only changes human diagnostics
+```
+
+---
+
+## 7. Protocol start boundary
+
+Agent Event Protocol 正式开始的唯一 witness 是：
+
+```text
+session.started successfully written
+```
+
+在此之前失败：
+
+```text
+no protocol obligation
+→ stderr
+→ exit non-zero
+```
+
+在此之后，如果 output channel 仍可写：
+
+```text
+domain success
+→ exactly one session.completed
+
+domain failure
+→ exactly one session.failed
+```
+
+terminal event 发布后不得再发布其它 protocol event。
+
+---
+
+## 8. Agent Event Protocol v1 envelope
+
+所有 v1 events 固定包含：
 
 ```ts
 interface ReactEventBaseV1 {
@@ -188,543 +308,1150 @@ interface ReactEventBaseV1 {
   type: string;
   session_id: string;
   sequence: number;
-  timestamp: string; // RFC 3339 UTC
 }
 ```
 
-约束：
+### 8.1 `session_id`
 
-- `session_id` 每次 React 进程运行唯一；
-- `sequence` 从 `0` 开始严格递增；
-- 单个事件必须完整写成一行；
-- consumer 必须忽略未知字段和未知非 terminal event type；
-- schema 的破坏性变化使用新的 `schema_version`；
-- event type 的新增不要求提升 schema version。
+- 每次 `promptpile-react` process invocation 生成一个新的 opaque non-empty id；
+- v1 不冻结具体 UUID/ULID 文本 grammar；
+- consumer 只能比较 equality，不得解析结构；
+- producer 必须保证同一 process invocation 内稳定不变，并以足以避免现实碰撞的随机来源生成。
 
-### 7.2 Phase 与 stop reason
+### 8.2 `sequence`
 
-```ts
-type ReactPhase = 'thought' | 'observe' | 'check' | 'final';
+- 第一条成功写出的 event 为 `0`；
+- 后续成功写出的 event 每次 `+1`；
+- 同一 session 中严格递增且连续；
+- sequence 是唯一 normative event ordering；
+- v1 不包含 mandatory timestamp / duration。
 
-type ReactStopReason =
-  | 'final'
-  | 'max_step'
-  | 'error'
-  | 'cancelled'
-  | 'no_final_prompt';
-```
+删除 timestamp 的原因是：wall-clock 不是 orchestration truth，且会增加 deterministic fixture、clock semantics 和 consumer interpretation burden。
 
-`step` 表示已开始的 ReAct 迭代序号，从 `0` 开始。Final 不属于新的 ReAct
-迭代，但携带最终的 `steps_completed`。
+### 8.3 Forward compatibility
 
-### 7.3 v1 事件集合
+- consumer MUST ignore unknown fields；
+- producer MAY 在 v1 event object 中新增 optional fields，但不得改变已有字段语义；
+- producer MAY 在未来 v1.x 增加新的 non-terminal event type；consumer SHOULD ignore unknown non-terminal types；
+- v1 terminal event set 是 closed set：`session.completed | session.failed`；
+- 新增或改变 terminal event type、破坏字段语义、改变 terminal semantics 必须提升 `schema_version`。
 
-| Event type | 何时产生 | 关键字段 |
-| --- | --- | --- |
-| `session.started` | 配置解析成功、运行开始 | `max_steps`、`output_format` |
-| `turn.started` | 单次用户任务开始 | `turn` |
-| `phase.started` | 某阶段启动前 | `phase`、`step` |
-| `phase.completed` | 某阶段成功完成 | `phase`、`step`、`duration_ms`、可选 `continue` |
-| `assistant.delta` | Final 获得正文增量 | `message_id`、`phase: final`、`content` |
-| `assistant.completed` | Final 正文结束 | `message_id`、`content` |
-| `turn.completed` | 外层循环结束 | `stop_reason`、`steps_completed` |
-| `session.completed` | 所有要求的阶段和结果交付成功 | `result`、`stop_reason` |
-| `error` | 可恢复或将终止的错误被发现 | `phase`、`code`、`message`、`fatal` |
-| `session.failed` | 运行失败的唯一 terminal event | `phase`、`error` |
+---
 
-第一版只有两个 terminal event：
+## 9. v1 exact event set
+
+Streaming v1 只冻结 6 个 event types：
 
 ```text
+session.started
+phase.started
+phase.completed
+final.delta
 session.completed
 session.failed
 ```
 
-每次已发出 `session.started` 的运行必须恰好发送其中一个。发送 terminal event
-后禁止再发送其它事件。
+不再同时维护 `turn.*`、`assistant.completed`、generic `error` 等重复状态表达。
 
-### 7.4 成功流示例
+---
 
-```jsonl
-{"schema_version":1,"type":"session.started","session_id":"react_01","sequence":0,"timestamp":"2026-08-07T08:00:00.000Z","max_steps":3,"output_format":"stream-json"}
-{"schema_version":1,"type":"turn.started","session_id":"react_01","sequence":1,"timestamp":"2026-08-07T08:00:00.001Z","turn":0}
-{"schema_version":1,"type":"phase.started","session_id":"react_01","sequence":2,"timestamp":"2026-08-07T08:00:00.002Z","phase":"thought","step":0}
-{"schema_version":1,"type":"phase.completed","session_id":"react_01","sequence":3,"timestamp":"2026-08-07T08:00:01.000Z","phase":"thought","step":0,"duration_ms":998}
-{"schema_version":1,"type":"phase.started","session_id":"react_01","sequence":4,"timestamp":"2026-08-07T08:00:01.001Z","phase":"observe","step":0}
-{"schema_version":1,"type":"phase.completed","session_id":"react_01","sequence":5,"timestamp":"2026-08-07T08:00:02.000Z","phase":"observe","step":0,"duration_ms":999}
-{"schema_version":1,"type":"phase.started","session_id":"react_01","sequence":6,"timestamp":"2026-08-07T08:00:02.001Z","phase":"check","step":0}
-{"schema_version":1,"type":"phase.completed","session_id":"react_01","sequence":7,"timestamp":"2026-08-07T08:00:02.500Z","phase":"check","step":0,"duration_ms":499,"continue":false}
-{"schema_version":1,"type":"turn.completed","session_id":"react_01","sequence":8,"timestamp":"2026-08-07T08:00:02.501Z","turn":0,"stop_reason":"final","steps_completed":1}
-{"schema_version":1,"type":"phase.started","session_id":"react_01","sequence":9,"timestamp":"2026-08-07T08:00:02.502Z","phase":"final","steps_completed":1}
-{"schema_version":1,"type":"assistant.delta","session_id":"react_01","sequence":10,"timestamp":"2026-08-07T08:00:03.000Z","phase":"final","message_id":"msg_01","content":"最终"}
-{"schema_version":1,"type":"assistant.delta","session_id":"react_01","sequence":11,"timestamp":"2026-08-07T08:00:03.050Z","phase":"final","message_id":"msg_01","content":"回答"}
-{"schema_version":1,"type":"assistant.completed","session_id":"react_01","sequence":12,"timestamp":"2026-08-07T08:00:03.051Z","phase":"final","message_id":"msg_01","content":"最终回答"}
-{"schema_version":1,"type":"phase.completed","session_id":"react_01","sequence":13,"timestamp":"2026-08-07T08:00:03.052Z","phase":"final","duration_ms":550}
-{"schema_version":1,"type":"session.completed","session_id":"react_01","sequence":14,"timestamp":"2026-08-07T08:00:03.053Z","stop_reason":"final","steps_completed":1,"result":"最终回答"}
-```
+## 10. `session.started`
 
-`assistant.completed.content` 与 `session.completed.result` 有意重复：前者完成一条
-message，后者是整个进程的 terminal summary，使只关心终态的 consumer 无需重放
-所有 delta。大正文是否允许 terminal event 只提供 message id，可在协议冻结阶段基于
-最大消息体与 consumer 使用方式决定；v1 初步建议保留完整 result。
-
-### 7.5 失败流示例
-
-```jsonl
-{"schema_version":1,"type":"error","session_id":"react_01","sequence":6,"timestamp":"2026-08-07T08:00:02.100Z","phase":"check","code":"CHILD_EXIT_NONZERO","message":"promptpile exited with status 1","fatal":true}
-{"schema_version":1,"type":"session.failed","session_id":"react_01","sequence":7,"timestamp":"2026-08-07T08:00:02.101Z","phase":"check","error":{"code":"CHILD_EXIT_NONZERO","message":"promptpile exited with status 1"}}
-```
-
-错误码是机器判断依据，`message` 只面向人类。初始错误码建议包括：
-
-```text
-CONFIG_INVALID
-CHILD_SPAWN_FAILED
-CHILD_EXIT_NONZERO
-CHILD_STREAM_INVALID
-PHASE_OUTPUT_MISSING
-CHECK_DECISION_INVALID
-FINAL_OUTPUT_MISSING
-OUTPUT_STREAM_FAILED
-CANCELLED
-INTERNAL_ERROR
-```
-
-## 8. `json` 最终结果格式
-
-`--output-format json` 不输出中间事件，只在成功时写一个结果对象：
+形状：
 
 ```json
 {
   "schema_version": 1,
-  "session_id": "react_01",
-  "status": "completed",
-  "stop_reason": "final",
-  "steps_completed": 1,
-  "result": "最终回答"
+  "type": "session.started",
+  "session_id": "react_opaque",
+  "sequence": 0,
+  "max_steps": 3
 }
 ```
 
-失败时输出：
+固定字段：
+
+- `max_steps`: 本次运行解析后的正整数 `maxStep`。
+
+不包含：
+
+- cwd；
+- config absolute path；
+- API/provider secrets；
+- output format（事件本身已经证明是 stream-json）；
+- timestamp。
+
+---
+
+## 11. Phase model
+
+Public phase 只有：
+
+```ts
+type ReactPhaseV1 = 'thought' | 'observe' | 'check' | 'final';
+```
+
+Thought / Observe / Check 属于 iteration。
+
+Final 不属于新的 iteration。
+
+### 11.1 `step_index`
+
+Thought / Observe / Check 使用：
+
+```text
+step_index = phase 开始时已经完成的 iteration 数量
+```
+
+第一轮为 `0`。
+
+只有成功完成 Check 后，runtime 才把 `steps_completed` 增加 1。
+
+### 11.2 Final
+
+Final event 不携带 `step_index`，而携带：
+
+```text
+steps_completed
+```
+
+这样不会把 Final 伪装成下一轮 ReAct iteration。
+
+---
+
+## 12. `phase.started`
+
+Thought / Observe / Check：
 
 ```json
 {
   "schema_version": 1,
-  "session_id": "react_01",
-  "status": "failed",
+  "type": "phase.started",
+  "session_id": "react_opaque",
+  "sequence": 1,
+  "phase": "thought",
+  "step_index": 0
+}
+```
+
+Final：
+
+```json
+{
+  "schema_version": 1,
+  "type": "phase.started",
+  "session_id": "react_opaque",
+  "sequence": 7,
+  "phase": "final",
+  "steps_completed": 1
+}
+```
+
+`phase.started` 的语义是：React 已经完成该 phase 的本地前置检查，并准备实际启动 required child invocation。
+
+空 Final prompt 被 skip 时**不发送** `phase.started(final)`，因为没有 Final child phase 被启动。
+
+---
+
+## 13. `phase.completed`
+
+普通 phase：
+
+```json
+{
+  "schema_version": 1,
+  "type": "phase.completed",
+  "session_id": "react_opaque",
+  "sequence": 2,
+  "phase": "observe",
+  "step_index": 0
+}
+```
+
+Check 额外公开已验证的 decision：
+
+```json
+{
+  "schema_version": 1,
+  "type": "phase.completed",
+  "session_id": "react_opaque",
+  "sequence": 6,
   "phase": "check",
-  "error": {
-    "code": "CHECK_DECISION_INVALID",
-    "message": "react_check_decision was not present"
+  "step_index": 0,
+  "continue": false
+}
+```
+
+Final：
+
+```json
+{
+  "schema_version": 1,
+  "type": "phase.completed",
+  "session_id": "react_opaque",
+  "sequence": 10,
+  "phase": "final",
+  "steps_completed": 1
+}
+```
+
+固定 invariant：
+
+```text
+phase.started(X)
+→ phase.completed(X)
+OR
+→ session.failed(phase = X)
+```
+
+`phase.completed` 只表示该 phase 的 required contract 已经成功完成，不表示整个 session 成功。
+
+---
+
+## 14. Final result model
+
+React 内部必须收敛为：
+
+```ts
+type ReactFinalResultV1 =
+  | { status: 'skipped' }
+  | { status: 'completed'; content: string };
+```
+
+不得保留：
+
+```text
+failed as a successful FinalResult variant
+```
+
+required Final failure属于 session failure path，而不是 completed session result。
+
+固定规则：
+
+```text
+final prompt empty
+→ { status: 'skipped' }
+
+final prompt non-empty + child success + complete output-pile stream
+→ { status: 'completed', content }
+
+final prompt non-empty + any required failure
+→ session.failed
+```
+
+---
+
+## 15. `final.delta`
+
+`final.delta` 是 v1 唯一公开正文事件：
+
+```json
+{
+  "schema_version": 1,
+  "type": "final.delta",
+  "session_id": "react_opaque",
+  "sequence": 8,
+  "content": "最终"
+}
+```
+
+规则：
+
+- 只允许出现在 successfully started Final phase 中；
+- Thought / Observe / Check 正文永远不映射为 `final.delta`；
+- `content` 必须是 string；
+- empty string delta MAY 被忽略，不要求发布；
+- delta 是实时 delivery，不是 durable authority；
+- consumer 必须把 content 视为 non-trusted model output，而不是控制指令。
+
+成功 Final 必须满足：
+
+```text
+concat(all final.delta.content)
+== session.completed.final.content
+```
+
+这是 root conformance test。
+
+---
+
+## 16. `session.completed`
+
+成功 terminal event：
+
+```json
+{
+  "schema_version": 1,
+  "type": "session.completed",
+  "session_id": "react_opaque",
+  "sequence": 11,
+  "stop_reason": "final",
+  "steps_completed": 1,
+  "final": {
+    "status": "completed",
+    "content": "最终回答"
   }
 }
 ```
 
-无论是否成功都必须输出合法 JSON；失败同时使用非零退出码。若错误发生在 CLI
-无法建立 result writer 之前，例如 option 自身无法解析，则允许只写 stderr 并非零退出。
+空 Final prompt：
 
-## 9. Final 结果语义
-
-Final 是 Agent 面向用户的规范结果来源。为此需要调整当前 API：
-
-```ts
-interface ReactFinalResult {
-  status: 'completed' | 'skipped' | 'failed';
-  content: string | null;
-  messageId?: string;
-  error?: ReactProtocolError;
-}
-
-interface ReactSessionResult {
-  stopReason: ReactStopReason;
-  stepsCompleted: number;
-  final: ReactFinalResult;
+```json
+{
+  "schema_version": 1,
+  "type": "session.completed",
+  "session_id": "react_opaque",
+  "sequence": 7,
+  "stop_reason": "max_step",
+  "steps_completed": 3,
+  "final": {
+    "status": "skipped"
+  }
 }
 ```
 
-建议修改：
-
-- `FinalReactProcess.run()` 从 `Promise<void>` 改为返回 `ReactFinalResult`；
-- `PromptpileReactRuntime.finalAnswer()` 返回结果，不再是 `void`；
-- Final 子进程失败不再静默视为正常完成；
-- `runOneReactSession()` 统一决定 terminal event 与 process exit code；
-- text/json/stream-json 模式必须收集完整 Final 正文；
-- `terminal` 模式可继续实时显示，但也应在内部得到同一个 result。
-
-当前 Final prompt 允许为空。第一版建议明确：
-
-- `terminal` 兼容模式继续允许跳过；
-- `text` 模式输出空字符串并以 `no_final_prompt` 结束；
-- `json`/`stream-json` 返回 `result: null` 和 `stop_reason: no_final_prompt`；
-- 是否将“没有 Final prompt”视为非零退出，在 Phase 0 冻结；初步建议保持成功，
-  因为它是当前合法配置，而不是运行时故障；
-- 不允许用最后一次 Thought 文本隐式冒充 Final，这会混淆内部动作与用户答案。
-
-## 10. 子进程传输设计
-
-### 10.1 独立继承 fd
-
-机器模式不解析子进程普通 stdout。父进程为每次 `promptpile` 调用增加第四个
-stdio entry：
+Public success stop reason 只允许：
 
 ```ts
-const child = spawn(command, argv, {
-  stdio: [stdinMode, 'pipe', 'pipe', 'pipe']
-});
+type ReactSuccessStopReasonV1 = 'final' | 'max_step';
 ```
 
-并向子进程追加：
+不存在：
 
 ```text
---quiet
+no_final_prompt
+cancelled
+error
+```
+
+`error` 已经由 `session.failed` 表达；Final skip 是 Final result status，不是 orchestration stop reason。
+
+---
+
+## 17. Structured failure model
+
+Streaming 实现需要让 runtime 保留 failure metadata，但不得建立第二套 FSM。
+
+推荐内部模型：
+
+```ts
+type ReactFailurePhaseV1 =
+  | 'thought'
+  | 'observe'
+  | 'check'
+  | 'final'
+  | 'startup';
+
+interface ReactRuntimeFailureV1 {
+  phase: ReactFailurePhaseV1;
+  code: ReactErrorCodeV1;
+  message: string;
+  cause?: unknown; // internal only
+}
+```
+
+固定 invariant：
+
+```text
+runtime stopReason === 'error'
+⇔
+runtime failure exists
+```
+
+`cause` 不得直接 JSON serialize 到 public event。
+
+---
+
+## 18. v1 error codes
+
+冻结最小 package-local taxonomy：
+
+```ts
+type ReactErrorCodeV1 =
+  | 'promptpile_spawn_failed'
+  | 'promptpile_exit_nonzero'
+  | 'phase_output_missing'
+  | 'check_decision_invalid'
+  | 'final_stream_invalid'
+  | 'internal_error';
+```
+
+语义：
+
+- `promptpile_spawn_failed`：required child 无法启动；
+- `promptpile_exit_nonzero`：required child 已启动但没有成功退出；
+- `phase_output_missing`：Observe/Check 等 required artifact/output 缺失或不可读；
+- `check_decision_invalid`：Check required ToolCall 不存在或 boolean decision contract 非法；
+- `final_stream_invalid`：Final output-pile JSONL malformed / incomplete / error event / protocol violation；
+- `internal_error`：无法映射到前述 contract failure 的 React 内部故障。
+
+错误码是机器 contract；`message` 是有限、人类可读诊断，不得包含 secret、Authorization、完整 request body 或 hidden reasoning。
+
+未来新增 error code 可以 additive；改变既有 code 语义是 breaking change。
+
+---
+
+## 19. `session.failed`
+
+只要 protocol 已经开始、domain failure 已确定、parent stdout 仍可写，就发送唯一 failure terminal：
+
+```json
+{
+  "schema_version": 1,
+  "type": "session.failed",
+  "session_id": "react_opaque",
+  "sequence": 6,
+  "phase": "check",
+  "steps_completed": 0,
+  "error": {
+    "code": "check_decision_invalid",
+    "message": "react_check_decision output was invalid"
+  }
+}
+```
+
+固定规则：
+
+```text
+session.failed
+⇒ session.completed never appeared
+⇒ no Final starts after Thought/Observe/Check failure
+⇒ process exit non-zero
+```
+
+v1 不发送额外 generic `error` event，因为当前 runtime 没有 public recoverable-error state。一个 fatal domain failure 只需要一个 terminal witness。
+
+---
+
+## 20. Terminal theorem 与 transport exception
+
+### 20.1 Writable output channel
+
+如果：
+
+```text
+session.started successfully written
+AND
+parent output channel remains writable
+```
+
+则必须：
+
+```text
+exactly one terminal event
+= session.completed XOR session.failed
+
+terminal event is the final event
+```
+
+### 20.2 Parent stdout failure
+
+如果 parent stdout 在 session 中途发生 `EPIPE` / stream failure：
+
+```text
+terminal delivery is no longer guaranteed
+```
+
+实现必须：
+
+```text
+stop emitting events
+→ stop accepting further Final deltas
+→ destroy/stop Final transport reader
+→ best-effort terminate active Promptpile child
+→ wait/cleanup as practical
+→ exit non-zero
+```
+
+不得：
+
+- 假装已经发送 `session.failed`；
+- 把 domain success 写到 stderr 当成 protocol success；
+- exit 0。
+
+因此精确 contract 是：
+
+```text
+output transport failure
+⇒ no success claim
+⇒ non-zero exit
+```
+
+而不是物理上无法保证的“任何情况下都恰好收到 terminal event”。
+
+---
+
+## 21. Promptpile child transport ownership
+
+### 21.1 v1 only streams Final
+
+Thought / Observe / Check 继续走 Frozen orchestration 已经存在的结果通道：
+
+```text
+Thought
+→ child exit / Conversation effects
+
+Observe
+→ required temporary -o artifact
+
+Check
+→ required calls artifact + protocol parser
+```
+
+Streaming v1 **不为前三个 phase 打开 output pile**。
+
+只有 Final 需要低延迟正文：
+
+```text
+Final
+→ Promptpile output pile fd 3 JSONL
+→ React decoder
+→ final.delta
+```
+
+这避免把三个内部控制 phase 都暴露给新的 streaming transport failure surface。
+
+### 21.2 Final child argv
+
+machine mode 中 Final child 固定追加等价参数：
+
+```text
 --output-pile-fd 3
 --output-pile-format json
 ```
 
-父进程从 `child.stdio[3]` 增量读取 JSONL：
+是否同时向 child 传 `--quiet` 只能影响 child 自身诊断 verbosity；parent machine stdout purity 不得依赖它。
+
+---
+
+## 22. Final fd3 transport contract
+
+Parent spawn Final 时使用额外 pipe：
+
+```ts
+stdio: [stdinMode, 'pipe', 'pipe', 'pipe']
+```
+
+`child.stdio[3]` 是 private transport，不是 public Agent Event Protocol。
+
+当前 Promptpile output pile JSONL vocabulary：
 
 ```jsonl
 {"type":"assistant_delta","content":"..."}
 {"type":"assistant_done"}
+{"type":"error","message":"..."}
 ```
 
-映射规则：
+映射固定为：
 
-| Promptpile output-pile event | React 行为 |
-| --- | --- |
-| `assistant_delta` / Thought | 默认消费但不向外暴露正文 |
-| `assistant_delta` / Observe | 收集供内部使用，不向外暴露正文 |
-| `assistant_delta` / Check | 默认不暴露正文；decision 仍以 calls artifact 为准 |
-| `assistant_delta` / Final | 输出 `assistant.delta` 并累积最终正文 |
-| `assistant_done` | 完成当前 phase 的 stream half |
-| `error` | 转换为 phase error；仍等待子进程 close 获取退出码 |
+```text
+assistant_delta
+→ final.delta
+→ append content to Final accumulator
 
-Observe/Check 当前仍依赖临时 `-o` 和 calls sidecar，这是确定性控制 artifacts；
-第一版无需用流事件替换它们。output pile 负责低延迟正文传输，不负责证明阶段完整。
+assistant_done
+→ mark transport stream complete
 
-### 10.2 不直接透传底层事件
+error
+→ mark Final stream failure
+→ still wait child close
+→ session.failed if parent output remains writable
+```
 
-底层事件没有 React 所需的：
+不得把 child JSONL 原样 byte-forward 到 parent stdout。
+
+---
+
+## 23. Final dual-witness success
+
+`assistant_done` 只是 transport witness，不是 Promptpile domain success。
+
+Final 成功必须同时满足：
+
+```text
+output-pile stream is valid
+AND
+exactly one assistant_done observed
+AND
+no output-pile error event observed
+AND
+Promptpile child exit code == 0
+```
+
+因此：
+
+```text
+assistant_done + child non-zero
+→ Final failure
+
+child exit 0 + missing assistant_done
+→ final_stream_invalid
+
+malformed stream + child exit 0
+→ final_stream_invalid
+```
+
+只有双 witness 成立后：
+
+```text
+phase.completed(final)
+→ session.completed
+```
+
+这保留 Promptpile 对 completion lifecycle 的 ownership，同时让 React 能证明机器输出正文完整。
+
+---
+
+## 24. JSONL decoder contract
+
+Final private decoder 必须：
+
+- 使用 streaming UTF-8 decoder，允许多字节字符跨 Node chunk；
+- 跨 chunk 缓存 partial line；
+- 支持多个 JSONL lines 位于同一 chunk；
+- EOF 时允许最后一行无 trailing newline；
+- 每个 transport line 设置 `1 MiB` UTF-8 byte hard limit；
+- 超限立即标记 `final_stream_invalid`；
+- object 之外 JSON value 非法；
+- `assistant_delta.content` 必须为 string；
+- `assistant_done` 必须恰好一次；
+- duplicate done 非法；
+- done 之后出现任何 delta / done / error 非法；
+- unknown event type 非法；
+- malformed JSON 非法；
+- EOF 前没有 done 非法；
+- `error` event 使 Final 必然失败，即使之后 child exit 0。
+
+Decoder failure 后仍必须 drain/close child channels enough to avoid zombie process，并最终等待 child close；但不得再发布新的 `final.delta`。
+
+---
+
+## 25. Backpressure guarantee boundary
+
+React event writer 必须串行写 parent stdout，不能 fire-and-forget `process.stdout.write()`。
+
+最低实现要求：
+
+```text
+serialize one complete JSON object + "\n"
+→ write
+→ respect write callback / drain boundary
+→ only then publish next event
+```
+
+Final fd3 reader在等待 parent event write 时必须停止主动消费更多 decoded delta，例如使用 async iteration / pause-resume，避免 React 自己建立无界 application queue。
+
+但是 v1 **不承诺端到端 model backpressure**：当前 Promptpile output-pile writer 的 public behavior 没有把 `stream.write() === false` 向上反馈给 completion producer。
+
+因此 Freeze contract 只能是：
+
+```text
+React does not intentionally create an unbounded event queue
+```
+
+不能声称：
+
+```text
+slow external consumer
+→ guaranteed backpressure all the way to model generation
+```
+
+若未来需要 hard end-to-end flow control，必须单独设计 Promptpile Output Pile Backpressure Contract，不在本项目中偷偷修改 core semantics。
+
+---
+
+## 26. fd3 portability contract
+
+Streaming v1 transport **只允许一个实现路径：fd 3 pipe**。
+
+不提供：
+
+```text
+Windows named-pipe fallback
+temp-file polling fallback
+platform-specific second protocol
+```
+
+实施 Phase 0 必须先建立真实 portability proof：
+
+```text
+Node 20 / Ubuntu
+Node 22 / Ubuntu
+Node 20 / Windows
+Node 22 / Windows
+```
+
+每个 cell 都必须证明 parent `child.stdio[3]` 能完整收到 Promptpile output-pile JSONL，并且 close/error semantics 可重复通过。
+
+如果任何已支持 CI cell 无法满足：
+
+```text
+Streaming v1 MUST NOT Freeze
+```
+
+此时必须先修改本设计并重新审查 transport；不得在实现中临时加入 fallback 形成双重 contract。
+
+---
+
+## 27. Schema ownership 与 npm artifact
+
+新增 package-local normative schema：
+
+```text
+packages/promptpile-react/schema/agent-event-v1.schema.json
+```
+
+以及 repo fixtures，例如：
+
+```text
+packages/promptpile-react/test/fixtures/agent-event-v1/
+```
+
+`promptpile-react` npm tarball 必须包含：
+
+```text
+schema/agent-event-v1.schema.json
+```
+
+因此 package `files` 需要加入 `schema`。
+
+v1 仍然只承诺 `promptpile-react` executable，不因此开放 JavaScript library API。
+
+Schema 是 Agent Event Protocol 的 machine-readable normative projection；TypeScript types、writer、CLI 都必须与 schema fixture 同源验证，不能各自漂移。
+
+---
+
+## 28. Security / privacy boundary
+
+默认永远不公开：
+
+- Thought正文；
+- hidden chain-of-thought；
+- `reasoning_content`；
+- Observe正文；
+- Check自由文本；
+- API key；
+- Authorization header；
+- 完整 request body；
+- tool arguments/results；
+- absolute temp paths；
+- internal stack trace。
+
+Check event 只允许公开已经验证后的 boolean `continue`。
+
+Final content 是用户可见 model output，但仍应被 consumer 当成 untrusted data。
+
+Error `message` 必须经过受控映射，不得直接把 arbitrary `cause` / child request dump stringify 到 public stdout。
+
+---
+
+## 29. Compatibility contract
+
+Streaming 实现不得回归已经 Freeze 的 terminal mode：
+
+```text
+no --output-format
+→ exact terminal compatibility surface
+```
+
+必须继续支持：
+
+- package-declared Promptpile binary resolution；
+- `PROMPTPILE_BIN` override；
+- PATH fallback；
+- layered directories；
+- `--output-dir`；
+- `-i` one-shot append semantics；
+- `-c` phase-level Promptpile behavior；
+- strict config validation；
+- existing quiet/debug behavior；
+- Node >=20 package contract。
+
+Streaming mode 不得导入：
+
+```text
+promptpile/src/*
+promptpile/dist/*
+```
+
+只允许 Promptpile public CLI + output-pile CLI contract。
+
+---
+
+## 30. Reference success trace
+
+一轮后 Check=false、Final configured：
+
+```jsonl
+{"schema_version":1,"type":"session.started","session_id":"react_opaque","sequence":0,"max_steps":3}
+{"schema_version":1,"type":"phase.started","session_id":"react_opaque","sequence":1,"phase":"thought","step_index":0}
+{"schema_version":1,"type":"phase.completed","session_id":"react_opaque","sequence":2,"phase":"thought","step_index":0}
+{"schema_version":1,"type":"phase.started","session_id":"react_opaque","sequence":3,"phase":"observe","step_index":0}
+{"schema_version":1,"type":"phase.completed","session_id":"react_opaque","sequence":4,"phase":"observe","step_index":0}
+{"schema_version":1,"type":"phase.started","session_id":"react_opaque","sequence":5,"phase":"check","step_index":0}
+{"schema_version":1,"type":"phase.completed","session_id":"react_opaque","sequence":6,"phase":"check","step_index":0,"continue":false}
+{"schema_version":1,"type":"phase.started","session_id":"react_opaque","sequence":7,"phase":"final","steps_completed":1}
+{"schema_version":1,"type":"final.delta","session_id":"react_opaque","sequence":8,"content":"最终"}
+{"schema_version":1,"type":"final.delta","session_id":"react_opaque","sequence":9,"content":"回答"}
+{"schema_version":1,"type":"phase.completed","session_id":"react_opaque","sequence":10,"phase":"final","steps_completed":1}
+{"schema_version":1,"type":"session.completed","session_id":"react_opaque","sequence":11,"stop_reason":"final","steps_completed":1,"final":{"status":"completed","content":"最终回答"}}
+```
+
+注意：没有 `turn.*`、`assistant.completed`、generic `error`、timestamp 或 message id。
+
+---
+
+## 31. Reference skip trace
+
+达到 max step，Final prompt 为空：
+
+```jsonl
+{"schema_version":1,"type":"session.started","session_id":"react_opaque","sequence":0,"max_steps":1}
+{"schema_version":1,"type":"phase.started","session_id":"react_opaque","sequence":1,"phase":"thought","step_index":0}
+{"schema_version":1,"type":"phase.completed","session_id":"react_opaque","sequence":2,"phase":"thought","step_index":0}
+{"schema_version":1,"type":"phase.started","session_id":"react_opaque","sequence":3,"phase":"observe","step_index":0}
+{"schema_version":1,"type":"phase.completed","session_id":"react_opaque","sequence":4,"phase":"observe","step_index":0}
+{"schema_version":1,"type":"phase.started","session_id":"react_opaque","sequence":5,"phase":"check","step_index":0}
+{"schema_version":1,"type":"phase.completed","session_id":"react_opaque","sequence":6,"phase":"check","step_index":0,"continue":true}
+{"schema_version":1,"type":"session.completed","session_id":"react_opaque","sequence":7,"stop_reason":"max_step","steps_completed":1,"final":{"status":"skipped"}}
+```
+
+Final skip 不创造新的 stop reason，也不伪造一个 Final phase。
+
+---
+
+## 32. Reference failure trace
+
+Check decision invalid：
+
+```jsonl
+{"schema_version":1,"type":"session.started","session_id":"react_opaque","sequence":0,"max_steps":3}
+{"schema_version":1,"type":"phase.started","session_id":"react_opaque","sequence":1,"phase":"thought","step_index":0}
+{"schema_version":1,"type":"phase.completed","session_id":"react_opaque","sequence":2,"phase":"thought","step_index":0}
+{"schema_version":1,"type":"phase.started","session_id":"react_opaque","sequence":3,"phase":"observe","step_index":0}
+{"schema_version":1,"type":"phase.completed","session_id":"react_opaque","sequence":4,"phase":"observe","step_index":0}
+{"schema_version":1,"type":"phase.started","session_id":"react_opaque","sequence":5,"phase":"check","step_index":0}
+{"schema_version":1,"type":"session.failed","session_id":"react_opaque","sequence":6,"phase":"check","steps_completed":0,"error":{"code":"check_decision_invalid","message":"react_check_decision output was invalid"}}
+```
+
+随后：
+
+```text
+no Final
+no session.completed
+exit non-zero
+```
+
+---
+
+## 33. Implementation phases
+
+### Phase 0 — Transport proof + schema freeze
+
+只做：
+
+- fd3 Node20/22 × Ubuntu/Windows real Promptpile portability test；
+- freeze exact event vocabulary；
+- add package-local JSON Schema；
+- add valid/invalid fixtures；
+- add architecture guard：streaming types/schema 不进入 `promptpile-protocol`；
+- 不接入 production runtime。
+
+Gate：4/4 transport cells + schema fixtures green。
+
+### Phase 1 — Event writer
+
+新增类似：
+
+```text
+src/react-event-protocol.ts
+src/react-event-writer.ts
+```
+
+实现：
 
 - session id；
-- sequence；
-- phase；
-- step；
-- turn lifecycle；
-- stop reason；
-- React error taxonomy。
+- sequence ownership；
+- complete JSONL line write；
+- serialized writes；
+- stdout backpressure boundary；
+- terminal uniqueness；
+- EPIPE/output failure state。
 
-因此 React 必须解析并重新编码，不能简单地把 fd 3 字节复制到父 stdout。
+此阶段仍不启动 Promptpile streaming。
 
-### 10.3 Invoker API 草案
+### Phase 2 — Runtime observation seam
 
-```ts
-interface PromptpileInvokeOptions {
-  cwd?: string;
-  quiet: boolean;
-  env?: NodeJS.ProcessEnv;
-  stdin?: string;
-  outputPile?: {
-    fd: 3;
-    format: 'json';
-    onEvent(event: PromptpileOutputPileEvent): void | Promise<void>;
-  };
-}
+在不改 Frozen transition graph 的前提下增加：
 
-interface PromptpileInvokeResult {
-  status: number | null;
-  signal: NodeJS.Signals | null;
-  error?: NodeJS.ErrnoException;
-  stderr: string;
-  outputPileDone: boolean;
-}
-```
+- structured failure metadata；
+- phase start/complete observation seam；
+- Final result `completed|skipped`；
+- `runOneReactSession()` 可返回统一 internal result。
 
-`stdout` 不应继续以“streaming path 永远为空”的含糊字段存在；可以明确拆成
-terminal forwarding callback 与 machine output-pile callback。
+Gate：terminal mode所有旧测试继续通过。
 
-### 10.4 JSONL decoder
+### Phase 3 — Final-only output-pile transport
 
-decoder 必须：
+扩展 invoker：
 
-- 跨 chunk 缓冲不完整行；
-- 按 UTF-8 解码，不把多字节字符截断；
-- 设置单行大小上限；
-- EOF 时处理最后一行；
-- 拒绝非法 JSON 和未知 schema 形状；
-- 未收到 `assistant_done` 时把 phase 标记为 incomplete；
-- 不允许解析错误只写 warning 后继续报告 session success。
+- machine mode child stdout 不 forward；
+- Final 额外 fd3；
+- JSONL decoder；
+- Final accumulator；
+- `assistant_done + exit0` dual witness；
+- malformed/incomplete stream fail-closed。
 
-## 11. Event writer 与 backpressure
+Thought/Observe/Check 不接 output pile。
 
-新增独立模块，例如：
+### Phase 4 — `stream-json` CLI
+
+接通：
 
 ```text
-packages/promptpile-react/src/react-event-writer.ts
-packages/promptpile-react/src/react-event-protocol.ts
-packages/promptpile-react/src/promptpile-output-pile-decoder.ts
+session.started
+phase.started/completed
+final.delta
+session.completed/session.failed
 ```
 
-Event writer 应串行化所有写入：
+实现：
 
-```ts
-interface ReactEventWriter {
-  emit(event: ReactEventInput): Promise<void>;
-  complete(result: ReactSessionResult): Promise<void>;
-  fail(error: ReactProtocolError): Promise<void>;
-}
-```
+- stdout purity；
+- quiet independence；
+- output failure non-zero exit；
+- active Final child best-effort termination。
 
-不能无条件调用 `process.stdout.write()` 并忽略返回值。writer 必须在返回 `false`
-时等待 `drain`，从而将 consumer backpressure 传递到 phase reader。若 stdout 发生
-`EPIPE`，应取消当前子进程树并以非零状态结束。
+### Phase 5 — Root E2E / packed artifact
 
-同一个 writer 负责分配 sequence 和 timestamp，避免各 phase 并发或未来新增事件时
-产生重复 sequence。
+增加真实 `promptpile` child E2E：
 
-## 12. Runtime 生命周期调整
+- package bin resolution；
+- npm pack fresh install；
+- schema included in tarball；
+- Node20/22 × Ubuntu/Windows；
+- terminal compatibility；
+- machine stdout purity。
 
-当前 runtime 把 phase exception catch 后只设置 `stopReason = 'error'`，错误细节丢失。
-建议保留结构化 failure：
+### Phase 6 — Freeze
 
-```ts
-interface ReactRuntimeFailure {
-  phase: ReactPhase | 'startup';
-  code: ReactErrorCode;
-  message: string;
-  cause?: unknown; // internal only; never blindly JSON.stringify to stdout
-}
-
-interface ReactRuntimeState {
-  currentStep: number;
-  stopReason: ReactRuntimeStopReason;
-  failure?: ReactRuntimeFailure;
-}
-```
-
-`nextStep()` 可以继续不向 CLI 抛出预期 phase error，但必须保存 failure；或者改为
-返回 discriminated union。CLI 层不得仅依据 `stopReason === 'error'` 构造一个丢失
-phase/code 的通用错误。
-
-推荐顺序：
+只有全部 acceptance criteria 与 dedicated CI 当前 HEAD green 后：
 
 ```text
-parse CLI/config
-→ create event writer/session id
-→ session.started
-→ turn.started
-→ phase events for each nextStep
-→ turn.completed
-→ Final phase
-→ assistant.completed
-→ session.completed OR session.failed
-→ flush writer
-→ set exit code
+status
+Implementation Freeze / 待实施
+→ Implemented / CI validation
+→ Agent Event Protocol v1 Freeze
 ```
 
-## 13. 工具调用事件
+文档状态不得只因为代码“看起来完成”就标记 Freeze。
 
-常见 Agent CLI 会公开 tool lifecycle，但当前 Promptpile output pile v1 只包含正文
-delta/done/error，tool calls 在模型流结束后聚合并写 calls artifact。因此本提案分阶段处理：
+---
 
-### v1
+## 34. Required test matrix
 
-- 不伪造流式 tool argument event；
-- Thought 的 `phase.completed` 可以携带非敏感的 `has_tool_calls`；
-- 如果 Completion Receipt 或 artifact reference 已实现，可以携带 calls artifact 引用；
-- 工具成功与否继续由 Tool Artifacts 和执行器契约定义。
+至少包含：
 
-### v1.x / v2
+1. normal Check=false + Final success；
+2. normal max_step + Final success；
+3. empty Final prompt → skipped success；
+4. Thought spawn failure；
+5. Thought non-zero；
+6. Observe non-zero；
+7. Observe required output missing；
+8. Check non-zero；
+9. Check calls missing；
+10. Check decision malformed；
+11. Final spawn failure；
+12. Final partial deltas + child non-zero；
+13. Final done + child non-zero；
+14. Final child exit0 + missing done；
+15. malformed fd3 JSON；
+16. unknown fd3 event；
+17. duplicate assistant_done；
+18. delta after done；
+19. output-pile error event；
+20. one transport event split across chunks；
+21. multiple transport events in one chunk；
+22. UTF-8 multibyte split across chunks；
+23. final line without newline；
+24. transport line > 1 MiB；
+25. child stdout noisy but parent machine stdout pure；
+26. child stderr never enters parent stdout；
+27. `-q` does not suppress protocol events；
+28. sequence exactly `0..N`；
+29. one terminal event only；
+30. no event after terminal；
+31. `session.failed` excludes `session.completed`；
+32. Thought/Observe/Check failure never starts Final；
+33. `concat(final.delta.content) == session.completed.final.content`；
+34. Final skipped produces no Final phase/delta；
+35. stdout EPIPE → non-zero, no success claim；
+36. terminal mode behavior regression guard；
+37. CLI parse failure before protocol start → no events；
+38. schema validates every golden event；
+39. schema rejects invalid terminal/result combinations；
+40. packed npm artifact includes schema；
+41. fresh install can run `promptpile-react --output-format stream-json` fixture；
+42. Node20/22 × Ubuntu/Windows fd3 transport matrix。
 
-在底层 Promptpile output pile 扩展并冻结新事件后，React 可以映射：
+---
+
+## 35. Failure matrix
+
+| Failure | Protocol started? | Final allowed? | Terminal when stdout writable | Exit |
+| --- | --- | --- | --- | --- |
+| invalid CLI option | no | no | none | non-zero |
+| invalid config | no | no | none | non-zero |
+| input append failure before session | no | no | none | non-zero |
+| Thought failure | yes | no | `session.failed` | non-zero |
+| Observe failure | yes | no | `session.failed` | non-zero |
+| Check failure | yes | no | `session.failed` | non-zero |
+| invalid Check decision | yes | no | `session.failed` | non-zero |
+| Final skipped | yes | n/a | `session.completed` | 0 |
+| Final child non-zero | yes | already started | `session.failed` | non-zero |
+| Final stream malformed/incomplete | yes | already started | `session.failed` | non-zero |
+| parent stdout EPIPE | maybe | stop work | terminal not guaranteed | non-zero |
+| internal unexpected error after start | yes | no further required work | `session.failed` if writable | non-zero |
+
+---
+
+## 36. Acceptance checklist
+
+实现可以进入 Freeze review 前，必须全部满足：
+
+- [ ] React Frozen FSM 没有新增 state / transition；
+- [ ] v1 public output mode 只有 `terminal|stream-json`；
+- [ ] 默认仍为 `terminal`；
+- [ ] Agent Event Protocol v1 只有 6 个 event types；
+- [ ] public success reason 只有 `final|max_step`；
+- [ ] Final result 只有 `completed|skipped`；
+- [ ] no `turn` / `cancelled` / `no_final_prompt` / `message_id`；
+- [ ] Thought/Observe/Check 正文不公开；
+- [ ] required Final 使用 fd3 private output-pile transport；
+- [ ] Thought/Observe/Check 不启用 output pile；
+- [ ] Final success 需要 done + child exit0 双 witness；
+- [ ] malformed/incomplete Final stream fail-closed；
+- [ ] child stdout 永不污染 machine stdout；
+- [ ] `-q` 不影响 machine events；
+- [ ] sequence contiguous；
+- [ ] terminal unique and last when channel writable；
+- [ ] EPIPE 不假装 terminal success；
+- [ ] schema package-local；
+- [ ] npm tarball 包含 schema；
+- [ ] no `promptpile/src/*` / `dist/*` import；
+- [ ] existing terminal compatibility tests green；
+- [ ] real child E2E green；
+- [ ] packed fresh-install smoke green；
+- [ ] Node20/22 × Ubuntu/Windows dedicated Streaming CI green。
+
+---
+
+## 37. Freeze criteria
+
+### 37.1 Architecture Freeze
+
+本文完成后冻结以下设计：
 
 ```text
-tool.started
-tool.input.delta
-tool.completed
-tool.failed
+Frozen React FSM
+        ↓
+minimal observable projection
+        ↓
+6-event Agent Event Protocol v1
+        ↓
+Final-only Promptpile fd3 transport
+        ↓
+one terminal witness
 ```
 
-tool result 可能包含 secret、大文件和任意非可信内容，默认事件应只包含 tool name、
-call id、状态和受限摘要；完整内容仍由 artifacts 管理。
+实施过程中如果需要增加第二种 transport、第二套 runtime state、第三种 output result contract，视为 architecture regression，必须先回到文档重新审查。
 
-## 14. 安全与隐私
+### 37.2 Implementation Freeze
 
-- 默认不输出 Thought/hidden reasoning 正文。
-- `reasoning_content` 不进入 Agent Event Protocol v1。
-- error message 不包含 API key、Authorization header 或完整 request body。
-- 临时路径和绝对目录默认不进入公共事件；需要 artifact ref 时优先相对路径。
-- Observe 内容只在进程内传给 Check，不默认发给外部 consumer。
-- tool arguments/results 不因启用 stream-json 自动公开。
-- debug 模式仍只能写 stderr 或受控 dump 文件，不能污染 stdout protocol。
-- consumer 必须把 assistant、tool 和 error 内容视为非可信数据，而不是控制指令。
+只有当前 HEAD 同时满足：
 
-## 15. 与现有设计的关系
+```text
+unit tests
++ schema fixtures
++ terminal compatibility
++ real Promptpile E2E
++ fd3 portability
++ packed npm smoke
++ Node20/22 × Ubuntu/Windows dedicated CI
+```
 
-### 15.1 Promptpile Output Artifact Policy
+才能把状态改为：
 
-本协议只属于 `promptpile-react` 的 Agent-facing 输出。它不要求核心 `promptpile`
-把所有输出强制合并成一个事件流，也不改变以下分类：
+```text
+Agent Event Protocol v1 Freeze
+```
 
-- Conversation artifacts 是会话历史权威来源；
-- `-o` 是调用者管理的普通结果 artifact；
-- output pile 是允许截断的实时旁路；
-- receipt 是完成 artifact 的索引；
-- React event stream 是一次编排运行的实时观察与结果交付通道。
+历史 green run 不替代当前 HEAD 的 executable witness。
 
-### 15.2 Completion Receipt
+---
 
-Receipt 与 event stream 互补：
+## 38. Closure theorems
 
-- event stream 面向实时观察，可能因消费者断开而截断；
-- receipt 在完成后原子写入，引用已落盘 artifacts；
-- React terminal event 可以包含 receipt path/reference，但不能取代 receipt 的完成标记语义。
+### Projection theorem
 
-### 15.3 Layered Conversation I/O
+```text
+React event stream
+⇒ only projects Frozen React orchestration facts
+⇒ never creates new orchestration states
+```
 
-分层输入不会改变 event envelope。事件中的 artifact ref 若引用 output layer，必须使用
-Layered Conversation I/O 冻结后的唯一目录身份，不能只提供 basename。
+### Success theorem
 
-### 15.4 CLI Contract
+```text
+stream-json exit 0
+⇒ session.started was successfully emitted
+⇒ React reached final|max_step
+⇒ every required Thought/Observe/Check invocation succeeded
+⇒ configured Final succeeded with valid output-pile done + child exit0
+   OR Final was explicitly skipped
+⇒ exactly one session.completed was successfully emitted
+⇒ session.completed was the final event
+```
 
-需要扩展 CLI Contract：
+### Failure theorem
 
-- 定义 React 的四种 output format；
-- 定义 stdout/stderr 纯净性；
-- 定义 JSONL terminal event 与 exit code 的一致性；
-- 明确未知字段和 event type 的前向兼容规则。
+```text
+domain failure after protocol start
++ parent output channel remains writable
+⇒ exactly one session.failed
+⇒ no session.completed
+⇒ no Final after Thought/Observe/Check failure
+⇒ exit non-zero
+```
 
-## 16. 实施计划
+### Final consistency theorem
 
-### Phase 0：冻结协议
+```text
+session.completed.final.status == completed
+⇒ concat(final.delta.content)
+   == session.completed.final.content
+```
 
-- 确认 `terminal` 兼容模式与未来默认值。
-- 确认 no-final-prompt 的退出码语义。
-- 冻结 v1 event names、必填字段、error code 和 JSON Schema。
-- 确认 terminal result 是否复制完整 Final content。
-- 确认 timestamp 是否必须，还是允许测试/嵌入场景关闭。
+### Transport failure theorem
 
-### Phase 1：内部结果模型
+```text
+parent output channel failure
+⇒ terminal delivery may be incomplete
+⇒ no success claim
+⇒ exit non-zero
+```
 
-- 让 Final 返回 `ReactFinalResult`。
-- 让 runtime 保留结构化 failure。
-- 让 `runOneReactSession()` 返回 `ReactSessionResult`。
-- 修正 Final soft failure 与 session success 的歧义。
-- 保持 terminal 模式输出行为不变。
+### Ownership theorem
 
-### Phase 2：`text` 与 `json`
+```text
+Promptpile success/failure
+仍由 Promptpile public CLI lifecycle 决定
 
-- 增加 CLI/config output format。
-- text 模式只写 Final content。
-- json 模式写单个 result/failure envelope。
-- 所有子进程在机器模式中使用 quiet，禁止原始 stdout 污染。
-- 增加 stdout purity 与 exit code 测试。
+React Streaming
+只消费 child public transport
+并投影 orchestration result
+不重新实现 completion/runtime ownership
+```
 
-### Phase 3：output-pile fd 传输
-
-- 扩展 invoker stdio，增加 fd 3 pipe。
-- 实现 JSONL 增量 decoder。
-- 每个 phase 添加 output-pile CLI 参数。
-- 保留 Observe/Check 的现有临时 artifacts。
-- 验证 fd 优先级、关闭顺序和子进程异常路径。
-
-### Phase 4：Agent Event Protocol v1
-
-- 实现 session/turn/phase/assistant/error/terminal events。
-- 实现 sequence、session id 和 RFC 3339 timestamp。
-- 实现 stdout backpressure 与 EPIPE 取消。
-- 增加 JSON Schema 和协议 fixtures。
-- 更新 README、package docs、CLI Contract 和示例。
-
-### Phase 5：生态集成
-
-- 增加一个 `examples/promptpile-react-stream-json/` consumer。
-- 验证 Node、Python 和 shell `jq` 消费。
-- 评估与 Completion Receipt 的 artifact ref 集成。
-- 底层 output pile 扩展稳定后再增加 tool lifecycle 和 usage。
-
-## 17. 测试计划
-
-### 17.1 协议测试
-
-- 每行都是独立合法 JSON。
-- `schema_version`、`session_id`、`sequence` 始终存在。
-- sequence 从 0 严格递增，无重复和跳号。
-- 未知可选字段不影响 consumer fixture。
-- 每个 started phase 恰好对应 completed 或 fatal error。
-- 每个已开始 session 恰好一个 terminal event。
-- terminal event 后无其它事件。
-
-### 17.2 输出隔离测试
-
-- json/stream-json stdout 不出现子进程普通日志。
-- stderr warning 不进入 stdout。
-- quiet 不抑制 JSON/JSONL result。
-- Observe/Check 正文默认不以 `assistant.delta` 暴露。
-- Thought/reasoning 默认不暴露。
-
-### 17.3 流边界测试
-
-- 一个 JSONL event 被拆成多个 Node chunks。
-- 多个 event 位于同一个 chunk。
-- UTF-8 多字节字符跨 chunk。
-- EOF 前最后一行没有换行。
-- 非法 JSON、超长行和缺失 done。
-- stdout backpressure 与 drain。
-- consumer 提前关闭导致 EPIPE。
-
-### 17.4 Runtime 测试
-
-- Thought/Observe/Check/Final 分别非零退出。
-- Check calls 缺失或 decision 非法。
-- Final prompt 为空。
-- Final 子进程失败。
-- max-step、final、error、cancelled stop reason。
-- SIGINT/SIGTERM 清理当前子进程树和临时文件。
-
-### 17.5 兼容测试
-
-- 未指定 output format 时 terminal 行为与现有版本一致。
-- `PROMPTPILE_BIN`、package bin 和 PATH fallback 继续工作。
-- `-i`、`-c`、quiet、debug 与各 output format 组合明确。
-- Windows inherited fd 支持若不可移植，应在 Phase 0 验证并设计 named pipe/file fallback。
-
-## 18. 验收标准
-
-- `--output-format text` 的 stdout 只有最终回答。
-- `--output-format json` 在运行失败时仍输出合法 failure JSON，并使用非零退出码。
-- `--output-format stream-json` 可以在 Final 完成前收到正文 delta。
-- stream-json 的调用方能只根据事件区分 session、phase、最终回答和失败。
-- 非 quiet 与 debug 不会污染机器模式 stdout。
-- Thought、Observe 和 Check 正文默认不会被当作用户最终消息输出。
-- Final 失败不会产生 `session.completed`。
-- 每个开始的 session 恰好有一个 terminal event。
-- 慢 consumer 不会无界累积内存；断开的 consumer 会终止运行。
-- 实现不导入 `promptpile/dist/*`，只使用公共 CLI/output-pile 契约。
-- terminal 兼容模式的现有测试继续通过。
-
-## 19. 待定项
-
-- `terminal` 是否作为长期公开格式，还是仅作为 Beta 迁移别名。
-- 无 Final prompt 是否算成功；初步建议成功但 `result: null`。
-- `assistant.completed` 与 `session.completed` 是否都携带完整正文。
-- 是否允许 `--output <path>` 保存最终 Agent result，以及它与核心 `-o` 的命名区分。
-- usage 由各 phase 分别报告还是只给 session 聚合值。
-- tool lifecycle 由 Promptpile output pile 扩展提供，还是从 receipt/artifacts 映射。
-- Windows 上额外 fd 的兼容边界及 fallback。
-- 取消时是否定义独立 `session.cancelled` terminal event，还是使用
-  `session.failed` + `code=CANCELLED`；v1 初步建议后者以减少 terminal 类型。
-- 是否为嵌入式调用公开 TypeScript `AsyncIterable<ReactEventV1>` API；建议在 CLI
-  协议稳定后再提供，并让 CLI 与 API 共用同一个 event source。
-
-## 20. 参考模式
-
-本设计借鉴但不复制以下 Agent CLI 的边界：
-
-- Codex 非交互模式：默认把进度写 stderr、最终回答写 stdout；`--json` 将 stdout
-  变为包含 thread/turn/item/error 的 JSONL 事件流；
-- Claude Code print mode：区分 `text`、`json`、`stream-json`，并以 terminal result
-  message 提供最终结果和 session metadata。
-
-Promptpile React 的差异是保留 file-native Conversation artifacts，并把核心
-`promptpile` 作为独立 CLI 子进程。因此公共协议必须在 React 层重新建立 session、
-step 和 phase 语义，不能直接等同于单次 LLM completion stream。
+满足以上定理并由当前 HEAD 的 executable evidence 证明后，Streaming v1 才算真正形成优雅闭环。
