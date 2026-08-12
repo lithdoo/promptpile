@@ -3,6 +3,7 @@ import { StdioMcpSession } from '../mcp/stdio-session';
 import { routeExecToolName, toGatewayToolName } from '../mcp/tool-name';
 import { executeCallsWithPolicy } from './execution';
 import type { ExecCallItem, ExecCallResult, GatewayBackend, OpenAiToolEntry } from './types';
+import { PACKAGE_VERSION } from '../version';
 
 type McpListedTool = {
   name: string;
@@ -93,7 +94,7 @@ export async function createMcpGatewayBackend(config: McpFileConfig): Promise<Ga
       cwd: entry.cwd,
       connectTimeoutMs: entry.init_timeout_ms ?? config.defaults.init_timeout_ms,
       rpcTimeoutMs: entry.list_timeout_ms ?? config.defaults.list_timeout_ms,
-      clientInfo: { name: `promptpile-mcp:${id}`, version: '0.1.0' },
+      clientInfo: { name: `promptpile-mcp:${id}`, version: PACKAGE_VERSION },
     });
     sessions.set(id, session);
   }

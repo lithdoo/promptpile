@@ -5,13 +5,14 @@ import { runCheck } from './commands/check';
 import { runExecCalls } from './commands/exec-calls';
 import { runExportTools } from './commands/export-tools';
 import { runLaunch } from './commands/launch';
+import { PACKAGE_VERSION } from './version';
 
 function isCommanderHelpExit(err: unknown): boolean {
   if (typeof err !== 'object' || err === null || !('code' in err)) {
     return false;
   }
   const code = (err as { code?: string }).code;
-  return code === 'commander.helpDisplayed' || code === 'commander.help';
+  return code === 'commander.helpDisplayed' || code === 'commander.help' || code === 'commander.version';
 }
 
 export async function parseCli(): Promise<number> {
@@ -30,7 +31,7 @@ export async function parseCli(): Promise<number> {
     .description(
       'promptpile 的 MCP 适配：launch 在本机启动 HTTP 网关（可选 stdio MCP）；export-tools 拉取工具为 .tools.toml；exec-calls 执行 *.calls.jsonl；check 检查 calls/result 状态。'
     )
-    .version('0.1.0')
+    .version(PACKAGE_VERSION)
     .helpOption('-h, --help', '显示帮助');
 
   program.exitOverride();

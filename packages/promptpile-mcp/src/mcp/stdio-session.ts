@@ -10,6 +10,7 @@
  */
 
 import { createRequire } from 'node:module';
+import { PACKAGE_VERSION } from '../version';
 import type { IOType } from 'node:child_process';
 import type { Stream } from 'node:stream';
 
@@ -99,7 +100,7 @@ export class StdioMcpSession {
       stderr: this.options.stderr ?? 'inherit',
     };
     this.transport = new StdioClientTransport(server);
-    this.client = new Client(this.options.clientInfo ?? { name: 'promptpile-mcp', version: '0.1.0' }, {});
+    this.client = new Client(this.options.clientInfo ?? { name: 'promptpile-mcp', version: PACKAGE_VERSION }, {});
     await raceWithTimeout(
       this.client.connect(this.transport, { timeout: ms, maxTotalTimeout: ms }),
       ms,
