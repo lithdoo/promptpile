@@ -1,6 +1,6 @@
 # Promptpile React 结构化流式输出 Implementation Freeze 计划
 
-> 状态：Implemented / CI validation
+> 状态：Agent Event Protocol v1 Freeze
 > 日期：2026-08-12  
 > 审计基线：`d6677207418b077d2a771acbbf41795d7736bd74`  
 > 目标组件：`packages/promptpile-react`  
@@ -1320,30 +1320,30 @@ Implementation Freeze / 待实施
 
 实现可以进入 Freeze review 前，必须全部满足：
 
-- [ ] React Frozen FSM 没有新增 state / transition；
-- [ ] v1 public output mode 只有 `terminal|stream-json`；
-- [ ] 默认仍为 `terminal`；
-- [ ] Agent Event Protocol v1 只有 6 个 event types；
-- [ ] public success reason 只有 `final|max_step`；
-- [ ] Final result 只有 `completed|skipped`；
-- [ ] no `turn` / `cancelled` / `no_final_prompt` / `message_id`；
-- [ ] Thought/Observe/Check 正文不公开；
-- [ ] required Final 使用 fd3 private output-pile transport；
-- [ ] Thought/Observe/Check 不启用 output pile；
-- [ ] Final success 需要 done + child exit0 双 witness；
-- [ ] malformed/incomplete Final stream fail-closed；
-- [ ] child stdout 永不污染 machine stdout；
-- [ ] `-q` 不影响 machine events；
-- [ ] sequence contiguous；
-- [ ] terminal unique and last when channel writable；
-- [ ] EPIPE 不假装 terminal success；
-- [ ] schema package-local；
-- [ ] npm tarball 包含 schema；
-- [ ] no `promptpile/src/*` / `dist/*` import；
-- [ ] existing terminal compatibility tests green；
-- [ ] real child E2E green；
-- [ ] packed fresh-install smoke green；
-- [ ] Node20/22 × Ubuntu/Windows dedicated Streaming CI green。
+- [x] React Frozen FSM 没有新增 state / transition；
+- [x] v1 public output mode 只有 `terminal|stream-json`；
+- [x] 默认仍为 `terminal`；
+- [x] Agent Event Protocol v1 只有 6 个 event types；
+- [x] public success reason 只有 `final|max_step`；
+- [x] Final result 只有 `completed|skipped`；
+- [x] no `turn` / `cancelled` / `no_final_prompt` / `message_id`；
+- [x] Thought/Observe/Check 正文不公开；
+- [x] required Final 使用 fd3 private output-pile transport；
+- [x] Thought/Observe/Check 不启用 output pile；
+- [x] Final success 需要 done + child exit0 双 witness；
+- [x] malformed/incomplete Final stream fail-closed；
+- [x] child stdout 永不污染 machine stdout；
+- [x] `-q` 不影响 machine events；
+- [x] sequence contiguous；
+- [x] terminal unique and last when channel writable；
+- [x] EPIPE 不假装 terminal success；
+- [x] schema package-local；
+- [x] npm tarball 包含 schema；
+- [x] no `promptpile/src/*` / `dist/*` import；
+- [x] existing terminal compatibility tests green；
+- [x] real child E2E green；
+- [x] packed fresh-install smoke green；
+- [x] Node20/22 × Ubuntu/Windows dedicated Streaming CI green。
 
 ---
 
