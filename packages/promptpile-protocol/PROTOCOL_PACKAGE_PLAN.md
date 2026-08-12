@@ -1,6 +1,6 @@
 # Promptpile Protocol Package 实施计划
 
-> 状态：v1 已实施 / CI matrix 验证后 Freeze
+> 状态：v1 已实施 / Freeze 完成
 > 日期：2026-08-12  
 > 目标包：`packages/promptpile-protocol`  
 > 核心结论：建立极小、无运行时副作用、零 runtime dependency 的公共协议投影包；只接纳已经稳定、可纯函数/纯数据表达、且存在真实跨包复用价值的协议语义。
@@ -936,52 +936,52 @@ promptpile-core（被否决方向）
 
 ### Package boundary
 
-- [ ] CommonJS v1 package 可构建；
-- [ ] runtime dependencies = 0；
-- [ ] 无 fs/path/process/spawn/network runtime ownership；
-- [ ] 无 producer private `src/*` / `dist/*` import；
-- [ ] subpath exports 固定；
-- [ ] npm pack surface 固定。
+- [x] CommonJS v1 package 可构建；
+- [x] runtime dependencies = 0；
+- [x] 无 fs/path/process/spawn/network runtime ownership；
+- [x] 无 producer private `src/*` / `dist/*` import；
+- [x] subpath exports 固定；
+- [x] npm pack surface 固定。
 
 ### Conversation
 
-- [ ] idx domain 与 Conversation Protocol v1 完全一致；
-- [ ] filename classifier parity 完成；
-- [ ] canonical assistant formatter 完成；
-- [ ] UTF-8 byte ordering parity 完成；
-- [ ] `promptpile` 已切为 reference consumer；
-- [ ] migration 前后 scanner/Fingerprint/OCC/output behavior 无变化；
-- [ ] 至少一个独立第二 consumer 使用同一 Conversation primitive。
+- [x] idx domain 与 Conversation Protocol v1 完全一致；
+- [x] filename classifier parity 完成；
+- [x] canonical assistant formatter 完成；
+- [x] UTF-8 byte ordering parity 完成；
+- [x] `promptpile` 已切为 reference consumer；
+- [x] migration 前后 scanner/Fingerprint/OCC/output behavior 无变化；
+- [x] 至少一个独立第二 consumer 使用同一 Conversation primitive。
 
 ### Tool
 
-- [ ] ToolCall/ToolResultLine public shapes 固定；
-- [ ] dependency-free pure parser 完成；
-- [ ] `promptpile` 与 `promptpile-mcp` 共享同一协议 surface；
-- [ ] tool execution / retry / exit-code policy 未进入协议包。
+- [x] ToolCall/ToolResultLine public shapes 固定；
+- [x] dependency-free pure parser 完成；
+- [x] `promptpile` 与 `promptpile-mcp` 共享同一协议 surface；
+- [x] tool execution / retry / exit-code policy 未进入协议包。
 
 ### Receipt
 
-- [ ] Completion Receipt v1 public types 固定；
-- [ ] normative JSON Schema 随 protocol package 发布；
-- [ ] schema 发布副本 byte-for-byte 一致；
-- [ ] `promptpile` builder/commit 仍由 runtime owner 持有；
-- [ ] existing Receipt success-only / hook / atomic tests 全绿。
+- [x] Completion Receipt v1 public types 固定；
+- [x] normative JSON Schema 随 protocol package 发布；
+- [x] schema 发布副本 byte-for-byte 一致；
+- [x] `promptpile` builder/commit 仍由 runtime owner 持有；
+- [x] existing Receipt success-only / hook / atomic tests 全绿。
 
 ### Deferred-domain guard
 
-- [ ] Archive 未在 Experimental 状态下进入 public exports；
-- [ ] Fingerprint 未在无第二真实 consumer 时提前抽取；
-- [ ] React Agent Event Protocol ownership 仍在 `promptpile-react`；
-- [ ] OCC/hook/ledger/atomic/runtime helper 未进入协议包。
+- [x] Archive 未在 Experimental 状态下进入 public exports；
+- [x] Fingerprint 未在无第二真实 consumer 时提前抽取；
+- [x] React Agent Event Protocol ownership 仍在 `promptpile-react`；
+- [x] OCC/hook/ledger/atomic/runtime helper 未进入协议包。
 
 ### CI / release
 
-- [ ] Node 18/22 × Linux/Windows dedicated matrix 全绿；
-- [ ] root monorepo build/test 纳入 protocol；
-- [ ] packed tarball smoke install/import 通过；
-- [ ] release 顺序和精确 beta dependency 已验证；
-- [ ] 至少两个独立 package 的 cross-package compatibility test 全绿。
+- [x] Node 18/22 × Linux/Windows dedicated matrix 全绿；
+- [x] root monorepo build/test 纳入 protocol；
+- [x] packed tarball smoke install/import 通过；
+- [x] release 顺序和精确 beta dependency 已验证；
+- [x] 至少两个独立 package 的 cross-package compatibility test 全绿。
 
 ## 24. Freeze criteria
 
