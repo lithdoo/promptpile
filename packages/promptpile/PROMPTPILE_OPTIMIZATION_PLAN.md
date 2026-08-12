@@ -1,6 +1,6 @@
 # Promptpile 主包优化与 Pre-Freeze 收口计划
 
-> 状态：待实施 / Pre-Freeze hardening  
+> 状态：已实施 / Freeze candidate（待 CI matrix 确认）
 > 日期：2026-08-12  
 > 审计基线：`91be8c7235fd5f95540b7b713c97dd4403ee2493`  
 > 目标组件：`packages/promptpile`  
@@ -863,3 +863,21 @@ completed Receipt
 ```
 
 这次优化的目标不是增加功能，而是让已经存在的设计边界从“实现上大体成立”提升到“可以由代码结构、失败顺序和测试共同证明”。
+
+---
+
+## 16. 实施记录（2026-08-12）
+
+Phase 1–4 已落地，并完成本地 Phase 5 证据：
+
+- reserved request keys 使用单一 validator，CLI/TOML/profile 与 payload builder 共用；
+- stream 只有观察到非空 `finish_reason` 或 `[DONE]` 才能成功；
+- TOML 严格类型、unknown-key rejection，显式 profile selector 必须解析成功；
+- `--input` 的确定性 tools、tool-choice 与 sidecar 校验先于 user mutation；
+- CLI version 来自随包发布的 `package.json`，package surface 为 CLI-only；
+- TypeScript 与 Node 类型定义已移至 `devDependencies`；
+- packed smoke 先打包 sibling protocol，再在独立目录安装，避免误判 registry `ETARGET`；
+- 本地 package tests 与 packed smoke 通过；
+- CI 已配置 Ubuntu/Windows × Node 18/22 contract 与 packed smoke gate。
+
+最终 Freeze 只在上述 CI matrix 全绿后成立；此前保持 Freeze candidate。

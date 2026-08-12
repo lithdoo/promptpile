@@ -21,7 +21,8 @@ assert.strictEqual(coerceTemperatureValue(0.3), 0.3);
 assert.throws(() => parseTemperatureInput('abc'), /Invalid temperature/);
 assert.throws(() => parseTemperatureInput('3'), /between 0 and 2/);
 assert.throws(() => parseTemperatureInput('-0.1'), /between 0 and 2/);
-assert.throws(() => coerceTemperatureValue('not-a-number'), /Invalid temperature/);
+assert.throws(() => coerceTemperatureValue('0.3'), /must be a TOML number/);
+assert.throws(() => coerceTemperatureValue('not-a-number'), /must be a TOML number/);
 assert.throws(() => coerceTemperatureValue(-0.1), /between 0 and 2/);
 
 console.log('llm-sampling tests ok');

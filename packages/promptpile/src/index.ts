@@ -164,6 +164,48 @@ async function runCompletion(cwd: string): Promise<void> {
       files = scanInputLayers();
     }
 
+    // Resolve every deterministic tool and sidecar input before --input may
+    // durably append a user artifact.
+    let tools;
+    if (config.disableTool) {
+      tools = undefined;
+      if (isPromptpileDiagnostic()) {
+        console.error('[promptpile] tools: disabled (--disable-tool)');
+      }
+    } else {
+      try {
+        tools = loadTools({
+          directory: anchorDirectory,
+          cwd,
+          toolsFileCli: config.toolsFileCli,
+          toolsFileConfig: config.toolsFileConfig
+        });
+      } catch (e) {
+        throw new Error(`Error loading tools: ${e instanceof Error ? e.message : String(e)}`);
+      }
+      if (tools === undefined) {
+        throw new Error(
+          'tools require an explicit .toml path (--tools-file), tools_file in config, or use --disable-tool to skip tools.'
+        );
+      }
+    }
+
+    let toolChoiceForApi: ChatApiToolChoice | undefined;
+    try {
+      const parsedToolChoice = parseToolChoiceInput(config.toolChoice);
+      toolChoiceForApi = effectiveToolChoiceForRequest(tools, parsedToolChoice);
+    } catch (e) {
+      throw new Error(`Invalid tool choice: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    let inserts;
+    let appends;
+    try {
+      inserts = loadSidecarMessages(cwd, config.insertFilesCli);
+      appends = loadSidecarMessages(cwd, config.appendFilesCli);
+    } catch (e) {
+      throw new Error(`Error loading insert/append files: ${e instanceof Error ? e.message : String(e)}`);
+    }
+
     if (config.inputMode) {
       const userContent = await readUserInputFromTerminal();
       if (!userContent) {
@@ -198,59 +240,15 @@ async function runCompletion(cwd: string): Promise<void> {
       process.exit(1);
     }
 
-    let tools;
-    if (config.disableTool) {
-      tools = undefined;
-      if (isPromptpileDiagnostic()) {
-        console.error('[promptpile] tools: disabled (--disable-tool)');
-      }
-    } else {
-      try {
-        tools = loadTools({
-          directory: anchorDirectory,
-          cwd,
-          toolsFileCli: config.toolsFileCli,
-          toolsFileConfig: config.toolsFileConfig
-        });
-      } catch (e) {
-        console.error('Error loading tools:', e instanceof Error ? e.message : e);
-        process.exit(1);
-      }
-
-      if (tools === undefined) {
-        console.error(
-          'Error: tools require an explicit .toml path (--tools-file), tools_file in config, or use --disable-tool to skip tools.'
-        );
-        process.exit(1);
-      }
-
-    }
-
-    let toolChoiceForApi: ChatApiToolChoice | undefined;
-    try {
-      const parsed = parseToolChoiceInput(config.toolChoice);
-      toolChoiceForApi = effectiveToolChoiceForRequest(tools, parsed);
-    } catch (e) {
-      console.error('Error: Invalid tool choice:', e instanceof Error ? e.message : e);
-      process.exit(1);
-    }
-
     const built = buildMessagesWithDiagnostics(files);
     applyMissingToolResultsPolicy(built.diagnostics, config.missingToolResults);
     let messages = built.messages;
 
-    try {
-      const inserts = loadSidecarMessages(cwd, config.insertFilesCli);
-      if (inserts.length > 0) {
-        messages = applyInsertFiles(messages, inserts);
-      }
-      const appends = loadSidecarMessages(cwd, config.appendFilesCli);
-      if (appends.length > 0) {
-        messages = applyAppendFiles(messages, appends);
-      }
-    } catch (e) {
-      console.error('Error loading insert/append files:', e instanceof Error ? e.message : e);
-      process.exit(1);
+    if (inserts.length > 0) {
+      messages = applyInsertFiles(messages, inserts);
+    }
+    if (appends.length > 0) {
+      messages = applyAppendFiles(messages, appends);
     }
 
     // Side-effectful sink preparation begins only after deterministic OCC,

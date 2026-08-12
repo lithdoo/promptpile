@@ -25,8 +25,23 @@ try {
     '--llm-api', 'missing'
   ]);
   assert.strictEqual(missingProfile.status, 1);
-  assert.match(missingProfile.stderr, /Error: LLM API profile not found: missing/);
+  assert.match(missingProfile.stderr, /selected by --llm-api was not found: missing/);
   assert.doesNotMatch(missingProfile.stderr, /AI API key is required/);
+
+  const runtimeConfig = path.join(tmp, 'runtime.toml');
+  fs.writeFileSync(runtimeConfig, [
+    '[promptpile]',
+    'llm_api = "missing"',
+    '',
+    '[[llm_api]]',
+    'name = "available"',
+    'model = "model"',
+    ''
+  ].join('\n'));
+  const missingTomlProfile = run(['--config', runtimeConfig]);
+  assert.strictEqual(missingTomlProfile.status, 1);
+  assert.match(missingTomlProfile.stderr, /selected by \[promptpile\]\.llm_api was not found: missing/);
+  assert.doesNotMatch(missingTomlProfile.stderr, /AI API key is required/);
 
   const missingFile = run([
     '--llm-config', path.join(tmp, 'missing.toml'),

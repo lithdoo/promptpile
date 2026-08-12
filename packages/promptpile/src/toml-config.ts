@@ -26,28 +26,51 @@ const loadTomlDocument = (absPath: string): Record<string, unknown> => {
   return toml.parse(raw) as Record<string, unknown>;
 };
 
+const LLM_API_PROFILE_KEYS = new Set([
+  'name', 'model', 'base_url', 'api_key', 'api_key_env', 'temperature', 'extra_body'
+]);
+
+const optionalProfileString = (
+  row: Record<string, unknown>,
+  key: string,
+  profileName: string
+): string | undefined => {
+  const value = row[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error(`llm_api profile "${profileName}" field ${key} must be a non-empty string`);
+  }
+  return value.trim();
+};
+
 const parseLlmApis = (doc: Record<string, unknown>): LlmApiProfile[] => {
   const rawApis = doc.llm_api;
   const llmApis: LlmApiProfile[] = [];
   if (Array.isArray(rawApis)) {
     for (const row of rawApis) {
       if (!isRecord(row)) {
-        continue;
+        throw new Error('each [[llm_api]] entry must be a TOML table');
       }
       const name = row.name;
       if (typeof name !== 'string' || name.trim() === '') {
-        continue;
+        throw new Error('each [[llm_api]] entry must have a non-empty string name');
+      }
+      const normalizedName = name.trim();
+      for (const key of Object.keys(row)) {
+        if (!LLM_API_PROFILE_KEYS.has(key)) {
+          throw new Error(`unknown [[llm_api]] key in profile "${normalizedName}": ${key}`);
+        }
       }
       const profTemp =
         row.temperature !== undefined ? coerceTemperatureValue(row.temperature) : undefined;
       const profExtraBody =
         row.extra_body !== undefined ? coerceExtraBodyValue(row.extra_body) : undefined;
       llmApis.push({
-        name: name.trim(),
-        model: typeof row.model === 'string' ? row.model : undefined,
-        base_url: typeof row.base_url === 'string' ? row.base_url : undefined,
-        api_key: typeof row.api_key === 'string' ? row.api_key : undefined,
-        api_key_env: typeof row.api_key_env === 'string' ? row.api_key_env : undefined,
+        name: normalizedName,
+        model: optionalProfileString(row, 'model', normalizedName),
+        base_url: optionalProfileString(row, 'base_url', normalizedName),
+        api_key: optionalProfileString(row, 'api_key', normalizedName),
+        api_key_env: optionalProfileString(row, 'api_key_env', normalizedName),
         temperature: profTemp,
         extra_body: profExtraBody
       });

@@ -13,6 +13,7 @@ import type {
   ToolCall,
   ToolDefinition
 } from './types';
+import { validateExtraBodyReservedKeys } from './llm-extra-body';
 
 interface StreamDeltaToolCall {
   index?: number;
@@ -37,6 +38,60 @@ interface ChatCompletionStreamChunk {
   } | null;
   error?: { message?: string };
 }
+
+export class ChatCompletionStreamProtocolError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ChatCompletionStreamProtocolError';
+  }
+}
+
+export interface ChatCompletionTerminalState {
+  sawDataEvent: boolean;
+  sawDone: boolean;
+  sawFinishReason: boolean;
+  finishReason?: string;
+}
+
+export const createCompletionTerminalState = (): ChatCompletionTerminalState => ({
+  sawDataEvent: false,
+  sawDone: false,
+  sawFinishReason: false
+});
+
+export const validateCompletionTerminalState = (state: ChatCompletionTerminalState): void => {
+  if (!state.sawDone && !state.sawFinishReason) {
+    throw new ChatCompletionStreamProtocolError(
+      'Chat Completions stream ended without a terminal marker ([DONE] or finish_reason)'
+    );
+  }
+};
+
+export const parseCompletionDataPayload = (
+  payloadLine: string,
+  state: ChatCompletionTerminalState
+): ChatCompletionStreamChunk | undefined => {
+  if (payloadLine === '') return undefined;
+  state.sawDataEvent = true;
+  if (payloadLine === '[DONE]') {
+    state.sawDone = true;
+    return undefined;
+  }
+  let data: ChatCompletionStreamChunk;
+  try {
+    data = JSON.parse(payloadLine) as ChatCompletionStreamChunk;
+  } catch {
+    throw new ChatCompletionStreamProtocolError(
+      'Chat Completions stream contained malformed non-empty data payload'
+    );
+  }
+  const finishReason = data.choices?.[0]?.finish_reason;
+  if (typeof finishReason === 'string') {
+    state.sawFinishReason = true;
+    state.finishReason = finishReason;
+  }
+  return data;
+};
 
 const trimTrailingSlash = (url: string) => url.replace(/\/$/, '');
 
@@ -68,7 +123,7 @@ export const pickNonEmptyString = (v: unknown): string | undefined => {
   return t.length > 0 ? v : undefined;
 };
 
-const createPayload = (
+export const createPayload = (
   model: string,
   messages: ChatMessage[],
   stream: boolean,
@@ -77,13 +132,14 @@ const createPayload = (
   temperature: number,
   extraBody?: Record<string, unknown>
 ) => {
+  if (extraBody) validateExtraBodyReservedKeys(extraBody);
   const body: Record<string, unknown> = {
     model,
     stream,
     messages,
-    temperature,
-    ...(extraBody ?? {})
+    temperature
   };
+  Object.assign(body, extraBody);
   if (tools && tools.length > 0) {
     body.tools = tools;
     if (toolChoice !== undefined) {
@@ -225,6 +281,7 @@ export const callAIStream = async (
     const streamToolDeltas: StreamDeltaToolCall[] = [];
     let finishReason: string | undefined;
     let usage: CompletionUsage | undefined;
+    const terminalState = createCompletionTerminalState();
     const observeMetadata = (data: ChatCompletionStreamChunk): void => {
       const observedFinishReason = data.choices?.[0]?.finish_reason;
       if (typeof observedFinishReason === 'string') finishReason = observedFinishReason;
@@ -243,12 +300,8 @@ export const callAIStream = async (
         }
 
         const payloadLine = line.slice(5).trim();
-        if (!payloadLine || payloadLine === '[DONE]') {
-          continue;
-        }
-
-        try {
-          const data = JSON.parse(payloadLine) as ChatCompletionStreamChunk;
+        const data = parseCompletionDataPayload(payloadLine, terminalState);
+        if (data) {
           observeMetadata(data);
           const delta = data.choices?.[0]?.delta;
           const piece = delta?.content ?? '';
@@ -264,17 +317,14 @@ export const callAIStream = async (
           if (tc && tc.length > 0) {
             streamToolDeltas.push(...tc);
           }
-        } catch {
-          // Ignore non-JSON lines to keep streaming resilient across providers.
         }
       }
     }
 
     if (buffer.trim().startsWith('data:')) {
       const payloadLine = buffer.trim().slice(5).trim();
-      if (payloadLine && payloadLine !== '[DONE]') {
-        try {
-          const data = JSON.parse(payloadLine) as ChatCompletionStreamChunk;
+      const data = parseCompletionDataPayload(payloadLine, terminalState);
+      if (data) {
           observeMetadata(data);
           const delta = data.choices?.[0]?.delta;
           const piece = delta?.content ?? '';
@@ -290,11 +340,10 @@ export const callAIStream = async (
           if (tc && tc.length > 0) {
             streamToolDeltas.push(...tc);
           }
-        } catch {
-          // Ignore trailing malformed payload.
-        }
       }
     }
+
+    validateCompletionTerminalState(terminalState);
 
     const merged = mergeStreamToolCalls(streamToolDeltas);
     const toolCalls = merged.length > 0 ? merged : undefined;
@@ -311,6 +360,9 @@ export const callAIStream = async (
         ? error.message
         : 'Failed to call AI API. Please check your network connection and API key.';
     finishLlmDumpFailure(dumpSession, null, msg);
+    if (error instanceof ChatCompletionStreamProtocolError) {
+      throw error;
+    }
     console.error('Error calling AI API:', error);
     console.error('Please check your network connection and API key');
     throw new Error('Failed to call AI API. Please check your network connection and API key.');

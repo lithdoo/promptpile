@@ -43,6 +43,14 @@ jobs:
       - run: npm run build -w promptpile
       - name: Verify invocation and receipt contracts
         run: >-
+          node packages/promptpile/test/llm-extra-body.cjs &&
+          node packages/promptpile/test/request-core-authority.cjs &&
+          node packages/promptpile/test/stream-terminal-state.cjs &&
+          node packages/promptpile/test/stream-terminal-cli.cjs &&
+          node packages/promptpile/test/llm-sampling.cjs &&
+          node packages/promptpile/test/strict-toml-types.cjs &&
+          node packages/promptpile/test/llm-config-cli.cjs &&
+          node packages/promptpile/test/cli-package-version.cjs &&
           node packages/promptpile/test/invocation-context.cjs &&
           node packages/promptpile/test/completion-receipt-schema.cjs &&
           node packages/promptpile/test/invocation-id-receipt.cjs &&
@@ -50,3 +58,5 @@ jobs:
           node packages/promptpile/test/output-artifact-policy.cjs &&
           node packages/promptpile/test/resolve-config.cjs &&
           node packages/promptpile/test/root-conversation-occ.cjs
+      - name: Verify independent packed installation
+        run: npm run package:smoke -w promptpile

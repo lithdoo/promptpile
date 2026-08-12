@@ -192,17 +192,6 @@ try {
   assert.strictEqual(cfgProfileWithCliField.model, 'explicit-cli-model', 'CLI field overrides llm-config profile');
   assert.strictEqual(cfgProfileWithCliField.temperature, 0.15, 'CLI temperature overrides llm-config profile');
 
-  fs.writeFileSync(
-    tomlPath,
-    '[promptpile]\nllm_api = "missing"\n\n[[llm_api]]\nname = "available"\nmodel = "profile-model"\n'
-  );
-  const cfgMissingProfile = resolveConfig(tmp, ['node', fakeScript, '--config', 'app.toml']);
-  assert.strictEqual(
-    cfgMissingProfile.model,
-    'gpt-3.5-turbo',
-    'a missing profile selected by existing config currently falls back to defaults'
-  );
-
   process.env.PROMPTPILE_TEST_KEY = 'key-from-env-name';
   fs.writeFileSync(tomlPath, '[promptpile]\nllm_api_key_env = \'PROMPTPILE_TEST_KEY\'\n');
   const cfgKeyEnv = resolveConfig(tmp, ['node', fakeScript, '--config', 'app.toml']);

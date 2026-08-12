@@ -52,8 +52,8 @@
 6. 每个目录独立按序号 **升序** 组装 `messages`，再按 `-d` / TOML `dirs` 的顺序串联各层。calls/result 只在同一物理目录内配对（见下节「序号与同一序号内的顺序」与 [工具章节](#工具定义与历史工具调用toolstoml--assistantcalls--assistantresult)）。
 7. 若指定 **`insert_files` / `append_files`**（CLI：`--insert-files`、`--append-files`；TOML 见下表）：从各路径读取 **UTF-8** sidecar 文件（**相对路径相对当前工作目录**，与 `--tools-file` 一致）。多个路径用 **`|`** 分隔。每个文件的 **basename** 必须为 **`{name}.{role}.md`**（`name` 可含点，如 `react.core.system.md` → `role=system`）；`role` 仅允许 `system`、`user`、`assistant`。去除 BOM；`.md` 去 YAML front matter；trim 后 **仅空白** 则跳过该条。`insert_files` 按列表顺序 **插在** 扫描目录组装的 `messages` **之前**；`append_files` **追加在之后**。每条 sidecar 对应 **独立** 一条 API 消息（不与 `[idx]system.md` 合并）。文件不存在、不可读或命名非法则 **退出并报错**。sidecar 文件 **不会** 被 `scanDirectory` 当作 `[idx]role.md` 扫描。
 8. 合并 **`temperature`**：`--temperature` > `[promptpile].llm_api_temperature` > 所选 profile 的 `temperature` > 默认 `0.8`，并写入请求体。
-9. 合并可选 **`extra_body`**：`--extra-body` > `[promptpile].llm_api_extra_body` > 所选 profile 的 `extra_body`；TOML 为内联表，CLI 为 JSON 对象字符串；各层均未设置时不写入；合并后浅展开进请求体（可覆盖 `temperature` 等字段）。
-10. 使用 `fetch`（来自 `node-fetch` v2）请求 `{baseURL}/chat/completions`，固定 **`stream: true`**：正文来自流式 `delta.content`，流结束后合并 **`delta.tool_calls`**；非 quiet 时在 stdout 打印正文，并在有 tool calls 时每行输出一条 tool_call JSON。
+9. 合并可选 **`extra_body`**：`--extra-body` > `[promptpile].llm_api_extra_body` > 所选 profile 的 `extra_body`；TOML 为内联表，CLI 为 JSON 对象字符串。它只承载 provider extension fields，不得包含 `model`、`messages`、`stream`、`temperature`、`tools` 或 `tool_choice`；冲突会在模型调用前失败。
+10. 使用 `fetch`（来自 `node-fetch` v2）请求 `{baseURL}/chat/completions`，固定 **`stream: true`**：正文来自流式 `delta.content`，流结束后合并 **`delta.tool_calls`**。只有观察到非空 `finish_reason` 或显式 `[DONE]` 才算成功；malformed 非空 `data:` 或无终态的 EOF 会失败，且不会发布 durable assistant output 或 completed Receipt。
 
 普通消息的 **角色名** 会原样作为 `role` 传给 API。除 `tool` 外请使用网关接受的 role（常见为 `system`、`user`、`assistant`）。`tool` 消息来自 `[idx]assistant.result.jsonl` 的各行；若存在 **`[idx]assistant.calls.jsonl`** 但某 `tool_call_id` 在 result 中无对应行（或缺少 result 文件），程序会按 `missing_tool_results` 策略处理，并继续为缺失项 **合成** 一条 `tool` 消息，其 `content` 为固定中文错误句。默认策略为 `warn`：向 stderr 输出 warning 后继续。
 
@@ -329,9 +329,8 @@ Profile 名称选择优先级：
 不选择 profile
 ```
 
-Profile 名称匹配不区分大小写。显式 `--llm-api` 找不到时严格失败并输出
-`Error: LLM API profile not found: <name>`；为保持兼容，旧 `[promptpile].llm_api`
-找不到时仍使用其它配置层或内置默认值。
+Profile 名称匹配不区分大小写。任何显式 selector（`--llm-api` 或
+`[promptpile].llm_api`）找不到时都会在模型调用前严格失败；错误会标明 selector 来源。
 
 模型、Base URL、temperature、extra body 等 LLM 字段按字段独立合并：
 
@@ -368,6 +367,7 @@ API key 保留既有的 direct-key 优先语义：
 
 - **`[promptpile]`**：与 `example.toml` 一致，如有序目录数组 `dirs`（或兼容单值 `dir`）、Conversation 写入目录 `output_dir`、普通输出文件 `output`、`receipt`、`output_pile_file`、`output_pile_fd`、`output_pile_format`、`quiet`、`after_hook`、`after_hook_failure`、`tool_choice`、`tools_file`、`disable_tool`、`continue`、`input`、`insert_files`、`append_files`、`missing_tool_results`、`llm_api`、`llm_api_key`、`llm_api_key_env`、`llm_api_model`、`llm_api_base_url`、`llm_api_temperature`、`llm_api_extra_body`。`dirs` 与 `dir` 不能同时声明；旧名 `output_pipe` / `output_pipe_format` 仍兼容，新名优先。
 - **`[[llm_api]]`**：`name`、`model`、`base_url`、`api_key`、`api_key_env`、`temperature`、`extra_body`；由 `--llm-api` 或 `[promptpile].llm_api` 选择 profile 后，再应用显式 CLI / `[promptpile].llm_api_*` 覆盖。
+- **严格类型**：TOML string、boolean、number、array 和 table 不做跨类型强转；`[promptpile]` 与 `[[llm_api]]` 中的未知 key 会直接失败。
 - **密钥**：若配置了 `api_key_env` / `llm_api_key_env`，在同一合并结果中的直写 `api_key` / `llm_api_key` 仍为空时从 `process.env[该变量名]` 读取。该兼容语义保持不变。
 
 ### CLI 参数
@@ -745,7 +745,7 @@ output pile destination 是一个逻辑槽位，按 **CLI target group > TOML ta
 
 所有 caller-managed 相对输出路径只相对 invocation cwd 解析一次。模型调用前会预留 `-o` 的 body、`.calls.jsonl`、`.extra.json` potential targets，并检查它们与 pile file、Conversation namespace、`.promptpile.occ.claim` 和 resolved after-hook script 的冲突；已知冲突会在 API 调用及任何 output truncate 之前失败。
 
-执行顺序固定为：prepare sinks → model stream → finalize pile → `-o` body/calls/extra → terminal tool-call postlude → Conversation commit → after-hook → completion receipt。`assistant_done` **只表示模型 stream 已结束**，不表示后续 durable artifacts、hook 或 receipt 已成功。显式配置的 pile 是 required sink；其 open/write/done/close 任一失败都会以 exit `1` 停止后续 durable stages。
+执行顺序固定为：prepare sinks → model stream terminal witness → finalize pile → `-o` body/calls/extra → terminal tool-call postlude → Conversation commit → after-hook → completion receipt。`assistant_done` **只表示模型 stream 已验证终态并结束**，不表示后续 durable artifacts、hook 或 receipt 已成功。显式配置的 pile 是 required sink；其 open/write/done/close 任一失败都会以 exit `1` 停止后续 durable stages。
 
 每个 durable 文件独立原子替换，并在成功后进入内部 artifact ledger；多文件 group 及不同 output channel 之间不存在 transaction 或 rollback。后续失败不会删除已经成功写入或已经流出的内容。
 
@@ -782,7 +782,7 @@ Receipt path 由调用方管理，Promptpile 不会在新 invocation 开始时�
 
 优先级：**CLI 路径** > TOML `after_hook` > 由 `--allow-default-after-hook` 启用的**默认文件**。绝对路径在 CLI / TOML 中均不再拼相对基准。
 
-`--allow-default-after-hook` 是 **CLI-only 授权**；TOML 中的 `allow_default_after_hook` 不会生效，避免项目配置自行开启隐式脚本发现。
+`--allow-default-after-hook` 是 **CLI-only 授权**；TOML 中的 `allow_default_after_hook` 属于未知 key 并会严格失败，避免项目配置自行开启隐式脚本发现。
 
 显式脚本在执行前会通过 `realpath` 解析真实目标，并验证目标为普通文件。文件缺失、目录、断裂符号链接等情况不会 fallback 到较低优先级 hook，而是形成 `invalid_explicit` observation。
 

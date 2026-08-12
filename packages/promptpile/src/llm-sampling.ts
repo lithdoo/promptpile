@@ -25,7 +25,7 @@ export const parseTemperatureInput = (raw: string | undefined): number | undefin
   return n;
 };
 
-/** Coerce TOML number or validated string to temperature, or undefined. */
+/** Read a TOML numeric temperature without cross-type coercion. */
 export const coerceTemperatureValue = (v: unknown): number | undefined => {
   if (typeof v === 'number') {
     if (!Number.isFinite(v) || v < MIN_TEMPERATURE || v > MAX_TEMPERATURE) {
@@ -35,8 +35,5 @@ export const coerceTemperatureValue = (v: unknown): number | undefined => {
     }
     return v;
   }
-  if (typeof v === 'string') {
-    return parseTemperatureInput(v);
-  }
-  return undefined;
+  throw new Error('temperature must be a TOML number');
 };

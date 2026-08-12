@@ -93,6 +93,12 @@ try {
     configPath,
     '[promptpile]\ndir = "./messages"\nallow_default_after_hook = true\n'
   );
+  assert.throws(
+    () => resolveConfig(root, ['node', 'promptpile', '--config', configPath]),
+    /unknown \[promptpile\] key: allow_default_after_hook/,
+    'CLI-only authorization must not be silently accepted from TOML'
+  );
+  fs.writeFileSync(configPath, '[promptpile]\ndir = "./messages"\n');
   const fromToml = resolveConfig(root, ['node', 'promptpile', '--config', configPath]);
   assert.strictEqual(fromToml.allowDefaultAfterHook, false, 'TOML must not enable default hooks');
   assert.strictEqual(fromToml.afterHookFailure, 'warn', 'failure mode is not read from process env');
@@ -115,13 +121,6 @@ try {
     'node', 'promptpile', '--config', configPath, '--after-hook-failure', 'warn'
   ]);
   assert.strictEqual(failureFromCli.afterHookFailure, 'warn');
-  fs.writeFileSync(
-    configPath,
-    '[promptpile]\ndir = "./messages"\nllm_api = "profile"\n\n' +
-      '[[llm_api]]\nname = "profile"\nafter_hook_failure = "error"\n'
-  );
-  const failureNotFromProfile = resolveConfig(root, ['node', 'promptpile', '--config', configPath]);
-  assert.strictEqual(failureNotFromProfile.afterHookFailure, 'warn');
   fs.writeFileSync(
     configPath,
     '[promptpile]\ndir = "./messages"\nafter_hook_failure = "WARN"\n'

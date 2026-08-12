@@ -14,6 +14,7 @@ import {
 } from './conversation-command';
 import { parseAfterHookFailureMode } from './after-hook-policy';
 import { parseInvocationId } from './invocation-context';
+import { PROMPTPILE_VERSION } from './version';
 
 /** Result of {@link parseCli}; `configPath` is raw path from argv (resolve against cwd in resolve-config). */
 export interface CliParseResult {
@@ -46,7 +47,7 @@ export const buildProgram = (handlers?: PromptpileCommandHandlers): Command => {
   program
     .name('promptpile')
     .description('Assemble message files and call Chat Completions APIs')
-    .version('1.0.0')
+    .version(PROMPTPILE_VERSION)
     .enablePositionalOptions()
     .option('--config <path>', 'TOML config file path (relative to cwd)')
     .option('--llm-config <path>', 'TOML file used only as the [[llm_api]] profile database')
@@ -73,7 +74,7 @@ export const buildProgram = (handlers?: PromptpileCommandHandlers): Command => {
     )
     .option(
       '--extra-body <json>',
-      'Extra JSON object merged into Chat Completions request body; overrides llm_api_extra_body / [[llm_api]] profile'
+      'Provider extension fields merged into the request; core request fields are reserved'
     )
     .option('-o, --output <path>', 'Output file path for AI response')
     .option('--receipt <path>', 'Atomically write Completion Receipt v1 after success')

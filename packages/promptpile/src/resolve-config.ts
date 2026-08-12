@@ -56,13 +56,11 @@ const trim = (v: string | undefined): string | undefined => {
 
 const getStr = (r: Record<string, unknown>, key: string): string | undefined => {
   const v = r[key];
+  if (v === undefined) return undefined;
   if (typeof v === 'string') {
     return trim(v);
   }
-  if (typeof v === 'number' || typeof v === 'boolean') {
-    return trim(String(v));
-  }
-  return undefined;
+  throw new Error(`${key} must be a TOML string`);
 };
 
 const getNum = (r: Record<string, unknown>, key: string): number | undefined => {
@@ -75,15 +73,29 @@ const getNum = (r: Record<string, unknown>, key: string): number | undefined => 
 
 const getBool = (r: Record<string, unknown>, key: string): boolean | undefined => {
   const v = r[key];
+  if (v === undefined) return undefined;
   if (typeof v === 'boolean') {
     return v;
   }
-  if (typeof v === 'string') {
-    const normalized = v.trim().toLowerCase();
-    if (normalized === '') return undefined;
-    return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
+  throw new Error(`${key} must be a TOML boolean`);
+};
+
+const PROMPTPILE_TOML_KEYS = new Set([
+  'dirs', 'dir', 'output_dir', 'output', 'receipt',
+  'output_pile_file', 'output_pile_fd', 'output_pile_format',
+  'output_pipe', 'output_pipe_format', 'quiet', 'after_hook', 'after_hook_failure',
+  'tool_choice', 'tools_file', 'disable_tool', 'continue', 'input',
+  'insert_files', 'append_files', 'missing_tool_results', 'llm_api',
+  'llm_api_key', 'llm_api_key_env', 'llm_api_model', 'llm_api_base_url',
+  'llm_api_temperature', 'llm_api_extra_body'
+]);
+
+const validatePromptpileTomlKeys = (record: Record<string, unknown>): void => {
+  for (const key of Object.keys(record)) {
+    if (!PROMPTPILE_TOML_KEYS.has(key)) {
+      throw new Error(`unknown [promptpile] key: ${key}`);
+    }
   }
-  return undefined;
 };
 
 const getNonEmptyStringArray = (
@@ -109,6 +121,7 @@ const buildTomlLayer = (
   selectedProfileName: string | undefined
 ): FlatLayer => {
   const p = runtimeParsed.promptpile;
+  validatePromptpileTomlKeys(p);
   const out: FlatLayer = {};
   if (
     Object.prototype.hasOwnProperty.call(p, 'dirs') &&
@@ -343,13 +356,11 @@ export const resolveConfig = (cwd: string, argv: string[]): Config => {
 
   const configuredProfileName = getStr(runtimeParsed.promptpile, 'llm_api');
   const selectedProfileName = explicitLlmApiName ?? configuredProfileName;
-  if (
-    explicitLlmApiName !== undefined &&
-    !profiles.some(
-      profile => profile.name.toLowerCase() === explicitLlmApiName!.toLowerCase()
-    )
-  ) {
-    console.error(`Error: LLM API profile not found: ${explicitLlmApiName}`);
+  if (selectedProfileName !== undefined && !profiles.some(
+    profile => profile.name.toLowerCase() === selectedProfileName.toLowerCase()
+  )) {
+    const source = explicitLlmApiName !== undefined ? '--llm-api' : '[promptpile].llm_api';
+    console.error(`Error: LLM API profile selected by ${source} was not found: ${selectedProfileName}`);
     process.exit(1);
   }
 
