@@ -1,6 +1,6 @@
 # Promptpile Conversation Fork v1 实施闭环设计
 
-> 状态：实施前冻结稿  
+> 状态：v1 实现完成，等待 dedicated cross-platform matrix 后 Freeze
 > 初始设计日期：2026-08-07  
 > 闭环设计更新：2026-08-12  
 > 核心提案：`promptpile-fork` 提供一个不调用模型、只读源 Conversation、按显式 index cutoff 创建 byte-exact 独立物理快照的 domain operation；最终 target 只通过一次 terminal directory publication 对外可见。

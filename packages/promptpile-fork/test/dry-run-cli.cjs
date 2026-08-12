@@ -1,0 +1,31 @@
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+const cli = path.join(__dirname, '../dist/index.js');
+const run = (args, cwd) => spawnSync(process.execPath, [cli, ...args], { cwd, encoding: 'utf8' });
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-fork-dry-'));
+try {
+  const source = path.join(root, 'source'); fs.mkdirSync(source);
+  fs.writeFileSync(path.join(source, '[0]system.md'), 'system\r\n');
+  fs.writeFileSync(path.join(source, '[2]assistant.extra.json'), '{bad');
+  const before = fs.readdirSync(root);
+  const result = run(['--source', source, '--target', path.join(root, 'target'), '--through-index', '0', '--dry-run', '--format', 'json'], root);
+  assert.strictEqual(result.status, 0, result.stderr);
+  const report = JSON.parse(result.stdout);
+  assert.strictEqual(report.status, 'planned');
+  assert.strictEqual(report.artifactCount, 1);
+  assert.strictEqual(report.totalBytes, 8);
+  assert.match(report.sourcePrefixFingerprint, /^promptpile-conversation-v1:sha256:[0-9a-f]{64}$/);
+  assert.deepStrictEqual(fs.readdirSync(root), before);
+  const empty = run(['--source', source, '--target', path.join(root, 'empty'), '--through-index', '0', '--dry-run', '--format', 'json'], root);
+  assert.strictEqual(empty.status, 0);
+  const invalid = run(['--source', source, '--target', path.join(root, 'target'), '--through-index', '-1', '--format', 'json'], root);
+  assert.strictEqual(invalid.status, 1);
+  assert.strictEqual(JSON.parse(invalid.stdout).code, 'invalid_arguments');
+  assert.strictEqual(invalid.stderr, '');
+  assert.match(run(['--help'], root).stdout, /--through-index/);
+} finally { fs.rmSync(root, { recursive: true, force: true }); }
+console.log('fork dry-run CLI ok');

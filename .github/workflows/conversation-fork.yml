@@ -1,0 +1,47 @@
+name: Conversation Fork v1
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fork-matrix:
+    name: Node ${{ matrix.node }} / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: [18, 22]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install clean workspace
+        run: npm ci --ignore-scripts
+
+      - name: Build protocol prerequisite
+        run: npm run build -w promptpile-protocol
+
+      - name: Test protocol prerequisite
+        run: npm test -w promptpile-protocol
+
+      - name: Test Conversation Fork
+        run: npm test -w promptpile-fork
+
+      - name: Build Promptpile compatibility consumer
+        run: npm run build -w promptpile
+
+      - name: Verify Promptpile scanner compatibility
+        run: node packages/promptpile-fork/test/promptpile-compatibility.cjs

@@ -1,18 +1,28 @@
 {
   "name": "promptpile-fork",
   "version": "0.1.0-beta.0",
-  "description": "Independent Promptpile Conversation fork and materialization tool",
+  "description": "Byte-exact Promptpile Conversation prefix snapshot tool",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/lithdoo/promptpile.git",
     "directory": "packages/promptpile-fork"
   },
   "homepage": "https://github.com/lithdoo/promptpile#readme",
-  "bugs": {
-    "url": "https://github.com/lithdoo/promptpile/issues"
-  },
+  "bugs": { "url": "https://github.com/lithdoo/promptpile/issues" },
   "license": "ISC",
-  "engines": {
-    "node": ">=18"
+  "type": "commonjs",
+  "bin": { "promptpile-fork": "dist/index.js" },
+  "files": ["dist", "README.md", "package.json"],
+  "scripts": {
+    "clean": "node scripts/clean-dist.mjs",
+    "build": "npm run clean && tsc",
+    "test": "npm run build && node test/architecture.cjs && node test/scanner-paths.cjs && node test/dry-run-cli.cjs && node test/operation.cjs && node test/contention.cjs && node test/crash-boundary.cjs && node test/package-surface.cjs",
+    "prepack": "npm run build"
+  },
+  "engines": { "node": ">=18" },
+  "dependencies": { "promptpile-protocol": "0.1.0-beta.1" },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "typescript": "~5.9.3"
   }
 }

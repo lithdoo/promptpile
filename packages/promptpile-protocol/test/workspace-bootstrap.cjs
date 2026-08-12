@@ -33,4 +33,10 @@ for (const name of fs.readdirSync(workflowRoot)) {
   if (/npm run test -w promptpile-compress(?:\s|$)/m.test(source)) {
     assert(protocolBuild >= 0, `${name} must build protocol before promptpile-compress`);
   }
+  const forkBuild = source.search(/npm run build -w promptpile-fork/);
+  const forkTest = source.search(/npm run test -w promptpile-fork/);
+  if (forkBuild >= 0 || forkTest >= 0) {
+    assert(protocolBuild >= 0, `${name} must build protocol before promptpile-fork`);
+    if (forkBuild >= 0) assert(protocolBuild < forkBuild, `${name} must preserve protocol -> fork build order`);
+  }
 }

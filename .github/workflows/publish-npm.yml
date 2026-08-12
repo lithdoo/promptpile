@@ -49,6 +49,7 @@ jobs:
           packages=(
             promptpile-protocol
             promptpile
+            promptpile-fork
             promptpile-mcp
             promptpile-compress
             promptpile-compress-grep-search
