@@ -1,6 +1,6 @@
 # Conversation Fork v1 implementation evidence
 
-Status: implementation complete; final Freeze is gated only on the committed dedicated CI matrix.
+Status: v1 implemented and Freeze complete.
 
 ## Ownership and protocol
 
@@ -70,6 +70,20 @@ npm test
 git diff --check
 ```
 
-Final Freeze action: after all four jobs in `Conversation Fork v1` pass for the committed revision,
-change the plan status to `v1 已实施 / Freeze 完成` and check the acceptance checklist. CI evidence
-must not be claimed before it exists.
+## Cross-platform Freeze witness
+
+GitHub Actions run
+[`31562849136`](https://github.com/lithdoo/promptpile/actions/runs/31562849136) passed against commit
+`73080ab4dd895bdd421674d5cb14e332ae45da39` after the Windows canonical-path correction and exact
+staging-set enforcement:
+
+```text
+Node 18 / ubuntu-latest   success
+Node 22 / ubuntu-latest   success
+Node 18 / windows-latest  success
+Node 22 / windows-latest  success
+```
+
+Together with the local full-root regression, packed-tarball install smoke, Promptpile compatibility
+consumer, race tests, and real crash-boundary tests documented above, this satisfies the v1 Freeze
+criteria.

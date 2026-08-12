@@ -1,6 +1,6 @@
 # Promptpile Conversation Fork v1 实施闭环设计
 
-> 状态：v1 实现完成，等待 dedicated cross-platform matrix 后 Freeze
+> 状态：v1 已实施 / Freeze 完成
 > 初始设计日期：2026-08-07  
 > 闭环设计更新：2026-08-12  
 > 核心提案：`promptpile-fork` 提供一个不调用模型、只读源 Conversation、按显式 index cutoff 创建 byte-exact 独立物理快照的 domain operation；最终 target 只通过一次 terminal directory publication 对外可见。
@@ -1623,73 +1623,73 @@ Conversation Protocol 文档只需要增加 domain-operation pointer，不把 Fo
 
 ### Ownership
 
-- [ ] 独立 `promptpile-fork` binary/package；
-- [ ] 不向 `promptpile` core 增加 Fork runtime ownership；
-- [ ] 不 private-import sibling `src/*` / `dist/*`。
+- [x] 独立 `promptpile-fork` binary/package；
+- [x] 不向 `promptpile` core 增加 Fork runtime ownership；
+- [x] 不 private-import sibling `src/*` / `dist/*`。
 
 ### Protocol
 
-- [ ] Conversation lexical semantics 来自 `promptpile-protocol/conversation`；
-- [ ] Fingerprint pure canonical semantics 来自 `promptpile-protocol/fingerprint`；
-- [ ] 没有重复 filename regex / ordering / hash encoding。
+- [x] Conversation lexical semantics 来自 `promptpile-protocol/conversation`；
+- [x] Fingerprint pure canonical semantics 来自 `promptpile-protocol/fingerprint`；
+- [x] 没有重复 filename regex / ordering / hash encoding。
 
 ### Selection
 
-- [ ] 只扫描 direct regular protocol artifacts；
-- [ ] `idx <= throughIndex` inclusive；
-- [ ] 同 idx sidecars 不被拆散；
-- [ ] basename/bytes 原样复制；
-- [ ] empty selected prefix 语义明确并测试。
+- [x] 只扫描 direct regular protocol artifacts；
+- [x] `idx <= throughIndex` inclusive；
+- [x] 同 idx sidecars 不被拆散；
+- [x] basename/bytes 原样复制；
+- [x] empty selected prefix 语义明确并测试。
 
 ### Concurrency
 
-- [ ] 只保护 selected prefix；
-- [ ] cutoff 内变化失败；
-- [ ] cutoff 外 append 不导致 conflict；
-- [ ] same target cooperating writers 只有一个 winner。
+- [x] 只保护 selected prefix；
+- [x] cutoff 内变化失败；
+- [x] cutoff 外 append 不导致 conflict；
+- [x] same target cooperating writers 只有一个 winner。
 
 ### Publication
 
-- [ ] target 必须不存在；
-- [ ] staging 与 target 同 parent；
-- [ ] final target 不承载 progressive copy；
-- [ ] staging verified；
-- [ ] source re-observed；
-- [ ] 只有 final directory rename 一个 commit point；
-- [ ] publication 后无 fatal required stage。
+- [x] target 必须不存在；
+- [x] staging 与 target 同 parent；
+- [x] final target 不承载 progressive copy；
+- [x] staging verified；
+- [x] source re-observed；
+- [x] 只有 final directory rename 一个 commit point；
+- [x] publication 后无 fatal required stage。
 
 ### Failure
 
-- [ ] ordinary failure source untouched；
-- [ ] publication 前 failure final target absent；
-- [ ] primary failure 不被 cleanup failure 覆盖；
-- [ ] crash residual 语义有测试；
-- [ ] post-publication cleanup failure 不翻转 success。
+- [x] ordinary failure source untouched；
+- [x] publication 前 failure final target absent；
+- [x] primary failure 不被 cleanup failure 覆盖；
+- [x] crash residual 语义有测试；
+- [x] post-publication cleanup failure 不翻转 success。
 
 ### Boundaries
 
-- [ ] 不复制 Archive history；
-- [ ] 不支持 layered materialization；
-- [ ] 不执行/修复 Tool artifacts；
-- [ ] 不复制 filesystem metadata 作为 contract；
-- [ ] 不支持 hardlink/force/overwrite。
+- [x] 不复制 Archive history；
+- [x] 不支持 layered materialization；
+- [x] 不执行/修复 Tool artifacts；
+- [x] 不复制 filesystem metadata 作为 contract；
+- [x] 不支持 hardlink/force/overwrite。
 
 ### CLI / Report
 
-- [ ] 五个 v1 flags 固定；
-- [ ] JSON success schema 固定；
-- [ ] JSON planned schema 固定；
-- [ ] JSON failure code contract 固定；
-- [ ] stdout JSON 不被 human logs 污染；
-- [ ] exit0/exit1 contract 固定。
+- [x] 五个 v1 flags 固定；
+- [x] JSON success schema 固定；
+- [x] JSON planned schema 固定；
+- [x] JSON failure code contract 固定；
+- [x] stdout JSON 不被 human logs 污染；
+- [x] exit0/exit1 contract 固定。
 
 ### Evidence
 
-- [ ] root E2E matrix 完整；
-- [ ] Node 18/22 × Ubuntu/Windows 全绿；
-- [ ] npm pack + independent install smoke 全绿；
-- [ ] Promptpile compatibility consumer 验证通过；
-- [ ] 文档与实现一致。
+- [x] root E2E matrix 完整；
+- [x] Node 18/22 × Ubuntu/Windows 全绿；
+- [x] npm pack + independent install smoke 全绿；
+- [x] Promptpile compatibility consumer 验证通过；
+- [x] 文档与实现一致。
 
 ---
 
