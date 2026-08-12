@@ -33,6 +33,6 @@ Conversation integration 推荐把 `PROMPTPILE_ASSISTANT_CALL_FILE` 作为 `exec
 
 ## Evidence
 
-包测试包括 strict config、exact response contract、claim owner token、concurrent contention、lost-response replay blocking、real stdio MCP CLI integration 与 packed fresh-install smoke。专用 CI 在 Node 20/22 × Ubuntu/Windows 上执行这些 witness。
+包测试包括 strict config、exact response contract、claim owner token、concurrent contention 与 lost-response replay blocking。composition witness 通过两次真实 Promptpile CLI、真实 calls/result artifacts 和真实 stdio MCP 执行证明 Promptpile → MCP → Promptpile 回放闭环；packed witness 从 protocol、Promptpile、MCP 三个 tarball 的 fresh consumer 重跑同一业务链。专用 CI 在 Node 20/22 × Ubuntu/Windows 上执行这些 witness。
 
 公共 calls/result shape 见 [Tool Artifacts v1](../15-contracts/tool-artifacts-v1.md)，系统 ownership 见 [工具执行系统](../10-architecture/tool-execution-system.md)。

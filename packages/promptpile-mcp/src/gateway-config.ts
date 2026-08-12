@@ -67,13 +67,14 @@ export function loadConfigDocument(configPath: string): Record<string, unknown> 
   }
   const ext = path.extname(abs).toLowerCase();
   const raw = fs.readFileSync(abs, 'utf8');
-  if (ext === '.toml') {
-    return TOML.parse(raw) as Record<string, unknown>;
+  let parsed: unknown;
+  if (ext === '.toml') parsed = TOML.parse(raw) as unknown;
+  else if (ext === '.json') parsed = JSON.parse(raw) as unknown;
+  else throw new Error(`promptpile-mcp: 暂不支持的配置扩展名 ${ext}（请使用 .toml 或 .json）`);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('promptpile-mcp: 顶层配置须为表/object');
   }
-  if (ext === '.json') {
-    return JSON.parse(raw) as Record<string, unknown>;
-  }
-  throw new Error(`promptpile-mcp: 暂不支持的配置扩展名 ${ext}（请使用 .toml 或 .json）`);
+  return parsed as Record<string, unknown>;
 }
 
 /** 读取配置文件中的 `[gateway]`（TOML）或 `gateway`（JSON）段落。 */

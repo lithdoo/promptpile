@@ -158,7 +158,9 @@ describe('readMcpConfig', () => {
 
   it('rejects wrong table shapes and unknown keys', () => {
     const documents = [
+      '[]',
       '{"gateway":false}',
+      '{"servers":[]}',
       '{"typo":1}',
       '{"gateway":{"typo":1}}',
       '{"servers":{"x":{"command":"x","typo":1}}}',

@@ -258,12 +258,10 @@ function parseServerEntry(serverId: string, raw: unknown): McpServerEntry {
 }
 
 function parseServers(raw: unknown): Record<string, McpServerEntry> {
-  if (raw === undefined) return {};
-  if (!raw || typeof raw !== 'object') {
-    throw new Error('promptpile-mcp: servers 须为表');
-  }
+  const servers = table(raw, 'servers');
+  if (!servers) return {};
   const out: Record<string, McpServerEntry> = {};
-  for (const [id, entry] of Object.entries(raw as Record<string, unknown>)) {
+  for (const [id, entry] of Object.entries(servers)) {
     if (id.startsWith('__')) continue;
     validateServerId(id);
     out[id] = parseServerEntry(id, entry);

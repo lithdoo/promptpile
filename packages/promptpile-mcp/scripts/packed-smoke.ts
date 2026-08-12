@@ -12,7 +12,7 @@ function run(command: string, args: string[], cwd = temp): string {
     cwd,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
-    shell: process.platform === 'win32',
+    shell: process.platform === 'win32' && command.toLowerCase().endsWith('.cmd'),
   });
   if (result.status !== 0) throw new Error(`${command} ${args.join(' ')} failed:\n${result.stdout}\n${result.stderr}`);
   return result.stdout.trim();
@@ -21,14 +21,16 @@ function run(command: string, args: string[], cwd = temp): string {
 try {
   const repo = path.resolve(__dirname, '../../../..');
   run(npm, ['pack', path.join(repo, 'packages/promptpile-protocol'), '--pack-destination', temp], repo);
+  run(npm, ['pack', path.join(repo, 'packages/promptpile'), '--pack-destination', temp], repo);
   run(npm, ['pack', path.join(repo, 'packages/promptpile-mcp'), '--pack-destination', temp], repo);
   const tarballs = fs.readdirSync(temp).filter((file) => file.endsWith('.tgz')).map((file) => path.join(temp, file));
-  assert.equal(tarballs.length, 2);
+  assert.equal(tarballs.length, 3);
   run(npm, ['init', '-y']);
   run(npm, ['install', '--ignore-scripts', ...tarballs]);
   const bin = path.join(temp, 'node_modules', '.bin', process.platform === 'win32' ? 'promptpile-mcp.cmd' : 'promptpile-mcp');
   assert.equal(run(bin, ['--version']), PACKAGE_VERSION);
   assert.match(run(bin, ['--help']), /exec-calls/);
+  run(process.execPath, [path.join(temp, 'node_modules/promptpile-mcp/dist/scripts/integration-smoke.js')]);
   console.log('packed smoke: ok');
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
