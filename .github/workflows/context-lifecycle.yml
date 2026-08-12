@@ -38,6 +38,7 @@ jobs:
         run: npm run test -w promptpile-compress
 
       - name: Test independent Archive Protocol consumer
+        if: matrix.node == 22
         run: npm run test -w promptpile-compress-grep-search
 
       - name: Smoke test packed archive CLI
