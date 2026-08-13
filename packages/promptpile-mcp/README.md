@@ -46,4 +46,4 @@ npm run test:integration -w promptpile-mcp
 npm run test:packed -w promptpile-mcp
 ```
 
-`test:integration` 运行真实 Promptpile → stdio MCP → Promptpile composition；`test:packed` 从 protocol、Promptpile 与 MCP 三个 tarball 创建 fresh consumer，并重跑同一行为链。
+`test:integration` 只通过安装生成的 public CLI bins 运行真实 Promptpile → stdio MCP → Promptpile composition；`test:packed` 从 protocol、Promptpile 与 MCP 三个 tarball 创建 fresh consumer，并通过其 `.bin/promptpile` 与 `.bin/promptpile-mcp` 重跑同一行为链。

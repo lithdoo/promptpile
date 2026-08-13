@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { PACKAGE_VERSION } from '../src/version';
+import { runCompositionWitness } from './composition-witness';
 
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'promptpile-mcp-packed-'));
@@ -18,6 +19,7 @@ function run(command: string, args: string[], cwd = temp): string {
   return result.stdout.trim();
 }
 
+async function main(): Promise<void> {
 try {
   const repo = path.resolve(__dirname, '../../../..');
   run(npm, ['pack', path.join(repo, 'packages/promptpile-protocol'), '--pack-destination', temp], repo);
@@ -30,8 +32,14 @@ try {
   const bin = path.join(temp, 'node_modules', '.bin', process.platform === 'win32' ? 'promptpile-mcp.cmd' : 'promptpile-mcp');
   assert.equal(run(bin, ['--version']), PACKAGE_VERSION);
   assert.match(run(bin, ['--help']), /exec-calls/);
-  run(process.execPath, [path.join(temp, 'node_modules/promptpile-mcp/dist/scripts/integration-smoke.js')]);
+  await runCompositionWitness(path.join(temp, 'node_modules', '.bin'));
   console.log('packed smoke: ok');
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
 }
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
