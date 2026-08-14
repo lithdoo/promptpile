@@ -1,111 +1,151 @@
 # promptpile-compress Live Trigger Recompression 冻结实施契约
 
-> Status: **Frozen Implementation Contract — Revision 2**  
+> Status: **Frozen Implementation Contract — Revision 3**  
 > Date: 2026-08-14  
 > Target: `packages/promptpile-compress`  
 > Primary API: `runCompressionBeforeCompletion()`  
 > Manual API preserved: `compressDirectory()`  
-> Supersedes: `LIVE_TRIGGER_RECOMPRESSION_DRAFT.md`  
-> Change policy: 实施过程中如需改变本文的状态机、触发语义、恢复语义、filesystem coordination、summary source 或 report 语义，必须先修改本文并重新评审，不能在代码中隐式改变。
+> Supersedes: `LIVE_TRIGGER_RECOMPRESSION_DRAFT.md` and Revision 1/2 of this contract  
+> Change policy: 实施过程中如需改变本文的状态机、触发语义、恢复语义、filesystem coordination、summary source、error taxonomy 或 operation report v2 语义，必须先修改本文并重新评审，不能在代码中隐式改变。
 
 ## 1. 冻结结论
 
-当前问题不是 archive / restore 本身错误，而是 **automatic orchestrator 复用了 manual compression 的 restore-first 语义**。
+当前问题不是 archive / restore 本身错误，而是 **automatic orchestrator 复用了 manual compression 的 restore-first trigger 语义**。
 
 当前 `compressDirectoryWithLockHeld()` 的主要顺序是：
 
 ```text
 recover
-→ find archive
 → restore existing archive
 → scan restored Conversation
-→ calculate tokensBefore
-→ compare threshold
+→ calculate threshold
 → select
 → summarize
 → commit
 ```
 
-因此 archive 一旦存在，`runCompressionBeforeCompletion()` 的 trigger 实际基于 restored original Conversation，而不是 Agent 当前真正使用的 compact live Conversation。
+因此 archive 一旦存在，automatic completion path 会先展开 full original history，再决定是否需要 compression。第一次 compression 之后，即使 compact live Conversation 很小，后续 automatic call 仍可能反复 restore + semantic summary + recompress。
 
-本次修改把两个问题严格拆开：
+Revision 3 把 automatic lifecycle 收敛为唯一 authority 链：
 
 ```text
-是否允许为了 normal automatic recompression 展开 compact state？
-→ 看 lock 内 authoritative current live Conversation
-
-真正执行 fresh compression 时总结什么？
-→ 看 restored/current original Conversation
+serialize per directory
+→ acquire filesystem lifecycle lock
+→ inspect authoritative lifecycle state
+→ normalize recoverable state
+→ inspect healthy live state
+→ live gate
+→ optional restore of healthy compact source
+→ evaluate/compress original source
+→ release lock
+→ completion
 ```
 
-冻结 invariant：
+核心 invariant：
 
-> **Live state decides when. Original state decides what.**
+> **Coordinate first; mutate only from authoritative state.**
+>
+> **Live state decides when; original state decides what.**
+>
+> **Recovery normalizes; compression remains an independent decision.**
 >
 > **Archive is durable source state, not an automatic trigger.**
->
-> **Recovery normalizes state; recovery itself is not a compression trigger.**
 
 ---
 
 ## 2. 本次优化目标
 
-优化目标固定为：
+对 **已经 healthy 且 live below trigger** 的 automatic call，必须满足：
 
 ```text
-below live trigger
-→ zero healthy-archive restore
-→ zero semantic provider call
-→ zero Conversation/archive mutation
+zero healthy-archive restore
+zero semantic-provider call
+zero Conversation/archive mutation
 ```
 
-本次 **不把 “zero filesystem lock acquisition” 作为优化目标**。
+filesystem lifecycle lock 的创建/释放属于 coordination，不视为 Conversation/archive mutation，也不是本次优化目标。
 
-Automatic API 继续经过现有 filesystem lifecycle coordination，再由 lock 内权威 live state 决定是否允许 restore / recompress。
-
-原因：filesystem lock 是轻量 coordination boundary；真正需要消除的结构性成本是：
+本次明确不追求：
 
 ```text
-full original restore
+zero lock acquisition
+outer lock-free live gate
+summary-of-summary
+incremental rolling summary
+```
+
+真正要消除的结构性成本是：
+
+```text
+full restore
 + semantic provider
 + repeated recompression
 ```
-
-同时保留现有安全性质：completion 只能在本次 orchestrator 已经完成 filesystem lifecycle coordination 并释放其 lock 后运行。
 
 ---
 
 ## 3. 保持不变的 contract
 
-以下 ownership 与实现语义保持：
+以下 contract 与 ownership 保持：
 
 - Archive Protocol v1；
 - Conversation Protocol v1；
+- `compression.json` version 1；
+- archive directory naming；
 - reversible restore；
-- staging recovery；
 - filesystem lifecycle lock；
+- same-process `serializeOrchestratorPhase()`；
 - conversation generation precondition；
-- semantic provider schema / timeout / sourceTurnIndices validation；
 - sliding-window selection；
+- semantic provider request/document/sourceTurnIndices contract；
 - archive commit format；
 - `compressDirectory()` manual restore-first 语义；
-- manual dry-run restore-first simulation；
-- completion callback 必须在本次 lifecycle lock release 后执行；
-- 同一 resolved directory 的 `serializeOrchestratorPhase()` 继续覆盖 completion callback；
-- 不新增 caller-side archive inspection；
-- 不新增 public trigger API。
+- manual `compressDirectory({ dryRun: true })` restore-first simulation；
+- completion callback 在本次 lifecycle lock release 后执行；
+- 不新增 caller-side archive/recovery policy；
+- 不新增 public trigger option/API。
 
-本次不增加跨进程 completion transaction。另一进程可以在本次 orchestrator release lock 后、completion 期间获得 lifecycle lock；这是现有能力边界，不在本次修改范围。
+本次不增加跨进程 completion transaction：本次 orchestrator release lock 后，另一进程可以在 completion 期间取得 lifecycle lock。这是现有能力边界。
 
 ---
 
-## 4. 精确 token 口径
+## 4. Automatic lifecycle 不再做 outer live scan
 
-### 4.1 Current live Conversation
+Revision 2 的 outer live inspection 在所有 automatic call 都必须进入 filesystem coordination 后，不再拥有控制流价值，只会带来：
 
-`liveTurns` 只指 resolved conversation directory **顶层**、被当前 Conversation Protocol scanner 识别的 message artifacts。
+```text
+extra full live scan
+stale outer plan semantics
+outer-vs-inner authority split
+test-only stale-plan seam
+```
 
-冻结定义：
+Revision 3 删除该层。
+
+冻结 automatic 入口：
+
+```text
+assert/resolve directory + options
+→ serializeOrchestratorPhase(directory)
+→ acquire lifecycle lock
+→ first authoritative lifecycle inspection
+```
+
+因此：
+
+- lock 前不扫描/tokenize Conversation；
+- 不生成 tentative filesystem plan；
+- 不存在 outer/inner trigger 分歧；
+- 不新增 `afterOuterInspection` test hook；
+- cooperating lifecycle writer 的 authority 只由现有 filesystem lock 决定。
+
+这使 automatic trigger 只有一个权威位置：**lock 内、recovery normalization 完成后的 healthy live snapshot**。
+
+---
+
+## 5. 精确 live token 口径
+
+只有 lifecycle 已经归一化为 healthy 时才计算 live tokens。
 
 ```text
 liveTurns
@@ -121,41 +161,33 @@ triggerReached
 = liveTokens >= triggerTokens
 ```
 
-必须满足：
+冻结规则：
 
-- archive 内 archived artifacts 不计入 `liveTokens`；
-- staging 内 artifacts 不计入 `liveTokens`，staging 只影响 lifecycle classification；
-- 顶层 compact `[N]system.md` summary 计入 `liveTokens`；
-- 顶层 recent/new original turns 计入；
-- 顶层 system turns 与现有 `scanTurns()` 规则一致计入；
-- outer 与 inner inspection 使用同一 resolved budget 与 tokenizer adapter；
-- trigger 比较固定使用 `>=`。
+- archive 内 archived artifacts 不计入；
+- staging 内 artifacts 不计入；
+- 顶层 `[N]system.md` compact summary 计入；
+- 顶层 newer/original turns 计入；
+- 顶层 system turns 按现有 scanner 规则计入；
+- trigger 固定使用 `>=`；
+- recovery/invalid state 在归一化前不需要 token scan，因为其 live snapshot 不具 trigger authority。
 
-### 4.2 Original Conversation
-
-original Conversation 指：
+Original Conversation 指：
 
 ```text
 restored archived original turns
 +
-compression 之后新增的 original top-level turns
+compression 后新增的 original turns
 ```
 
-或在从未 compact 的 `healthy_plain` 状态下，当前顶层 Conversation 本身。
-
-Semantic provider source 必须来自 fresh selection 的 original turns，不得把旧 compact summary 作为 source turn。
+或者未 compact 的 healthy plain Conversation 本身。
 
 ---
 
-## 5. Lifecycle state 使用 discriminated union
+## 6. Lifecycle state 必须基于磁盘事实建模
 
-Package-private inspection 必须把状态显式建模，不使用：
+不要根据“可能发生了哪次 crash”给状态命名。State machine 只描述当前可观察事实和当前允许的动作。
 
-```text
-state + recoveryRequired boolean + helper predicate guessing
-```
-
-冻结建议类型：
+冻结 package-private 类型形态：
 
 ```ts
 interface LiveSnapshot {
@@ -171,7 +203,19 @@ interface InspectedArchive {
   summaryPresent: boolean;
 }
 
-type LiveCompressionInspection =
+type RecoveryReason =
+  | 'staging_recovery'
+  | 'archive_recovery';
+
+type InvalidLifecycleReason =
+  | 'staging_path_invalid'
+  | 'staging_archive_conflict'
+  | 'staging_target_conflict'
+  | 'archive_metadata_invalid'
+  | 'archive_set_conflict'
+  | 'archive_target_conflict';
+
+type CompressionLifecycleInspection =
   | {
       state: 'healthy_plain';
       live: LiveSnapshot;
@@ -183,97 +227,124 @@ type LiveCompressionInspection =
     }
   | {
       state: 'recovery_required';
-      reason: 'staging' | 'incomplete_archive_commit';
-      live: LiveSnapshot;
+      reason: 'staging_recovery';
+    }
+  | {
+      state: 'recovery_required';
+      reason: 'archive_recovery';
       archives: InspectedArchive[];
     }
   | {
       state: 'invalid';
-      reason: string;
+      reason: InvalidLifecycleReason;
     };
 ```
 
-内部实现可以使用更精确的 invalid reason union，但不得让非法状态组合依赖一组独立 boolean 才能解释。
+具体实现可以为 invalid reason 增加内部细分，但不得退化成：
+
+```text
+state + several independent booleans + caller guessing combinations
+```
+
+Recovery/invalid variant 不携带 `LiveSnapshot` 是有意设计：recovery 完成前的 token count 不参与 automatic trigger。
 
 ---
 
-## 6. Exhaustive state classification
+## 7. Exhaustive lifecycle classification
 
-分类优先级固定为：
+### 7.1 Reserved staging path
+
+`.promptpile-compress.staging` 是 lifecycle owner 的保留路径。
+
+分类必须先检查它：
 
 ```text
-1. staging/archive structural conflict
-2. archive validity
-3. archive/live-summary completeness
-4. plain vs compact healthy state
+path absent
+→ continue
+
+path exists and is directory
+→ inspect staging state
+
+path exists but is not directory
+→ invalid: staging_path_invalid
 ```
 
-状态表：
+不得把“reserved path 存在但不是 directory”当成 no staging。
 
-| staging | archive set | archive metadata | top-level matching summary | state |
-|---|---|---|---|---|
-| no | none | — | — | `healthy_plain` |
-| no | present | valid | all present | `healthy_compacted` |
-| yes | none | — | — | `recovery_required: staging` |
-| yes | present | any | any | `invalid` |
-| no | present | invalid | any | `invalid` |
-| no | present | valid | any missing | `recovery_required: incomplete_archive_commit` |
+### 7.2 Staging classification
 
-### 6.1 Summary correspondence 只检查 presence
+```text
+staging directory + committed archive exists
+→ invalid: staging_archive_conflict
 
-本次冻结：
+staging directory + no archive + rollback targets clear
+→ recovery_required: staging_recovery
+
+staging directory + no archive + rollback target conflict
+→ invalid: staging_target_conflict
+```
+
+因此 **staging-only 不天然等于 recoverable**。它只有在当前 restore/rollback precondition 可以唯一、安全执行时才是 `staging_recovery`。
+
+对 staging 中非 Conversation message 的私有辅助文件，本次继续保持当前 recovery ownership；本契约不新增 staging manifest public contract。
+
+### 7.3 Archive classification
+
+没有 staging 时：
+
+```text
+no archive
+→ healthy_plain
+
+archive metadata/set invalid
+→ invalid: archive_metadata_invalid | archive_set_conflict
+
+archive valid but restore target conflict
+→ invalid: archive_target_conflict
+
+archive valid/restorable + every matching [N]system.md exists
+→ healthy_compacted
+
+archive valid/restorable + any matching [N]system.md missing
+→ recovery_required: archive_recovery
+```
+
+`archive_recovery` 不推断它来自：
+
+```text
+commit archive 后、write live summary 前 crash
+```
+
+还是：
+
+```text
+delete live summary 后、restore message 前 crash
+```
+
+两者对当前磁盘状态和安全恢复动作相同，因此统一叫 `archive_recovery`。
+
+### 7.4 Summary correspondence 只检查 presence
+
+冻结：
 
 ```text
 archive [N]system.md.archive
-对应 summary complete
+has matching live representation
 =
-top-level [N]system.md file exists
+top-level [N]system.md exists
 ```
-
-多 archive set 中，只要任一 archive 缺少对应顶层 summary，即为 `incomplete_archive_commit`。
 
 本次不：
 
 - byte-compare `[N]system.md` 与 archive 私有 `.summary.md`；
 - 校验 semantic marker；
-- 将 `.summary.md` 提升为 Archive Protocol public contract。
+- 将 `.summary.md` 提升为 Archive Protocol contract。
 
-Summary content integrity 属于后续 hardening，不属于 live-trigger 修复。
-
-### 6.2 Valid archive + missing summary 是 recoverable
-
-冻结决定：
-
-```text
-valid archive
-+ missing matching top-level summary
-= recoverable incomplete commit
-```
-
-不是 archive corruption。
-
-这是现有 commit 顺序：
-
-```text
-rename staging → archive
-→ write live summary
-```
-
-之间崩溃时的合法 incomplete state。
-
-恢复统一采用：
-
-```text
-restore archived originals
-→ return to authoritative plain Conversation
-→ re-inspect / re-gate
-```
-
-不直接从 `.summary.md` 补顶层 summary。
+Summary integrity 属于后续 hardening。
 
 ---
 
-## 7. Shared archive inspection
+## 8. Shared read-only lifecycle inspection
 
 冻结新增：
 
@@ -281,125 +352,90 @@ restore archived originals
 src/restore/inspection.ts
 ```
 
-package-private：
+它承载 restore/recovery mutation precondition 的 read-only source of truth，至少包含：
 
 ```ts
+inspectStagingState(directory)
 inspectArchiveSet(directory)
 ```
 
-它是 archive validity 的唯一 source of truth，负责 read-only：
+### `inspectStagingState()`
+
+负责：
+
+- reserved staging path 类型；
+- staging message file discovery；
+- rollback target conflict；
+- staging/archive structural conflict 所需信息。
+
+### `inspectArchiveSet()`
+
+负责：
 
 - `compression.json` version；
 - `archivedTurnIndices` 非空、非负整数、无重复；
-- archive directory idx 与 max archived idx 一致；
+- archive idx 与 max archived idx；
 - 跨 archive duplicate idx；
-- 跨 archive duplicate archived message files；
-- restore target conflict 所需信息；
-- archive summary idx / matching top-level summary presence 所需信息。
+- 跨 archive duplicate message file；
+- restore target conflict；
+- archive idx 对应顶层 summary presence。
 
-`restoreArchivedTurnsWithLockHeld()` 与 `inspectLiveCompressionState()` 必须共同使用该模块，不复制 validator。
+`recoverWithLockHeld()`、`restoreArchivedTurnsWithLockHeld()` 与 automatic lifecycle inspection 必须复用这些规则，不允许各写一套 validator。
+
+Domain-invalid inspection 应返回结构化 invalid state；真实 filesystem read/stat/permission failure 继续抛 IO error。
 
 ---
 
-## 8. Live inspection
+## 9. Automatic authoritative inspection
 
-冻结新增：
+冻结新增 package-private：
 
 ```text
 src/compress/live-state.ts
 ```
 
-package-private：
+提供：
 
 ```ts
-inspectLiveCompressionState(...): Promise<LiveCompressionInspection>
+inspectCompressionLifecycleState(...): Promise<CompressionLifecycleInspection>
 ```
 
-职责：
+执行顺序：
 
 ```text
-receive resolved budget/tokenizer
-→ inspect staging/archive shape
-→ call inspectArchiveSet()
-→ inspect matching top-level summary presence
-→ scan top-level live Conversation
-→ estimate live tokens
-→ classify discriminated state
+inspect reserved staging path
+→ inspect staging/archive structural validity
+→ classify recovery/invalid if applicable
+→ only if structurally healthy, scan live Conversation
+→ calculate live snapshot
+→ return healthy_plain | healthy_compacted
 ```
 
-必须保持 read-only，不允许：
+必须保持 read-only。
+
+禁止：
 
 ```text
 restore
-recover mutation
+rollback
 semantic provider
+rename/unlink
 staging mutation
 archive commit
-unlink/rename
 ```
 
 ---
 
-## 9. Four-layer automatic lifecycle
+## 10. Recovery normalization 是收敛过程
 
-`runCompressionBeforeCompletion()` 冻结为四层职责：
-
-```text
-Observation
-→ Coordination
-→ Normalization
-→ Compression decision/execution
-```
-
-### 9.1 Observation
-
-仍在：
-
-```text
-serializeOrchestratorPhase(resolvedDirectory)
-```
-
-内执行 outer `inspectLiveCompressionState()`。
-
-Outer inspection 只用于：
-
-- tentative `report.plan`；
-- observability；
-- deterministic stale-plan tests。
-
-冻结原则：
-
-> **Outer inspection has planning authority only. It has no lifecycle-exit authority, mutation authority, or final-invalid authority.**
-
-因此 automatic API 不因为 outer `healthy + below trigger` 直接跳过 filesystem coordination。
-
-### 9.2 Coordination
-
-所有合法 automatic invocation 在 outer inspection 后都进入：
-
-```text
-withDirectoryLifecycleLock(directory, 'compress', ...)
-```
-
-lock acquisition 继续负责：
-
-- cooperating writer exclusion；
-- stale same-host lock cleanup；
-- malformed/foreign/live blocker fail closed；
-- mutation authority。
-
-### 9.3 Normalization
-
-拿锁后重新做 authoritative inspection。
-
-Recoverable state 必须通过一个收敛循环归一化：
+拿到 filesystem lifecycle lock 后：
 
 ```ts
-let current = await inspectLiveCompressionState(...);
+let current = await inspectCompressionLifecycleState(...);
 
 for (let step = 0; step < MAX_NORMALIZATION_STEPS; step += 1) {
   if (current.state === 'invalid') {
-    throw archiveStateInvalid();
+    throw archiveStateInvalid(current.reason);
   }
 
   if (current.state !== 'recovery_required') {
@@ -407,138 +443,155 @@ for (let step = 0; step < MAX_NORMALIZATION_STEPS; step += 1) {
   }
 
   switch (current.reason) {
-    case 'staging':
+    case 'staging_recovery':
       recoveryActions.push(...await recoverWithLockHeld(...));
       break;
 
-    case 'incomplete_archive_commit': {
+    case 'archive_recovery': {
       const restored = await restoreArchivedTurnsWithLockHeld(...);
       archivesRestored += restored.archivesRestored ?? 0;
       break;
     }
   }
 
-  current = await inspectLiveCompressionState(...);
+  current = await inspectCompressionLifecycleState(...);
 }
 ```
 
-归一化必须最终收敛到：
+冻结 invariant：
 
 ```text
-healthy_plain
-or
-healthy_compacted
+normalization success
+→ healthy_plain | healthy_compacted
+
+normalization cannot converge
+→ ARCHIVE_STATE_INVALID
 ```
 
-否则 fail closed 为 `ARCHIVE_STATE_INVALID`。
+`MAX_NORMALIZATION_STEPS` 只防御实现 bug / 非预期磁盘变化，不是正常业务分支。
 
-`MAX_NORMALIZATION_STEPS` 只用于防御实现 bug / 非收敛状态；当前状态空间正常最多需要很少步骤，不应形成无限循环。
+Recovery 本身不是 compression trigger。每次 recovery mutation 后必须重新 inspection；只有归一化后的 healthy snapshot 才进入 live gate。
 
-### 9.4 Authoritative live gate
+---
 
-**只有 normalization 完成后的 lock 内 live state 才拥有 automatic trigger authority。**
+## 11. Authoritative live gate
+
+Normalization 后：
 
 ```text
-if inner live < trigger
+healthy live < trigger
+→ build below_threshold result
 → no healthy archive restore
 → no semantic provider
-→ no archive/Conversation mutation beyond any required recovery already completed
-→ return skipped result
+→ no further Conversation/archive mutation
 ```
 
 如果：
 
 ```text
-inner live >= trigger
+healthy live >= trigger
 ```
 
-才允许 normal recompression path 继续。
+才进入 source evaluation。
+
+冻结行为：
+
+```text
+healthy_plain + trigger reached
+→ evaluate current plain source
+
+healthy_compacted + trigger reached
+→ restore healthy archive to original source
+→ evaluate restored source
+```
+
+关键 invariant：
+
+> **A healthy compact archive may be restored for normal recompression only after the lock-held healthy live trigger is confirmed.**
 
 ---
 
-## 10. Compression engine 解耦
+## 12. Shared compression engine
 
 冻结从当前 `compressDirectoryWithLockHeld()` 提取：
 
-```text
-src/compress/index.ts
-
-compressCurrentConversationWithLockHeld()
+```ts
+compressCurrentConversationWithLockHeld(...)
 ```
 
 前置条件：
 
-> 当前顶层 Conversation 已经是本次 compression 的 authoritative source state。
+> 当前顶层 Conversation 是本次 source evaluation 的 authoritative plain/original source。
 
 职责：
 
 ```text
 capture generation
 → scan source turns
-→ calculate source threshold / selection
-→ generate summary if selection requires
+→ calculate threshold / selection
+→ generate summary if required
 → generation re-check
 → prepare staging
 → commit archive
 ```
 
-不负责：
+它不负责：
 
 ```text
-recovery
+recovery normalization
 restore existing healthy archive
-automatic outer planning
+automatic orchestration
+filesystem lock acquisition
 ```
 
-### 10.1 Manual wrapper
-
-`compressDirectoryWithLockHeld()` 保持：
+Manual API 继续组合：
 
 ```text
-recoverWithLockHeld()
-→ restore existing archive if present
+compressDirectoryWithLockHeld()
+→ recover
+→ restore existing archive
 → compressCurrentConversationWithLockHeld()
 ```
 
-因此 CLI/manual semantics 不变。
-
-### 10.2 Automatic path
-
-Normalization 后：
+Automatic API 组合：
 
 ```text
-inner healthy_plain + live >= trigger
-→ compressCurrentConversationWithLockHeld()
-
-inner healthy_compacted + live >= trigger
-→ restoreArchivedTurnsWithLockHeld()
+coordinate
+→ normalize
+→ live gate
+→ optional restore
 → compressCurrentConversationWithLockHeld()
 ```
 
-关键 invariant：
+不允许通过：
 
-> **Healthy compact archive 只有在 filesystem lock 内 current live trigger 被确认后，才允许为了 normal recompression 被 restore。**
+```text
+skipRestore
+alreadyRecovered
+trustPlan
+forceCompression
+```
+
+等 mode flags 模拟两个 lifecycle。
 
 ---
 
-## 11. Restore 后允许不重新压缩
+## 13. Trigger reached 不保证 fresh commit
 
-Compact live 达到 trigger，只代表：
+Live compact trigger 只授权：
 
-> 允许展开 durable original source，并重新判断 fresh compression 是否值得发生。
-
-它 **不承诺一定生成 fresh archive**。
+> 可以展开 durable original source，再由 source engine 独立判断 fresh compression 是否值得发生。
 
 因此：
 
 ```text
 healthy_compacted
-inner live >= trigger
+→ live trigger reached
 → restore original
 → compressCurrentConversationWithLockHeld()
 ```
 
-合法结果为：
+合法结果：
 
 ```text
 compressed
@@ -551,27 +604,31 @@ no_turns_to_compress
 → healthy_plain
 ```
 
-如果 restored/current original source 在共享 engine 中低于 threshold，或没有可压缩 turns：
+同样，`healthy_plain + trigger reached` 进入 engine 后，也允许因 engine 的权威 source scan 得出 skip，或因 generation conflict fail closed/retryable。
 
-- 不调用 semantic provider（如果 selection 不要求）；
-- 不提交新 archive；
-- 保留 restored plain original Conversation；
-- release lock；
-- completion 正常运行。
-
-因此状态机不依赖：
+这使状态机不依赖：
 
 ```text
 summaryTokens < archivedOriginalTokens
+tokensAfter < tokensBefore
 ```
 
-之类尚未冻结的 effective-compaction invariant 才能闭合。
+才能闭合。
+
+Automatic wrapper 必须把 normalization / normal restore 产生的：
+
+```text
+recoveryActions
+archivesRestored
+```
+
+合并进最终 `CompressResult`，即使 shared engine 自身不拥有这些动作。
 
 ---
 
-## 12. Fresh summary source invariant
+## 14. Fresh semantic summary source invariant
 
-Triggered recompression：
+Triggered compact recompression：
 
 ```text
 archive(original 0..N)
@@ -580,298 +637,328 @@ live summary1
 +
 new original N+1..M
 
-→ inner live trigger confirmed
-→ restore lifecycle deletes summary1
+→ lock-held live trigger confirmed
+→ restore lifecycle removes summary1
 → restore original 0..N
-→ top-level original 0..M
+→ obtain original 0..M
 → fresh selection
 → semantic summary2
 ```
 
 Provider 只能看到 fresh selected original turns。
 
-不得：
+明确禁止：
 
 ```text
 summary1 + newer turns → summary2
 ```
 
-现有 `normalizeArchive()`、`validateSemanticSummary()` 与 sourceTurnIndices validation 全部保留。
+现有 semantic normalization、document validation 与 `sourceTurnIndices` validation 全部继续使用。
 
 ---
 
-## 13. Dry-run 语义
-
-### Manual dry-run
+## 15. Manual dry-run 与 automatic lifecycle 分离
 
 ```ts
 compressDirectory({ dryRun: true })
 ```
 
-继续模拟 manual restore-first lifecycle；archive/staging 存在时仍可在 temp copy 中执行：
+继续表达：
 
 ```text
-recover → restore → selection
+simulate manual restore-first lifecycle
 ```
 
-### Automatic orchestrator
-
-不再调用 manual dry-run 作为 trigger planner。
-
-Outer `estimate_plan` 只来自 read-only live inspection。
-
-冻结：
+存在 archive/staging 时仍可在 isolated temp copy 中：
 
 ```text
-manual dry-run != automatic live planning
+recover → restore → source selection
+```
+
+`runCompressionBeforeCompletion()` 不再使用 manual dry-run，也不再生成 pre-lock plan。
+
+冻结关系：
+
+```text
+manual dry-run != automatic trigger decision
 ```
 
 ---
 
-## 14. Report：plan 与 execution fact 分离
+## 16. Operation Report 升级为 v2
 
-现有 public phase 名称保持：
-
-```text
-estimate_plan
-acquire_exclusive
-compress
-release_exclusive
-completion
-```
-
-### 14.1 `report.plan`
-
-定义为：
-
-> **outer tentative live observation，不是 execution prediction，也不是 commit fact。**
-
-如果 outer state 为 healthy：
-
-```text
-outer live < trigger
-→ plan.outcome = below_threshold
-
-outer live >= trigger
-→ plan.outcome = compressed
-```
-
-这里 `compressed` 只是为了保持现有 enum；语义为：
-
-> outer live observation indicates the compression path should be considered.
-
-如果 outer state 为：
-
-```text
-recovery_required
-invalid-looking
-```
-
-`report.plan` 可以省略，因为现有 type 本来就是 optional；不要强行把 recovery/corruption 映射为 compression outcome。
-
-Outer `plan.selection` / `plan.budget` 只描述 outer current-live snapshot。
-
-### 14.2 Final execution fields
-
-这些字段必须只描述 lock 内权威事实：
-
-```text
-report.budget
-report.selection
-report.commit
-report.recoveryActions
-report.archivesRestored
-```
-
-Outer plan stale 时不保留旧 execution conclusion。
-
-### 14.3 Phase 语义
+当前 exported `CompressionOperationReport` 已经有 `version` 字段；本次 automatic lifecycle 语义发生实质变化，不继续用 v1 字段承载失真的含义。
 
 冻结：
 
 ```text
-estimate_plan
-= outer read-only observation
-
-acquire_exclusive
-= filesystem lifecycle coordination
-
-compress
-= lock-held automatic lifecycle body
-  (normalization + authoritative gate + optional restore/compression)
-
-release_exclusive
-= release this orchestrator's lifecycle lock
-
-completion
-= callback after release
+CompressionOperationReport.version = 2
 ```
 
-因此 automatic API 正常路径均会：
+这是 **operation observability contract 的有意 breaking revision**，不是 Archive Protocol / storage migration。
+
+当前 package 仍处于 beta 发布阶段，因此应在实现该契约的下一个 beta release notes 中明确 report v2 migration。
+
+### 16.1 删除 v1 `plan`
+
+Revision 3 不再存在 outer plan，因此 v2 删除：
 
 ```text
-estimate_plan       completed
-acquire_exclusive   completed
-compress            completed | failed
-release_exclusive   completed | failed
-completion          completed | failed | skipped
+report.plan
+estimate_plan phase
 ```
 
-即使 lock 内最终：
+不再把 `compressed` 重新解释成“可能考虑 compression path”。
 
-```text
-live < trigger
-commit skipped
-```
+### 16.2 v2 authoritative decision
 
-`compress` phase 仍为 `completed`，因为 lock-held lifecycle body 已成功完成。
-
-是否生成 fresh archive 只看：
-
-```text
-commit.state = committed | skipped
-```
-
-### 14.4 Public additive field
-
-`CompressionOperationReport` 增加：
+建议冻结：
 
 ```ts
-archivesRestored: number;
+type CompressionDecisionAction =
+  | 'skip'
+  | 'evaluate_current'
+  | 'restore_then_evaluate';
+
+interface CompressionDecisionReport {
+  liveState: 'healthy_plain' | 'healthy_compacted';
+  liveTokens: number;
+  triggerTokens: number;
+  triggerReached: boolean;
+  action: CompressionDecisionAction;
+}
 ```
 
-默认 `0`。
+`decision` 只在 lifecycle 已成功归一化到 healthy 后存在，并且全部来自 lock-held authoritative state。
 
-用于表达：
+映射：
 
 ```text
-recovery/normalization restore happened
-但 fresh compression commit skipped
+healthy + below trigger
+→ action = skip
+
+healthy_plain + trigger
+→ action = evaluate_current
+
+healthy_compacted + trigger
+→ action = restore_then_evaluate
 ```
 
-### 14.5 Intentional report semantic changes
+如果在 normalization 前确认 invalid / IO failure，则 `decision` 可以不存在。
 
-本次除了 additive field，还明确包含以下 public observable semantic changes：
+### 16.3 v2 phases
 
-- `plan.budget.tokensBefore` 从旧 archive-aware restored simulation 改为 outer current-live token count；
-- `plan` 变成 tentative live observation；
-- final `budget/selection/commit` 以 inner authoritative execution 为准；
-- healthy below-trigger automatic path仍会经过 filesystem coordination，但不会 restore archive/provider/recompress；
-- recovery-only 与 restored-source-below-threshold 路径可以 `compress phase = completed` 且 `commit = skipped`。
-
-因此 compatibility 不是“只有新增字段”，而是：
+冻结 phase：
 
 ```text
-public type mostly compatible
-+
-intentional operation-report semantic refinement
+acquire_exclusive
+maintain_context
+release_exclusive
+completion
 ```
+
+其中：
+
+```text
+maintain_context
+=
+authoritative inspection
++ recovery normalization
++ healthy live gate
++ optional healthy archive restore
++ optional source compression
+```
+
+Phase 回答“lifecycle body 是否成功”；fresh archive 是否产生只看 `commit.state`。
+
+因此 recovery-only / below-threshold 可以合法是：
+
+```text
+maintain_context = completed
+commit.state = skipped
+```
+
+### 16.4 v2 report shape
+
+规范性结构：
+
+```ts
+interface CompressionOperationReport {
+  version: 2;
+  operation: 'compress-before-completion';
+  status: 'completed' | 'failed';
+  phases: OperationPhaseReport[];
+  decision?: CompressionDecisionReport;
+  recoveryActions: string[];
+  archivesRestored: number;
+  selection: CompressResult['selection'];
+  budget?: ContextBudgetReport;
+  commit: {
+    state: 'not_started' | 'committed' | 'skipped';
+    summaryIdx?: number;
+  };
+  error?: {
+    code: LifecycleErrorCode;
+    message: string;
+    retryable: boolean;
+  };
+}
+```
+
+`archivesRestored` 在 v2 中是 required field，默认 `0`。
+
+`CompressionLifecycleResult<T>` 保持成功/失败 union 形态，但其 `report` 使用 v2。
+
+### 16.5 Phase failure matrix
+
+冻结：
+
+```text
+lock acquisition fails:
+  acquire_exclusive failed
+  maintain_context skipped
+  release_exclusive skipped
+  completion skipped
+
+maintain_context fails after lock acquired:
+  acquire_exclusive completed
+  maintain_context failed
+  release_exclusive completed | failed
+  completion skipped
+
+release fails after successful maintain:
+  release_exclusive failed
+  completion skipped
+
+completion fails after successful release:
+  completion failed
+  report.status = failed
+  commit preserves actual lifecycle fact
+```
+
+Invalid lifecycle 必须在 `maintain_context` fail，completion 不执行。
 
 ---
 
-## 15. Concurrency / generation
+## 17. Error taxonomy 冻结
 
-### 15.1 Outer state 不具事务权威
+新的 shared inspection/recovery code 不应依赖 error message regex 才能表达 domain failure。
 
-Outer inspection 可能在 acquire lock 前 stale。
+冻结 package-private tagged lifecycle error boundary，例如：
 
-这是正常情况：
-
-```text
-outer 8k → inner 35k
-outer 35k → inner 8k
+```ts
+interface TaggedLifecycleError extends Error {
+  lifecycleErrorCode: LifecycleErrorCode;
+  retryable?: boolean;
+}
 ```
 
-全部由 inner state 决定。
+至少保证：
 
-### 15.2 Filesystem lock 是 cooperating-writer authority
+```text
+structural archive/staging contradiction
+→ ARCHIVE_STATE_INVALID
 
-Automatic lifecycle 始终经过现有 `withDirectoryLifecycleLock()`，避免在另一个 cooperating lifecycle writer 已持锁但尚未产生可见 mutation 时直接启动 completion。
+active lifecycle lock blocker
+→ LIFECYCLE_LOCKED
 
-### 15.3 Generation precondition 保持
+source generation changed
+→ CONVERSATION_CHANGED
 
-一旦 current/restored original Conversation 成为 compression source，继续使用：
+semantic provider failure
+→ SUMMARY_PROVIDER_FAILED
+
+budget/tokenizer/options invalid
+→ existing corresponding code
+
+filesystem stat/read/write/permission failure
+→ IO_ERROR
+
+completion callback failure
+→ COMPLETION_FAILED
+```
+
+现有 `classifyLifecycleError()` 可以保留 legacy fallback，但**新提取的 inspection/normalization path 必须优先抛 tagged errors**，不得继续扩大基于文案 regex 的 domain classification。
+
+Public report 继续只暴露 safe message，不暴露 conversation content、provider payload 或内部 path details。
+
+---
+
+## 18. Concurrency / generation
+
+### Cooperating writers
+
+Automatic lifecycle 始终先取得现有 filesystem lifecycle lock，再读取 trigger-authoritative state。
+
+因此不存在：
+
+```text
+another cooperating writer already owns mutation authority
+but automatic completion starts from a lock-free stale snapshot
+```
+
+### Non-cooperating writers
+
+filesystem lock 不阻止不遵守 lifecycle API 的 writer。
+
+一旦 current/restored original Conversation 进入 shared compression engine，继续使用：
 
 ```text
 captureConversationGeneration()
 assertConversationGeneration()
 ```
 
-保护 source scan / semantic provider 到 first staging mutation 之间的 non-cooperating writer 变化。
+保护 source scan/provider 到 first staging mutation 之间的变化。
 
-### 15.4 Completion 边界
+### Completion
 
 ```text
-release this orchestrator's lifecycle lock
+release this lifecycle lock
 → completion callback
 ```
 
-同进程 orchestrator queue 继续覆盖 completion。
+同进程 orchestrator queue 继续覆盖 active completion。
 
-不宣称 completion 与其他进程随后获得 lifecycle lock 的 mutation 互斥。
-
----
-
-## 16. Deterministic stale-plan test seam
-
-允许 package-private：
-
-```ts
-runCompressionBeforeCompletionInternal(options, hooks?)
-```
-
-至少支持：
-
-```ts
-interface CompressionOrchestratorTestHooks {
-  afterOuterInspection?: (
-    inspection: LiveCompressionInspection
-  ) => Promise<void>;
-}
-```
-
-Public `runCompressionBeforeCompletion()` 不暴露 hooks。
-
-典型 deterministic test：
-
-```text
-outer sees trigger=true
-→ hook blocks
-→ test changes current live state below trigger
-→ resume
-→ acquire lock
-→ inner sees below
-→ no healthy archive restore
-→ provider not invoked
-→ commit skipped
-→ release
-→ completion
-```
+本次不承诺跨进程 completion transaction。
 
 ---
 
-## 17. 文件与职责冻结
+## 19. 文件与职责冻结
 
 ### `src/restore/inspection.ts` — 新增
 
 ```text
-read-only archive-set validation / prepared metadata
+inspectStagingState()
+inspectArchiveSet()
+shared read-only mutation preconditions
 ```
 
 ### `src/restore/index.ts`
 
 ```text
-restore mutation path reuses inspection.ts
-public restore contract unchanged
+recover/restore reuse inspection rules
+public restore API semantics unchanged
 ```
+
+### `src/restore/scanner.ts`
+
+reserved staging path discovery 必须能区分：
+
+```text
+absent
+directory
+present-but-invalid-type
+```
+
+不得继续把 non-directory reserved path 等价为 absent。
 
 ### `src/compress/live-state.ts` — 新增
 
 ```text
-read-only top-level live scan
-token estimate
-staging/archive/summary classification
-discriminated lifecycle state
+inspectCompressionLifecycleState()
+structural classification first
+healthy-only token scan
+discriminated union
 ```
 
 ### `src/compress/index.ts`
@@ -896,132 +983,177 @@ compressDirectoryWithLockHeld()
 runCompressionBeforeCompletion()
 ```
 
-使用：
+最终流程：
 
 ```text
-outer observation
-→ filesystem coordination
-→ recovery normalization
-→ inner live gate
-→ optional healthy archive restore
-→ shared compression engine
+serialize
+→ acquire lock
+→ inspect/normalize
+→ authoritative live gate
+→ optional restore
+→ shared source engine
+→ release
+→ completion
+```
+
+删除：
+
+```text
+compressDirectory(dryRun=true) automatic planner
+pre-lock live scan
+stale-plan test seam
 ```
 
 ### `src/compress/types.ts`
 
-- `LiveSnapshot` / `LiveCompressionInspection` 保持 package-private；
-- `CompressionOperationReport` additive `archivesRestored: number`；
+- package-private lifecycle inspection types 不从 root export；
+- `CompressionOperationReport` 升为 `version: 2`；
+- `OperationPhaseReport.phase` 改为 v2 phases；
+- 删除 public `plan`；
+- 新增 `decision?`；
+- `archivesRestored` 为 required；
 - 不新增 public trigger/options flags。
 
 ---
 
-## 18. Compatibility
+## 20. Compatibility / migration
 
-保持：
-
-```text
-Archive Protocol version          v1 unchanged
-compression.json version          1 unchanged
-Conversation Protocol             unchanged
-archive directory naming          unchanged
-CLI compress semantics            unchanged
-compressDirectory semantics       unchanged
-manual dry-run semantics          unchanged
-restoreArchivedTurns API          unchanged
-semantic provider request schema  unchanged
-semantic document schema          unchanged
-sourceTurnIndices contract        unchanged
-new public trigger API            none
-```
-
-Public observable changes：
+Storage/protocol 不变：
 
 ```text
-CompressionOperationReport.archivesRestored added
-automatic report plan token basis changes to current live state
-plan becomes tentative observation
-final execution fields become inner-authoritative
+Archive Protocol                 v1 unchanged
+compression.json                version 1 unchanged
+Conversation Protocol            unchanged
+archive naming                   unchanged
+restore data semantics           unchanged
+semantic provider schema         unchanged
+sourceTurnIndices                unchanged
+compressDirectory manual API     unchanged
+manual dry-run                   unchanged
 ```
 
-本次不是 storage migration，不需要 manifest v2。
+Automatic API 的 **behavioral intent** 改变：
+
+```text
+trigger basis
+restored original → lock-held current live
+```
+
+Operation observability 明确升级：
+
+```text
+CompressionOperationReport v1 → v2
+```
+
+v2 migration：
+
+```text
+remove report.plan
+remove estimate_plan phase
+rename compress lifecycle phase → maintain_context
+add authoritative decision
+add required archivesRestored
+```
+
+这不是 archive manifest migration，不需要 `compression.json` v2，也不需要 archive 原地升级。
 
 ---
 
-## 19. Normative acceptance tests
+## 21. Normative acceptance tests
 
-### 19.1 Healthy compact steady state
+### 21.1 Healthy steady state
 
 ```text
-existing-archive-live-below-threshold-does-not-restore
-existing-archive-live-below-threshold-does-not-call-semantic-provider
-existing-archive-live-below-threshold-preserves-conversation-byte-for-byte
-existing-archive-live-below-threshold-preserves-archive-byte-for-byte
-existing-archive-live-below-threshold-preserves-old-summary-byte-for-byte
-existing-archive-live-below-threshold-acquires-and-releases-lifecycle-coordination
-existing-archive-live-below-threshold-enters-completion-after-release
-below-threshold-plan-uses-live-token-count
+healthy-compacted-live-below-threshold-does-not-restore
+healthy-compacted-live-below-threshold-does-not-call-semantic-provider
+healthy-compacted-live-below-threshold-preserves-conversation-bytes
+healthy-compacted-live-below-threshold-preserves-archive-bytes
+healthy-compacted-live-below-threshold-preserves-summary-bytes
+healthy-below-threshold-still-acquires-and-releases-lifecycle-lock
+healthy-below-threshold-completion-runs-after-release
 ```
 
-### 19.2 Triggered recompression
+### 21.2 Triggered recompression
 
 ```text
-existing-archive-live-reaches-threshold-restores-original-history
-recompression-deletes-old-live-summary-through-restore-lifecycle
-recompression-provider-input-excludes-previous-summary
-recompression-provider-input-includes-restored-original-turns
+healthy-compacted-live-trigger-restores-original
+recompression-removes-old-live-summary-through-restore
+recompression-provider-excludes-previous-summary
+recompression-provider-includes-restored-original-turns
 recompression-provider-called-exactly-once
 recompression-commits-one-fresh-archive
-recompression-completion-runs-after-lock-release
 ```
 
-### 19.3 Triggered restore but no fresh compression
+### 21.3 Trigger reached but source skips
 
 ```text
-triggered-compact-state-restored-source-below-threshold-stays-plain
-triggered-compact-state-restored-source-no-turns-stays-plain
-restored-source-skip-does-not-call-semantic-provider
+triggered-compact-restored-source-below-threshold-stays-plain
+triggered-compact-restored-source-no-turns-stays-plain
+restored-source-skip-does-not-call-semantic-provider-when-not-required
 restored-source-skip-reports-commit-skipped
 restored-source-skip-reports-archives-restored
 ```
 
-### 19.4 Recovery normalization
+### 21.4 Staging recovery classification
 
 ```text
-staging-enters-exclusive-recovery
-recovery-rechecks-live-trigger-after-rollback
-recovery-that-remains-below-threshold-skips-recompression
-recovery-that-crosses-threshold-continues-to-recompression
-valid-archive-missing-summary-restores-original-before-regating
-valid-archive-missing-summary-restored-below-threshold-stays-plain
-archive-plus-staging-fails-closed-before-completion
-invalid-archive-metadata-fails-closed-before-completion
+reserved-staging-path-nondirectory-is-invalid
+staging-plus-archive-is-invalid
+staging-target-conflict-is-invalid
+recoverable-staging-rolls-back-under-lock
+staging-recovery-reinspects-before-live-gate
+staging-recovery-below-trigger-skips-compression
+staging-recovery-above-trigger-enters-source-evaluation
+```
+
+### 21.5 Archive recovery classification
+
+```text
+invalid-archive-metadata-fails-closed
+archive-set-duplicate-idx-fails-closed
+archive-set-duplicate-file-fails-closed
+archive-restore-target-conflict-fails-closed
+valid-archive-missing-summary-classifies-archive-recovery
+archive-recovery-restores-original-before-live-gate
+archive-recovery-below-trigger-stays-plain
 normalization-converges-or-fails-closed
 ```
 
-### 19.5 Concurrency / stale plan
+### 21.6 Coordination / generation
 
 ```text
-outer-live-plan-is-rechecked-under-lock
-outer-trigger-true-inner-trigger-false-does-not-restore-healthy-archive
-outer-trigger-false-inner-trigger-true-follows-inner-state
-cooperating-writer-lock-blocks-automatic-lifecycle-before-completion
+cooperating-writer-lock-blocks-automatic-lifecycle-before-inspection
 completion-never-runs-before-this-lifecycle-release
 same-process-next-orchestrator-waits-for-active-completion
+noncooperating-source-change-still-triggers-conversation-changed
 ```
 
-### 19.6 Report
+### 21.7 Operation report v2
 
 ```text
-outer-healthy-plan-uses-current-live-budget
-outer-recovery-required-may-omit-plan
+report-version-is-2
+report-has-no-plan
+report-has-no-estimate-plan-phase
+healthy-skip-decision-is-authoritative
+triggered-compacted-decision-is-restore-then-evaluate
 recovery-only-report-records-archives-restored
-stale-outer-plan-final-report-uses-inner-authoritative-budget
-triggered-report-uses-restored-original-selection
-lock-held-below-threshold-has-compress-phase-completed-and-commit-skipped
-invalid-state-report-skips-completion
+maintain-context-completed-with-commit-skipped-is-valid
+invalid-state-maintain-context-fails-and-completion-skips
+lock-failure-phase-matrix-is-stable
+completion-failure-preserves-commit-fact
 ```
 
-### 19.7 Manual regression
+### 21.8 Error taxonomy
+
+```text
+staging-domain-invalid-maps-to-archive-state-invalid
+archive-domain-invalid-maps-to-archive-state-invalid
+lock-blocker-maps-to-lifecycle-locked
+io-error-does-not-become-archive-state-invalid-by-message-text
+new-inspection-errors-use-tagged-code-before-regex-fallback
+```
+
+### 21.9 Manual regression
 
 ```text
 compressDirectory-existing-archive-still-restores-before-manual-recompress
@@ -1032,189 +1164,152 @@ archive-protocol-conformance-unchanged
 
 ---
 
-## 20. Five critical Given / When / Then scenarios
+## 22. Critical end-to-end scenarios
 
-### 20.1 Compact steady state
-
-**Given**
+### 22.1 Compact steady state
 
 ```text
-healthy_compacted
-current compact live < trigger
-previous providerCalls = 1
+Given:
+  healthy_compacted
+  live < trigger
+
+When:
+  runCompressionBeforeCompletion()
+
+Then:
+  acquire lock
+  inspect healthy compact live
+  decision = skip
+  no restore
+  no provider
+  no Conversation/archive mutation
+  release
+  completion
 ```
 
-**When**
+### 22.2 Compact threshold crossing
 
 ```text
-runCompressionBeforeCompletion()
+Given:
+  healthy_compacted
+  live >= trigger
+
+Then:
+  acquire lock
+  decision = restore_then_evaluate
+  restore original source
+  evaluate original source
+  if warranted: fresh compact commit
+  else: remain healthy_plain
+  release
+  completion
 ```
 
-**Then**
+### 22.3 Recoverable staging
 
 ```text
-outer tentative plan = below_threshold
-acquire lifecycle coordination
-inner authoritative live still below trigger
-no archive restore
-no provider call
-no Conversation/archive mutation
-release lifecycle lock
-completion runs
-archive + summary bytes unchanged
-providerCalls remains 1
+Given:
+  staging directory
+  no archive
+  rollback targets clear
+
+Then:
+  acquire lock
+  staging_recovery
+  re-inspect
+  healthy state obtained
+  live gate decides independently
 ```
 
-### 20.2 Threshold crossing
-
-**Given**
+### 22.4 Archive without matching live summary
 
 ```text
-healthy_compacted
-current compact live >= trigger
+Given:
+  valid/restorable archive
+  missing matching top-level summary
+
+Then:
+  archive_recovery
+  restore original
+  re-inspect
+  live gate
+  never infer whether historical crash was commit-side or restore-side
 ```
 
-**When** automatic lifecycle runs.
-
-**Then**
+### 22.5 Invalid staging target conflict
 
 ```text
-acquire lock
-inner confirms trigger
-restore previous source archive
-fresh engine evaluates original source
-if compression warranted:
-  provider sees original selected turns
-  provider called once
-  fresh archive committed
-release
-completion
-```
+Given:
+  staging contains [N]...
+  same rollback target already exists top-level
 
-### 20.3 Restored source no longer warrants compression
-
-**Given**
-
-```text
-healthy_compacted
-compact live >= trigger
-but no effective-compaction invariant guarantees restored original >= trigger
-```
-
-**When**
-
-```text
-inner trigger authorizes restore
-→ restore original
-→ shared engine returns below_threshold or no_turns_to_compress
-```
-
-**Then**
-
-```text
-final state = healthy_plain
-no fresh archive commit
-commit.state = skipped
-archivesRestored reflects restore
-release lock
-completion runs
-```
-
-### 20.4 Incomplete archive commit
-
-**Given**
-
-```text
-valid [N]system.md.archive
-missing top-level [N]system.md
-no staging
-```
-
-**Then**
-
-```text
-classify recovery_required: incomplete_archive_commit
-acquire lock
-restore original archive
-re-inspect
-below → stay plain
-reached → compress from originals
-never fail merely because summary is missing
-```
-
-### 20.5 Stale outer plan
-
-**Given** outer sees live >= trigger, then test hook changes live below trigger before lock acquisition.
-
-**Then**
-
-```text
-inner state wins
-no healthy archive restore
-no provider
-commit skipped
-report final budget uses inner state
-release
-completion
+Then:
+  classify invalid before mutation
+  maintain_context fails ARCHIVE_STATE_INVALID
+  no overwrite
+  completion skipped
 ```
 
 ---
 
-## 21. High-value end-to-end loop
+## 23. High-value lifecycle loop
 
 ```text
 1. original Conversation > trigger
-2. runCompressionBeforeCompletion()
-   → filesystem coordination
-   → fresh compression
-   → providerCalls = 1
+2. automatic lifecycle
+   → lock
+   → healthy_plain trigger
+   → source compression
    → healthy_compacted
+   → providerCalls = 1
 
-3. append a few new original turns
-   → compact live still below trigger
+3. append small newer turns
+   → compact live below trigger
 
-4. runCompressionBeforeCompletion() repeatedly
-   → each call coordinates through filesystem lock
-   → inner live below trigger
+4. repeat automatic completion calls
+   → lock
+   → decision skip
    → no restore
-   → no provider
+   → providerCalls stays 1
    → archive/summary unchanged
-   → completion
 
-5. append until compact live >= trigger
+5. append until compact live reaches trigger
 
-6. next call
-   → inner confirms trigger
-   → restore original source
-   → shared compression engine
-   → if warranted, providerCalls = 2 and fresh archive commit
-   → otherwise remain healthy_plain
+6. automatic lifecycle
+   → lock
+   → decision restore_then_evaluate
+   → restore original
+   → source engine
+      ├─ compressed → fresh healthy_compacted, providerCalls = 2
+      └─ skipped    → healthy_plain
    → release
    → completion
 ```
 
-这个循环覆盖 normal steady state、threshold crossing 与 restored-source skip 三种合法终态，才算真正闭环。
+这条 loop 覆盖 normal steady state、threshold crossing、source skip 三个正常终态。
 
 ---
 
-## 22. Explicit non-solutions
+## 24. Explicit non-solutions
 
 拒绝：
 
 ```text
-caller scans live tokens
+caller scans tokens
 summary-of-summary
-outer-only token if + existing manual compress path
-skipRestore / skipRecovery / trustOuterPlan flags
+pre-lock automatic live scan
+outer-only trigger if + manual compress path
+skipRestore / alreadyRecovered / trustPlan flags
 missing summary = corruption
-no-lock automatic fast path as a required optimization
+staging-only = automatically recoverable without target validation
+preserving report v1 by redefining misleading field meanings
 ```
 
-原因分别是 ownership 泄漏、summary drift、inner restore-before-trigger 仍存在、非法状态组合爆炸、削弱 crash recovery、以及引入不必要的跨进程 coordination race。
+原因分别是 ownership 泄漏、semantic drift、重复扫描/双 authority、restore-before-trigger 仍存在、非法组合爆炸、错误 crash recovery、潜在覆盖、以及 public observability 失真。
 
 ---
 
-## 23. Optional hardening intentionally deferred
+## 25. Deferred hardening
 
 以下不属于本次 implementation gate：
 
@@ -1224,113 +1319,108 @@ tokensAfter < tokensBefore
 tokensAfter < triggerTokens
 summary byte integrity validation
 rolling/incremental summary
+cross-process completion transaction
 ```
 
-未来可以单独形成 effective-compaction / integrity hardening contract。
-
-本次状态机必须在没有这些假设时也闭合。
+本次状态机必须在没有这些假设时闭合。
 
 ---
 
-## 24. Recommended implementation commits
+## 26. Recommended implementation commits
 
 ### Commit 1 — behavior-preserving refactor
 
 ```text
-refactor(compress): extract archive inspection and current-source engine
+refactor(compress): extract lifecycle inspection and current-source engine
 ```
 
-- add `restore/inspection.ts`；
-- restore reuses inspection；
+- add shared restore/staging/archive inspection；
+- make recover/restore reuse inspection rules；
+- fix reserved staging path type detection；
 - extract `compressCurrentConversationWithLockHeld()`；
-- all existing manual tests green；
-- no public behavior change。
+- all existing manual tests remain green；
+- no automatic semantic switch yet。
 
-### Commit 2 — automatic live-trigger semantics
-
-```text
-feat(compress): gate healthy archive restore on authoritative live state
-```
-
-- add discriminated live-state inspection；
-- outer tentative plan；
-- automatic filesystem coordination；
-- normalization loop；
-- inner authoritative live gate；
-- missing-summary recovery；
-- restored-source skip path；
-- report semantics / `archivesRestored`；
-- deterministic stale-plan seam。
-
-### Commit 3 — acceptance / active design
+### Commit 2 — automatic live-trigger lifecycle
 
 ```text
-test(docs): activate live-trigger recompression semantics
+feat(compress): gate archive restore on authoritative live state
 ```
 
+- add discriminated lifecycle state；
+- remove automatic dry-run planner；
+- coordinate before inspection；
+- recovery normalization loop；
+- healthy-only live token gate；
+- archive recovery semantics；
+- source skip path；
+- lifecycle action aggregation into `CompressResult`；
+- tagged domain errors。
+
+### Commit 3 — operation report v2 + acceptance
+
+```text
+test(docs): activate live-trigger lifecycle and report v2
+```
+
+- switch report to v2；
+- remove plan / estimate_plan；
+- add decision / maintain_context；
 - full acceptance matrix；
-- update `DESIGN.md` only after implementation is green；
-- frozen contract retained as implementation history；
-- Active Design becomes `DESIGN.md`。
+- release-note migration note；
+- only after green, update `DESIGN.md` to Active Design。
 
 ---
 
-## 25. Freeze checklist
+## 27. Freeze checklist
 
+- [x] automatic trigger authority exists only under filesystem lock；
+- [x] pre-lock live scan removed；
 - [x] current live token formula frozen；
-- [x] trigger comparison `>=` frozen；
-- [x] lifecycle state discriminated union frozen；
-- [x] exhaustive state classification frozen；
+- [x] recovery/invalid states do not compute non-authoritative token decisions；
+- [x] lifecycle state uses discriminated union；
+- [x] state names describe observable facts/actions, not guessed crash history；
+- [x] reserved staging path non-directory = invalid；
+- [x] staging rollback target conflict = invalid；
+- [x] staging + archive = invalid；
+- [x] archive validation/restore-target conflicts frozen；
+- [x] missing matching summary = archive_recovery；
 - [x] summary correspondence = presence only；
-- [x] missing summary = recoverable incomplete commit；
-- [x] archive validation single source of truth frozen；
-- [x] outer authority = tentative planning only；
-- [x] automatic API always crosses filesystem coordination boundary；
-- [x] lock inner inspection = trigger authority；
-- [x] recovery normalization loop frozen；
+- [x] shared read-only recovery/restore preconditions are single-source；
 - [x] normalization must converge to healthy or fail closed；
-- [x] recovery is not trigger；
-- [x] healthy archive restore only after inner trigger confirmation；
+- [x] recovery is not compression trigger；
+- [x] healthy archive restore requires lock-held live trigger；
 - [x] restored source may legitimately skip fresh compression；
-- [x] semantic source remains original turns；
-- [x] manual restore-first semantics frozen；
-- [x] manual dry-run semantics frozen；
-- [x] phase semantics frozen；
-- [x] plan vs final execution fact semantics frozen；
-- [x] report semantic changes explicitly documented；
-- [x] `archivesRestored` additive field frozen；
-- [x] deterministic stale-plan seam frozen；
-- [x] protocol compatibility impact frozen；
-- [x] effective-compaction hardening explicitly deferred；
-- [x] acceptance paths cover all healthy/recovery/invalid terminal states。
+- [x] semantic provider source remains original turns；
+- [x] manual restore-first semantics preserved；
+- [x] manual dry-run semantics preserved；
+- [x] operation report intentionally upgraded to v2；
+- [x] v2 removes misleading plan semantics；
+- [x] v2 phase/decision/commit responsibilities are distinct；
+- [x] domain error taxonomy uses tagged errors before regex fallback；
+- [x] storage/archive protocol versions unchanged；
+- [x] effective-compaction hardening deferred；
+- [x] acceptance coverage spans healthy/recovery/invalid/report/error/manual paths。
 
 ---
 
-## 26. Definition of done
+## 28. Definition of done
 
-Automatic lifecycle 必须满足：
+Automatic lifecycle 只有这一条 authority chain：
 
 ```text
-outer live inspection
-→ tentative plan only
-
-filesystem lifecycle lock
-→ establish cooperating-writer authority
-
-recovery normalization
-→ recoverable state converges to healthy
-
-inner current live Conversation
-→ decides whether healthy compact source may be restored
-
-restored/current original Conversation
-→ independently decides fresh compression selection and summary source
-
-release lifecycle lock
-→ completion callback
+serialize
+→ filesystem lifecycle coordination
+→ authoritative lifecycle inspection
+→ recovery normalization
+→ authoritative healthy live gate
+→ optional healthy archive restore
+→ independent original-source compression decision
+→ release
+→ completion
 ```
 
-最终合法终态只有：
+最终合法 terminal state：
 
 ```text
 healthy_compacted
@@ -1343,30 +1433,42 @@ Normal steady state：
 ```text
 healthy_compacted + live below trigger
 → coordinate
+→ decision skip
 → no restore
 → no provider
-→ no mutation
+→ no Conversation/archive mutation
 → completion
 ```
 
-Triggered path：
+Triggered compact state：
 
 ```text
 healthy_compacted + live reaches trigger
 → coordinate
-→ inner confirm
 → restore original
-→ shared engine
-   ├─ fresh compact commit → healthy_compacted
-   └─ compression skipped  → healthy_plain
-→ release
+→ shared source engine
+   ├─ fresh commit → healthy_compacted
+   └─ skip         → healthy_plain
 → completion
 ```
 
-核心原则最终冻结为：
+Recovery state：
 
-> **Coordinate first; mutate only from authoritative state.**
+```text
+recoverable
+→ normalize
+→ re-inspect
+→ healthy live gate
+
+invalid / ambiguous / conflicting
+→ fail closed
+→ no completion
+```
+
+最终原则：
+
+> **One coordination boundary. One trigger authority. One original-source compression engine.**
 >
 > **Live state decides when; original state decides what.**
 >
-> **Recovery normalizes; compression remains an independent decision.**
+> **Recovery normalizes; it never implicitly triggers compression.**
