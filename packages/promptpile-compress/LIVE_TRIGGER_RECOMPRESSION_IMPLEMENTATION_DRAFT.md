@@ -1,12 +1,12 @@
 # promptpile-compress Live Trigger Recompression 冻结实施契约
 
-> Status: **Frozen Implementation Contract — Revision 4.1 / Final Freeze Errata**  
+> Status: **Frozen Implementation Contract — Revision 4.2 / Final Freeze Errata 2**  
 > Date: 2026-08-14  
 > Target: `packages/promptpile-compress`  
 > Primary API: `runCompressionBeforeCompletion()`  
 > Manual API preserved: `compressDirectory()`  
-> Supersedes: `LIVE_TRIGGER_RECOMPRESSION_DRAFT.md` and Revision 1–4 of this contract  
-> Change policy: 实施过程中如需改变本文的 lifecycle state、trigger authority、recovery/restore 语义、filesystem coordination、summary source、fresh commit fact、error precedence 或 Operation Report v2，必须先修改本文并重新评审。
+> Supersedes: `LIVE_TRIGGER_RECOMPRESSION_DRAFT.md` and Revision 1–4.1 of this contract  
+> Change policy: 实施过程中如需改变本文的 lifecycle state、trigger authority、recovery/restore 语义、filesystem coordination、summary source、fresh commit fact、automatic `CompressResult` 语义、error precedence 或 Operation Report v2，必须先修改本文并重新评审。
 
 > 文件名暂时保留 `IMPLEMENTATION_DRAFT.md`，避免 implementation 前产生纯治理性的 path churn；**Status header 是规范性状态**。实现验收并同步 `DESIGN.md` 后，可单独 rename。
 
@@ -60,7 +60,7 @@ prepare request
 
 ### 2.1 目标
 
-对已经 healthy 且 live below trigger 的 automatic call：
+对已经 healthy 且不需要进入 source evaluation 的 automatic call：
 
 ```text
 zero healthy-archive restore
@@ -103,6 +103,7 @@ compressDirectory manual API     restore-first unchanged
 manual dry-run                   restore-first simulation unchanged
 filesystem lifecycle lock        unchanged
 same-process orchestrator queue  unchanged
+CompressResult empty-state       no_turns_to_compress preserved
 ```
 
 ### 2.4 有意 safety tightening
@@ -170,12 +171,7 @@ interface LiveSnapshot {
 interface InspectedArchive {
   idx: number;
   path: string;
-  summaryPresent: boolean;
 }
-
-type RecoveryReason =
-  | 'staging_recovery'
-  | 'archive_recovery';
 
 type InvalidLifecycleReason =
   | 'staging_path_invalid'
@@ -219,6 +215,8 @@ type CompressionLifecycleInspection =
 `InvalidLifecycleReason` 只描述 observation。`recovery_did_not_normalize` 是 transition failure，因此属于更宽的 `LifecycleFailureReason`，不伪装成磁盘 observation。
 
 Recovery/invalid variants 不携带 `LiveSnapshot`：归一化前的 token count 没有 trigger authority。
+
+`InspectedArchive` 不保存 `summaryPresent` boolean；summary correspondence 已由外围 lifecycle variant 表达，避免 `healthy_compacted + summaryPresent:false` 这类不可能组合。
 
 禁止退化成：
 
@@ -408,6 +406,8 @@ Automatic trigger authority 唯一存在于：
 
 > **filesystem lock 内、optional recovery 完成后的 healthy live snapshot。**
 
+`triggerReached` 是 live token fact，不单独承诺一定进入 source evaluation；空 Conversation 为保持现有 public `CompressResult` 语义可以先得到 `no_turns_to_compress` skip，见下一节。
+
 ---
 
 ## 8. Recovery normalization：exactly once
@@ -457,18 +457,72 @@ Recovery 永远不是 compression trigger，recovery 后必须重新读取 healt
 
 ## 9. Healthy live gate 与 automatic `CompressResult`
 
-### 9.1 Below trigger
+Automatic skip 的判定顺序必须保持现有 public result semantics：
 
 ```text
-healthy live < trigger
-→ decision = skip
+1. healthy_plain + live.turns.length === 0
+   → skipReason = no_turns_to_compress
+
+2. otherwise live.tokens < triggerTokens
+   → skipReason = below_threshold
+
+3. otherwise
+   → source evaluation path
+```
+
+空 Conversation check 位于 threshold-based source evaluation 之前，只为保持既有 `CompressResult` 语义；它不建立第二个 trigger authority，也不允许 restore/provider/mutation。
+
+### 9.1 Empty healthy plain Conversation
+
+```text
+healthy_plain
++ live.turns.length === 0
+→ decision = skip(no_turns_to_compress)
+→ no restore/provider/mutation
+→ completion receives complete CompressResult
+```
+
+冻结 `CompressResult`：
+
+```ts
+{
+  compressed: false,
+  skipReason: 'no_turns_to_compress',
+  turnsArchived: 0,
+  turnsKept: 0,
+  tokensBefore: 0,
+  tokensAfter: 0,
+  compressibleTokens: 0,
+  budget: createBudgetReport(
+    resolvedBudget,
+    tokenizer,
+    0,
+    0,
+    0
+  ),
+  recoveryActions,
+  archivesRestored,
+  selection: {
+    archivedTurnIndices: [],
+    keptTurnIndices: [],
+  }
+}
+```
+
+`summaryIdx`、`archivePath`、`dryRunPlan` absent。
+
+### 9.2 Non-empty below trigger
+
+```text
+live.tokens < triggerTokens
+→ decision = skip(below_threshold)
 → no healthy archive restore
 → no semantic provider
 → no further Conversation/archive mutation
-→ completion still receives a complete CompressResult
+→ completion receives complete CompressResult
 ```
 
-Automatic wrapper 必须构造以下语义的 `CompressResult`：
+冻结 `CompressResult`：
 
 ```ts
 {
@@ -499,26 +553,29 @@ Automatic wrapper 必须构造以下语义的 `CompressResult`：
 
 `summaryIdx`、`archivePath`、`dryRunPlan` absent。
 
-这里必须区分：
+### 9.3 Completion-facing selection 与 report selection
 
 ```text
 CompressResult.selection
-= completion-facing result contract，表达所有 current live turns 被保留
+= completion-facing result contract，表达当前 live turns 的 kept state
 
 CompressionOperationReport.selection
-= original-source selection fact；healthy live skip 时 absent
+= original-source selection fact；automatic skip 时 absent
 ```
 
 两者不是同一个 observability 语义。
 
-### 9.2 Trigger reached
+### 9.4 Source evaluation path
 
 ```text
 healthy_plain
++ non-empty
++ live trigger reached
 → decision = evaluate_current
 → evaluate current original source
 
 healthy_compacted
++ live trigger reached
 → decision = restore_then_evaluate
 → restore healthy archive
 → evaluate restored original source
@@ -589,7 +646,7 @@ Automatic wrapper 必须把 recovery / normal restore 已确认得到的 `recove
 
 ## 11. Trigger reached 不保证 fresh commit
 
-Live trigger 只决定是否允许进入 source evaluation。
+Live trigger 只决定是否允许进入 source evaluation；空 Conversation 的 compatibility skip 除外。
 
 ```text
 healthy_compacted trigger reached
@@ -715,28 +772,53 @@ authoritative inspection
 
 Phase 回答 lifecycle step 是否成功；fresh commit outcome 由 `commit` 单独回答。
 
-### 14.2 Decision
+### 14.2 Decision 必须是 discriminated union
+
+Decision 表达 lock-held authoritative live decision，非法 action/state 组合必须不可表示。
 
 ```ts
-type CompressionDecisionAction =
-  | 'skip'
-  | 'evaluate_current'
-  | 'restore_then_evaluate';
-
-interface CompressionDecisionReport {
-  liveState: 'healthy_plain' | 'healthy_compacted';
+interface CompressionDecisionBase {
   liveTokens: number;
   triggerTokens: number;
-  triggerReached: boolean;
-  action: CompressionDecisionAction;
 }
+
+type CompressionDecisionReport =
+  | (CompressionDecisionBase & {
+      liveState: 'healthy_plain';
+      triggerReached: boolean;
+      action: 'skip';
+      reason: 'no_turns_to_compress';
+    })
+  | (CompressionDecisionBase & {
+      liveState: 'healthy_plain' | 'healthy_compacted';
+      triggerReached: false;
+      action: 'skip';
+      reason: 'below_threshold';
+    })
+  | (CompressionDecisionBase & {
+      liveState: 'healthy_plain';
+      triggerReached: true;
+      action: 'evaluate_current';
+    })
+  | (CompressionDecisionBase & {
+      liveState: 'healthy_compacted';
+      triggerReached: true;
+      action: 'restore_then_evaluate';
+    });
 ```
 
-`decision` 只有在 lifecycle 已经归一化到 healthy 后才存在。
+空 Conversation 的 `triggerReached` 可以因 `triggerTokens === 0` 而为 `true`；`reason: 'no_turns_to_compress'` 仍优先保持现有 public result semantics。因此 `triggerReached` 是 token fact，而 `action/reason` 是 authoritative lifecycle decision fact。
+
+禁止出现：
+
+```text
+healthy_plain + restore_then_evaluate
+healthy_compacted + evaluate_current
+below_threshold + triggerReached=true
+non-empty source path + no_turns compatibility skip
+```
 
 ### 14.3 Commit 必须是 discriminated union
-
-禁止 `state + optional summaryIdx` 产生非法组合。冻结：
 
 ```ts
 type CompressionCommitReport =
@@ -797,9 +879,9 @@ interface CompressionOperationReport {
 
 ```text
 decision
-→ trigger-authoritative healthy live snapshot
+→ trigger-authoritative healthy live snapshot + authoritative skip/evaluate action
 
-healthy live skip:
+automatic skip:
   budget = live decision budget
   report.selection absent
 
@@ -840,8 +922,6 @@ completion fails after release:
 ```
 
 ### 14.7 双重 failure 的 error precedence
-
-冻结 root-cause precedence：
 
 ```text
 maintain_context fails
@@ -1005,7 +1085,8 @@ feat(compress): gate archive restore on authoritative live state
 - no pre-lock scan；
 - exactly-once recovery；
 - healthy-only live gate；
-- explicit automatic below-trigger `CompressResult`；
+- preserve empty `no_turns_to_compress` result semantics；
+- explicit automatic skip `CompressResult`；
 - archive recovery；
 - source skip；
 - tagged lifecycle errors；
@@ -1018,7 +1099,8 @@ feat(compress): gate archive restore on authoritative live state
 test(docs): activate live-trigger lifecycle and report v2
 ```
 
-- v2 phases / decision；
+- v2 phases；
+- discriminated decision；
 - optional report selection；
 - discriminated commit report；
 - error precedence tests；
@@ -1040,7 +1122,7 @@ CompressionOperationReport v1 → v2
 remove plan
 remove estimate_plan
 rename compress phase → maintain_context
-add authoritative decision
+add authoritative discriminated decision
 make report.selection optional
 add required archivesRestored
 replace commit state+optional-summaryIdx with discriminated commit union
@@ -1049,13 +1131,19 @@ add incomplete commit fact
 
 这是 public observability breaking change，不是 Archive Protocol / `compression.json` migration。当前 package 为 beta；实现该契约的下一个 beta release notes 必须明确迁移。
 
+Automatic `CompressResult` 的 empty Conversation `no_turns_to_compress` 语义保持现有行为，不作为此次 migration change。
+
 ---
 
 ## 20. Normative acceptance tests
 
-### 20.1 Healthy steady state
+### 20.1 Healthy automatic skip
 
 ```text
+empty-healthy-plain-preserves-no-turns-to-compress
+empty-threshold-zero-still-skips-no-turns-with-trigger-fact-true
+empty-skip-compress-result-is-complete
+nonempty-below-threshold-uses-below-threshold
 healthy-compacted-live-below-threshold-does-not-restore
 healthy-compacted-live-below-threshold-does-not-call-provider
 healthy-compacted-live-below-threshold-preserves-conversation-bytes
@@ -1101,9 +1189,13 @@ archive-recovery-reinspect-must-be-healthy-plain
 recovery-did-not-normalize-maps-to-archive-state-invalid
 ```
 
-### 20.4 Commit facts
+### 20.4 Decision / commit impossible states
 
 ```text
+decision-union-does-not-allow-plain-restore-then-evaluate
+decision-union-does-not-allow-compacted-evaluate-current
+decision-below-threshold-requires-trigger-false
+empty-no-turns-decision-can-preserve-trigger-token-fact
 failure-before-archive-publication-commit-not-started
 failure-after-archive-publication-commit-incomplete-with-summary-idx
 post-mutation-hook-failure-does-not-report-skipped
@@ -1120,7 +1212,7 @@ report-version-is-2
 report-has-no-plan-or-estimate-plan
 pre-lifecycle-failure-has-empty-phases
 lock-failure-phase-matrix-is-stable
-healthy-skip-report-selection-is-absent
+automatic-skip-report-selection-is-absent
 source-evaluation-report-selection-is-present
 maintain-failure-primary-error-survives-release-failure
 release-only-failure-becomes-report-error
@@ -1141,12 +1233,29 @@ archive protocol conformance unchanged
 
 ## 21. Critical end-to-end flows
 
+### Empty Conversation
+
+```text
+healthy_plain + zero turns
+→ lock
+→ authoritative live snapshot
+→ decision skip(no_turns_to_compress)
+→ no restore/provider/mutation
+→ complete no_turns_to_compress CompressResult
+→ report selection absent
+→ commit skipped
+→ release
+→ completion
+```
+
+即使 `triggerTokens === 0` 导致 `triggerReached === true`，也不对空 source 进入 compression engine；这是既有 empty-result compatibility，不是第二个 trigger authority。
+
 ### Compact steady state
 
 ```text
-healthy_compacted + live < trigger
+healthy_compacted + non-empty live < trigger
 → lock
-→ authoritative decision skip
+→ authoritative decision skip(below_threshold)
 → complete below_threshold CompressResult
 → no restore/provider/Conversation mutation
 → report selection absent
@@ -1214,6 +1323,7 @@ missing summary = corruption
 staging-only = automatically recoverable without target validation
 malformed archive-shaped path silently ignored
 preserve report v1 by redefining misleading fields
+flat decision type that permits impossible action/state combinations
 required empty report selection when no source selection happened
 commit state + optional summaryIdx illegal combinations
 commit failure reported as skipped
@@ -1243,13 +1353,17 @@ non-cooperating restore/recovery transaction protocol
 - [x] one lock-held trigger authority；
 - [x] lifecycle state is discriminated and fact-based；
 - [x] lifecycle observation reason 与 transition failure reason 分离；
+- [x] redundant summary-presence boolean removed from archive state；
 - [x] staging/archive/summary path type rules explicit；
 - [x] recovery exactly once then re-inspect；
 - [x] non-normalized recovery fails closed；
 - [x] recovery never acts as trigger；
 - [x] healthy archive restore requires live trigger；
-- [x] automatic below-trigger `CompressResult` fully frozen；
+- [x] empty Conversation preserves `no_turns_to_compress`；
+- [x] automatic skip `CompressResult` fully frozen；
 - [x] completion-facing result 与 report selection semantics 分离；
+- [x] decision is discriminated union；
+- [x] decision action/state impossible combinations unrepresentable；
 - [x] original source independently decides fresh compression；
 - [x] restored source may legitimately skip；
 - [x] semantic source excludes previous summary；
@@ -1267,7 +1381,7 @@ non-cooperating restore/recovery transaction protocol
 - [x] malformed-state safety tightening documented；
 - [x] report v2 migration explicit；
 - [x] storage protocol unchanged；
-- [x] acceptance coverage spans healthy/recovery/invalid/partial-commit/report/error/manual paths。
+- [x] acceptance coverage spans empty/healthy/recovery/invalid/partial-commit/report/error/manual paths。
 
 ---
 
@@ -1282,7 +1396,7 @@ prepare
 → inspect
 → optional one-shot recovery
 → re-inspect if recovered
-→ healthy live gate
+→ healthy live decision
 → optional restore
 → original-source engine
 → release
@@ -1307,6 +1421,9 @@ failed closed
 最终 steady-state loop：
 
 ```text
+empty plain
+→ no_turns_to_compress skip
+
 large plain
 → compress once
 → healthy_compacted
@@ -1330,5 +1447,7 @@ compact live reaches trigger
 > **Live state decides when; original state decides what.**
 >
 > **Recovery is one-shot normalization, not a trigger.**
+>
+> **Invalid combinations should be unrepresentable where the type system can express them.**
 >
 > **Reports describe confirmed invocation facts; filesystem inspection defines lifecycle truth.**
