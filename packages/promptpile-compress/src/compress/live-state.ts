@@ -11,6 +11,8 @@ import type { LifecycleMutationHook } from '../lifecycle/mutation';
 import type {
   CompressOptions,
   CompressStrategyKind,
+  SemanticSummaryProvider,
+  SummaryOptions,
   SummaryGenerator,
   TokenizerAdapter,
   Turn,
@@ -55,22 +57,65 @@ export interface ResolvedCompressionExecution {
   readonly dryRun: boolean;
 }
 
+const snapshotTokenizer = (source: TokenizerAdapter): TokenizerAdapter => {
+  const countText = source.countText.bind(source);
+  const dispose = source.dispose?.bind(source);
+  return Object.freeze({
+    id: source.id,
+    model: source.model,
+    kind: source.kind,
+    messageOverheadTokens: source.messageOverheadTokens,
+    countText,
+    ...(dispose ? { dispose } : {}),
+  });
+};
+
+const snapshotSemanticProvider = (
+  source: SemanticSummaryProvider
+): SemanticSummaryProvider => {
+  if (!source || typeof source.summarize !== 'function') {
+    throw new Error('semantic summary requires a provider');
+  }
+  if (typeof source.id !== 'string' || source.id.trim().length === 0) {
+    throw new Error('semantic summary provider id must be non-empty');
+  }
+  const summarize = source.summarize.bind(source);
+  return Object.freeze({ id: source.id, summarize });
+};
+
+const snapshotSummaryOptions = (
+  source: SummaryOptions | undefined
+): SummaryOptions | undefined => {
+  if (!source) return undefined;
+  if (source.kind === 'semantic') {
+    return Object.freeze({
+      ...source,
+      provider: snapshotSemanticProvider(source.provider),
+    });
+  }
+  return Object.freeze({ ...source });
+};
+
 export const resolveCompressionExecution = (
   options: CompressOptions
 ): ResolvedCompressionExecution => {
-  const summary =
-    options.summary?.kind === 'semantic'
-      ? { ...options.summary }
-      : options.summary
-        ? { ...options.summary }
-        : undefined;
+  let summary: SummaryOptions | undefined;
+  try {
+    summary = snapshotSummaryOptions(options.summary);
+  } catch (error) {
+    throw lifecycleError(
+      'INVALID_OPTIONS',
+      error instanceof Error ? error.message : String(error)
+    );
+  }
   const normalized: CompressOptions = {
     ...options,
     ...(options.budget ? { budget: { ...options.budget } } : {}),
     ...(summary ? { summary } : {}),
   };
-  const tokenizer = normalized.tokenizer ?? heuristicTokenizer;
-  assertTokenizerAdapter(tokenizer);
+  const sourceTokenizer = normalized.tokenizer ?? heuristicTokenizer;
+  assertTokenizerAdapter(sourceTokenizer);
+  const tokenizer = snapshotTokenizer(sourceTokenizer);
   const keepRecent = normalized.keepRecent ?? 4;
   if (!Number.isInteger(keepRecent) || keepRecent < 0) {
     throw new Error(`keepRecent must be a non-negative integer: ${keepRecent}`);

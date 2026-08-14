@@ -60,13 +60,15 @@ import type {
 
 const SUMMARY_TEMP_FILE = '.summary.md';
 const orchestratorQueues = new Map<string, Promise<void>>();
-const activeOrchestratorDirectories = new AsyncLocalStorage<ReadonlySet<string>>();
+interface OrchestratorInvocation {
+  active: boolean;
+}
+const activeOrchestratorInvocation = new AsyncLocalStorage<OrchestratorInvocation>();
 
 const serializeOrchestratorPhase = async <T>(
   directory: string,
   callback: () => Promise<T>
 ): Promise<T> => {
-  const inheritedDirectories = activeOrchestratorDirectories.getStore();
   const previous = orchestratorQueues.get(directory) ?? Promise.resolve();
   let release!: () => void;
   const gate = new Promise<void>((resolve) => {
@@ -75,12 +77,11 @@ const serializeOrchestratorPhase = async <T>(
   const tail = previous.catch(() => undefined).then(() => gate);
   orchestratorQueues.set(directory, tail);
   await previous.catch(() => undefined);
+  const invocation: OrchestratorInvocation = { active: true };
   try {
-    return await activeOrchestratorDirectories.run(
-      new Set([...(inheritedDirectories ?? []), directory]),
-      callback
-    );
+    return await activeOrchestratorInvocation.run(invocation, callback);
   } finally {
+    invocation.active = false;
     release();
     if (orchestratorQueues.get(directory) === tail) {
       orchestratorQueues.delete(directory);
@@ -141,7 +142,11 @@ const classifyLifecycleError = (
     COMPLETION_FAILED: 'Completion failed after lifecycle release.',
     UNKNOWN: 'The lifecycle operation failed.',
   };
-  return { code: classified, message: safeMessages[classified], retryable };
+  const message =
+    classified === 'LIFECYCLE_LOCKED' && !retryable
+      ? 'The automatic lifecycle is non-reentrant.'
+      : safeMessages[classified];
+  return { code: classified, message, retryable };
 };
 
 const pathExists = async (targetPath: string): Promise<boolean> => {
@@ -757,6 +762,12 @@ export async function runCompressionBeforeCompletion<T>(
   let execution: ResolvedCompressionExecution;
   let completionCallback: CompressionLifecycleOptions<T>['completion'];
   try {
+    if (activeOrchestratorInvocation.getStore()?.active) {
+      throw lifecycleError(
+        'LIFECYCLE_LOCKED',
+        'nested automatic lifecycle invocation is not allowed'
+      );
+    }
     const requestedDirectory = options.compression.directory;
     completionCallback = options.completion;
     execution = cloneCompressionExecution(
@@ -764,12 +775,6 @@ export async function runCompressionBeforeCompletion<T>(
       { dryRun: false }
     );
     directory = await resolveLifecycleDirectory(requestedDirectory);
-    if (activeOrchestratorDirectories.getStore()?.has(directory)) {
-      throw lifecycleError(
-        'LIFECYCLE_LOCKED',
-        'same-directory automatic lifecycle reentrancy is not allowed'
-      );
-    }
   } catch (error) {
     return {
       ok: false,

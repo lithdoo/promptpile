@@ -290,7 +290,7 @@ describe('compression orchestrator v2 boundary', () => {
     }
   });
 
-  it('fails fast for same-directory completion reentrancy', async () => {
+  it('fails fast for nested automatic orchestration', async () => {
     const root = makeConversation();
     try {
       let nestedResult: Awaited<ReturnType<typeof runCompressionBeforeCompletion>>;
@@ -308,7 +308,65 @@ describe('compression orchestrator v2 boundary', () => {
       assert.equal(nestedResult!.ok, false);
       assert.equal(nestedResult!.report.error?.code, 'LIFECYCLE_LOCKED');
       assert.equal(nestedResult!.report.error?.retryable, false);
+      assert.equal(
+        nestedResult!.report.error?.message,
+        'The automatic lifecycle is non-reentrant.'
+      );
       assert.deepEqual(nestedResult!.report.phases, []);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects cross-directory nesting instead of permitting a queue cycle', async () => {
+    const firstRoot = makeConversation();
+    const secondRoot = makeConversation();
+    try {
+      let nestedResult: Awaited<ReturnType<typeof runCompressionBeforeCompletion>>;
+      const outer = await runCompressionBeforeCompletion({
+        compression: { directory: firstRoot, threshold: 10_000 },
+        completion: async () => {
+          nestedResult = await runCompressionBeforeCompletion({
+            compression: { directory: secondRoot, threshold: 10_000 },
+            completion: async () => 'unreachable',
+          });
+          return 'outer-completed';
+        },
+      });
+      assert.equal(outer.ok, true);
+      assert.equal(nestedResult!.ok, false);
+      assert.equal(nestedResult!.report.error?.code, 'LIFECYCLE_LOCKED');
+      assert.equal(nestedResult!.report.error?.retryable, false);
+      assert.deepEqual(nestedResult!.report.phases, []);
+    } finally {
+      fs.rmSync(firstRoot, { recursive: true, force: true });
+      fs.rmSync(secondRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('allows detached descendants after their ancestor invocation is inactive', async () => {
+    const root = makeConversation();
+    try {
+      let detached!: Promise<
+        Awaited<ReturnType<typeof runCompressionBeforeCompletion>>
+      >;
+      const outer = await runCompressionBeforeCompletion({
+        compression: { directory: root, threshold: 10_000 },
+        completion: async () => {
+          detached = new Promise((resolve) => {
+            setTimeout(() => {
+              void runCompressionBeforeCompletion({
+                compression: { directory: root, threshold: 10_000 },
+                completion: async () => 'detached-completed',
+              }).then(resolve);
+            }, 0);
+          });
+          return 'outer-completed';
+        },
+      });
+      assert.equal(outer.ok, true);
+      const detachedResult = await detached;
+      assert.equal(detachedResult.ok, true);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -344,6 +402,96 @@ describe('compression orchestrator v2 boundary', () => {
       assert.equal(secondResult.report.decision?.triggerTokens, 10_000);
       assert.equal(secondResult.compression.budget.triggerTokens, 10_000);
       assert.equal(secondResult.report.commit.state, 'skipped');
+    } finally {
+      releaseFirst?.();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('snapshots a caller-owned tokenizer before queueing', async () => {
+    const root = makeConversation();
+    let releaseFirst!: () => void;
+    let firstStarted!: () => void;
+    const started = new Promise<void>((resolve) => (firstStarted = resolve));
+    const gate = new Promise<void>((resolve) => (releaseFirst = resolve));
+    const tokenizer = {
+      id: 'mutable-tokenizer',
+      model: 'fixture',
+      kind: 'exact' as const,
+      messageOverheadTokens: 0,
+      countText: (_content: string) => 1,
+    };
+    try {
+      const first = runCompressionBeforeCompletion({
+        compression: { directory: root, threshold: 10_000 },
+        completion: async () => {
+          firstStarted();
+          await gate;
+          return 1;
+        },
+      });
+      await started;
+      const second = runCompressionBeforeCompletion({
+        compression: { directory: root, threshold: 100, tokenizer },
+        completion: async () => 2,
+      });
+      tokenizer.id = 'mutated-tokenizer';
+      tokenizer.messageOverheadTokens = 1_000;
+      tokenizer.countText = () => 100_000;
+      releaseFirst();
+      const [, secondResult] = await Promise.all([first, second]);
+      assert.equal(secondResult.ok, true);
+      if (!secondResult.ok) return;
+      assert.equal(secondResult.report.decision?.action, 'skip');
+      assert.equal(secondResult.compression.budget.tokenizer.id, 'mutable-tokenizer');
+      assert.equal(secondResult.compression.tokensBefore, 1);
+    } finally {
+      releaseFirst?.();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('snapshots a caller-owned semantic provider before queueing', async () => {
+    const root = makeConversation();
+    let releaseFirst!: () => void;
+    let firstStarted!: () => void;
+    const started = new Promise<void>((resolve) => (firstStarted = resolve));
+    const gate = new Promise<void>((resolve) => (releaseFirst = resolve));
+    let originalCalls = 0;
+    const provider = {
+      id: 'mutable-provider',
+      summarize: async () => {
+        originalCalls += 1;
+        return semanticDocument(1);
+      },
+    };
+    try {
+      const first = runCompressionBeforeCompletion({
+        compression: { directory: root, threshold: 10_000 },
+        completion: async () => {
+          firstStarted();
+          await gate;
+          return 1;
+        },
+      });
+      await started;
+      const second = runCompressionBeforeCompletion({
+        compression: {
+          directory: root,
+          threshold: 0,
+          keepRecent: 0,
+          summary: { kind: 'semantic', provider },
+        },
+        completion: async () => 2,
+      });
+      provider.id = 'mutated-provider';
+      provider.summarize = async () => {
+        throw new Error('mutated provider must not run');
+      };
+      releaseFirst();
+      const [, secondResult] = await Promise.all([first, second]);
+      assert.equal(secondResult.ok, true);
+      assert.equal(originalCalls, 1);
     } finally {
       releaseFirst?.();
       fs.rmSync(root, { recursive: true, force: true });
