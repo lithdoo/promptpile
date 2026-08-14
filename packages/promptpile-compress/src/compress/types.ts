@@ -187,32 +187,60 @@ export type LifecycleErrorCode =
 
 export interface OperationPhaseReport {
   phase:
-    | 'estimate_plan'
     | 'acquire_exclusive'
-    | 'compress'
+    | 'maintain_context'
     | 'release_exclusive'
     | 'completion';
   status: 'completed' | 'failed' | 'skipped';
   durationMs: number;
 }
 
+interface CompressionDecisionBase {
+  liveTokens: number;
+  triggerTokens: number;
+}
+
+export type CompressionDecisionReport =
+  | (CompressionDecisionBase & {
+      liveState: 'healthy_plain';
+      triggerReached: boolean;
+      action: 'skip';
+      reason: 'no_turns_to_compress';
+    })
+  | (CompressionDecisionBase & {
+      liveState: 'healthy_plain' | 'healthy_compacted';
+      triggerReached: false;
+      action: 'skip';
+      reason: 'below_threshold';
+    })
+  | (CompressionDecisionBase & {
+      liveState: 'healthy_plain';
+      triggerReached: true;
+      action: 'evaluate_current';
+    })
+  | (CompressionDecisionBase & {
+      liveState: 'healthy_compacted';
+      triggerReached: true;
+      action: 'restore_then_evaluate';
+    });
+
+export type CompressionCommitReport =
+  | { state: 'not_started' }
+  | { state: 'skipped' }
+  | { state: 'incomplete'; summaryIdx: number }
+  | { state: 'committed'; summaryIdx: number };
+
 export interface CompressionOperationReport {
-  version: 1;
+  version: 2;
   operation: 'compress-before-completion';
   status: 'completed' | 'failed';
   phases: OperationPhaseReport[];
-  plan?: {
-    outcome: 'compressed' | 'below_threshold' | 'no_turns_to_compress';
-    selection: CompressResult['selection'];
-    budget: ContextBudgetReport;
-  };
+  decision?: CompressionDecisionReport;
   recoveryActions: string[];
-  selection: CompressResult['selection'];
+  archivesRestored: number;
+  selection?: CompressResult['selection'];
   budget?: ContextBudgetReport;
-  commit: {
-    state: 'not_started' | 'committed' | 'skipped';
-    summaryIdx?: number;
-  };
+  commit: CompressionCommitReport;
   error?: {
     code: LifecycleErrorCode;
     message: string;

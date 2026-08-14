@@ -84,7 +84,7 @@
 - v1 schema 覆盖 goal、stable facts、constraints、decisions、important tool findings、completed/unresolved work、failed approaches 与 next actions；
 - 规范化输入保留 role、idx、message/calls/result/extra 原文及输入/输出预算；
 - 完整结构、非空来源、archived idx、provider timeout/error 与输出预算均在 staging 前校验；
-- dry-run 与 orchestrator estimate plan 不调用 provider，实际 compress phase 每次只生成一次 semantic summary；
+- manual dry-run 不调用 provider；automatic lifecycle 不再生成 estimate plan，只有 original-source evaluation 会调用一次 semantic provider；
 - `fixtures/semantic-summary-v1/` 提供 deterministic provider output 与人工可复核质量样本；
 - regression 覆盖成功 compact context、异常/超时/无效/超预算零 mutation，以及 semantic compress → restore byte-for-byte 精确还原。
 
@@ -103,8 +103,8 @@
 
 完成结果：
 
-- `runCompressionBeforeCompletion` 按 resolved directory 串行 plan → acquire → compress → release → completion；测试验证下一次 lifecycle phase 不与 active completion 重叠；
-- `CompressionOperationReport` 覆盖 phase、recovery actions、selection、budget、commit state 与稳定 error code，并验证不泄露 conversation/provider 原始内容；
+- `runCompressionBeforeCompletion` 按 resolved directory 串行 prepare → acquire → inspect/live decision → optional restore/source evaluation → release → completion；测试验证 compact steady state 与 active completion 边界；
+- `CompressionOperationReport` v2 覆盖 authoritative decision、phase、recovery actions、optional source selection、budget、fresh commit fact 与稳定 error code，并验证不泄露 conversation/provider 原始内容；
 - `promptpile-compress-grep-search` 成为 active workspace，production reader 仅依据公开协议实现 discovery/read-turn，architecture guard 禁止 implementation dependency；
 - producer 公共 API → 独立 consumer 的 integration test 验证 message/calls/result mapping 以及读取前后 byte-for-byte 不变；
 - 新增 Node 18/22 × Ubuntu/Windows filesystem matrix，Pages/root gates 同步包含 consumer；发布质量门记录命令、平台和兼容策略；

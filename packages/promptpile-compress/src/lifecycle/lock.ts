@@ -20,7 +20,7 @@ interface LifecycleLockMetadata {
   createdAt: string;
 }
 
-interface LifecycleLock {
+export interface DirectoryLifecycleLock {
   name: string;
   lockPath: string;
   metadata: LifecycleLockMetadata;
@@ -81,7 +81,7 @@ const isLocalProcessAlive = (pid: number): boolean => {
   }
 };
 
-const isRecoverableStaleLock = (lock: LifecycleLock): boolean =>
+const isRecoverableStaleLock = (lock: DirectoryLifecycleLock): boolean =>
   !lock.legacy &&
   lock.metadata.hostname === os.hostname() &&
   !isLocalProcessAlive(lock.metadata.pid);
@@ -105,7 +105,7 @@ const uniqueLockName = (metadata: LifecycleLockMetadata): string => {
 const publishLock = async (
   directory: string,
   operation: LifecycleOperation
-): Promise<LifecycleLock> => {
+): Promise<DirectoryLifecycleLock> => {
   const metadata: LifecycleLockMetadata = {
     version: 1,
     ownerId: randomUUID(),
@@ -144,9 +144,9 @@ const publishLock = async (
   }
 };
 
-const scanLocks = async (directory: string): Promise<LifecycleLock[]> => {
+const scanLocks = async (directory: string): Promise<DirectoryLifecycleLock[]> => {
   const entries = await fs.readdir(directory, { withFileTypes: true });
-  const locks: LifecycleLock[] = [];
+  const locks: DirectoryLifecycleLock[] = [];
   for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
     if (!isLifecycleLockFileName(entry.name)) continue;
     const lockPath = path.join(directory, entry.name);
@@ -173,7 +173,7 @@ const scanLocks = async (directory: string): Promise<LifecycleLock[]> => {
   return locks;
 };
 
-const removeExactStaleLock = async (lock: LifecycleLock): Promise<void> => {
+const removeExactStaleLock = async (lock: DirectoryLifecycleLock): Promise<void> => {
   await fs.unlink(lock.lockPath).catch((error) => {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
   });
@@ -182,8 +182,8 @@ const removeExactStaleLock = async (lock: LifecycleLock): Promise<void> => {
 /** Delete exact immutable stale paths, then decide only from a fresh scan. */
 const findBlockersAfterCleanup = async (
   directory: string,
-  own: LifecycleLock
-): Promise<LifecycleLock[]> => {
+  own: DirectoryLifecycleLock
+): Promise<DirectoryLifecycleLock[]> => {
   for (let pass = 0; pass < MAX_ACQUIRE_ATTEMPTS; pass += 1) {
     const locks = await scanLocks(directory);
     if (!locks.some((lock) => lock.lockPath === own.lockPath)) {
@@ -201,7 +201,9 @@ const findBlockersAfterCleanup = async (
   throw new Error('lifecycle stale lock cleanup 无法收敛，拒绝获取锁');
 };
 
-const releaseLock = async (lock: LifecycleLock): Promise<void> => {
+export const releaseDirectoryLifecycleLock = async (
+  lock: DirectoryLifecycleLock
+): Promise<void> => {
   const current = await readLockMetadata(lock.lockPath);
   if (current === null) return;
   if (current.ownerId !== lock.metadata.ownerId) {
@@ -218,8 +220,8 @@ const waitForRetry = async (attempt: number): Promise<void> => {
 const acquireLock = async (
   directory: string,
   operation: LifecycleOperation
-): Promise<LifecycleLock> => {
-  let lastBlocker: LifecycleLock | undefined;
+): Promise<DirectoryLifecycleLock> => {
+  let lastBlocker: DirectoryLifecycleLock | undefined;
   for (let attempt = 0; attempt < MAX_ACQUIRE_ATTEMPTS; attempt += 1) {
     const own = await publishLock(directory, operation);
     try {
@@ -227,11 +229,11 @@ const acquireLock = async (
       if (blockers.length === 0) return own;
       lastBlocker = blockers[0];
     } catch (error) {
-      await releaseLock(own).catch(() => undefined);
+      await releaseDirectoryLifecycleLock(own).catch(() => undefined);
       throw error;
     }
 
-    await releaseLock(own);
+    await releaseDirectoryLifecycleLock(own);
     if (attempt + 1 < MAX_ACQUIRE_ATTEMPTS) {
       await waitForRetry(attempt);
     }
@@ -260,16 +262,21 @@ export const removeDirectoryLifecycleLockFiles = async (
   );
 };
 
+export const acquireDirectoryLifecycleLock = async (
+  directory: string,
+  operation: LifecycleOperation
+): Promise<DirectoryLifecycleLock> => acquireLock(path.resolve(directory), operation);
+
 export const withDirectoryLifecycleLock = async <T>(
   directory: string,
   operation: LifecycleOperation,
   callback: () => Promise<T>
 ): Promise<T> => {
   const resolved = path.resolve(directory);
-  const lock = await acquireLock(resolved, operation);
+  const lock = await acquireDirectoryLifecycleLock(resolved, operation);
   try {
     return await callback();
   } finally {
-    await releaseLock(lock);
+    await releaseDirectoryLifecycleLock(lock);
   }
 };

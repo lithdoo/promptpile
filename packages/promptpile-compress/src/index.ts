@@ -256,6 +256,8 @@ export type {
   CompressSkipReason,
   CompressionLifecycleOptions,
   CompressionLifecycleResult,
+  CompressionCommitReport,
+  CompressionDecisionReport,
   CompressionOperationReport,
   ContextBudgetOptions,
   ContextBudgetReport,

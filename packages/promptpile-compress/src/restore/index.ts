@@ -1,39 +1,18 @@
 import { constants } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import {
-  findArchiveDirs,
-  findStagingDir,
-  listMessageFiles,
-} from './scanner';
 import { withDirectoryLifecycleLock } from '../lifecycle/lock';
+import { archiveStateInvalid } from '../lifecycle/errors';
 import { runLifecycleMutation } from '../lifecycle/mutation';
+import { inspectArchiveSet, inspectStagingState } from './inspection';
+import { listMessageFiles } from './scanner';
+import type { PreparedArchive } from './inspection';
 import type {
-  ArchiveDir,
-  CompressionMetadata,
   RecoveryAction,
   RecoveryOptions,
   RestoreOptions,
   RestoreResult,
 } from './types';
-
-interface PreparedArchive {
-  archive: ArchiveDir;
-  metadata: CompressionMetadata;
-  messageFiles: string[];
-}
-
-const pathExists = async (targetPath: string): Promise<boolean> => {
-  try {
-    await fs.access(targetPath);
-    return true;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return false;
-    }
-    throw error;
-  }
-};
 
 const assertDirectory = async (directory: string): Promise<string> => {
   const resolved = path.resolve(directory);
@@ -46,171 +25,52 @@ const assertDirectory = async (directory: string): Promise<string> => {
     }
     throw error;
   }
-  if (!stat.isDirectory()) {
-    throw new Error(`路径不是目录: ${resolved}`);
-  }
+  if (!stat.isDirectory()) throw new Error(`路径不是目录: ${resolved}`);
   await fs.access(resolved, constants.R_OK | constants.W_OK);
   return resolved;
 };
 
-const readCompressionMetadata = async (
-  archive: ArchiveDir
-): Promise<CompressionMetadata> => {
-  const metadataPath = path.join(archive.path, 'compression.json');
-  let parsed: unknown;
-
-  try {
-    parsed = JSON.parse(await fs.readFile(metadataPath, 'utf8'));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      throw new Error(`缺少 compression.json: ${metadataPath}`);
-    }
-    throw new Error(
-      `无法读取 compression.json: ${metadataPath}: ${
-        error instanceof Error ? error.message : String(error)
-      }`
-    );
-  }
-
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error(`compression.json 必须是对象: ${metadataPath}`);
-  }
-  const record = parsed as Record<string, unknown>;
-  if (record.version !== 1) {
-    throw new Error(`不支持的 compression.json version: ${metadataPath}`);
-  }
-  if (!Array.isArray(record.archivedTurnIndices) || record.archivedTurnIndices.length === 0) {
-    throw new Error(`archivedTurnIndices 必须是非空数组: ${metadataPath}`);
-  }
-
-  const indices = record.archivedTurnIndices;
-  if (
-    !indices.every(
-      (value): value is number => Number.isInteger(value) && (value as number) >= 0
-    )
-  ) {
-    throw new Error(`archivedTurnIndices 必须只包含非负整数: ${metadataPath}`);
-  }
-  if (new Set(indices).size !== indices.length) {
-    throw new Error(`archivedTurnIndices 不能包含重复 idx: ${metadataPath}`);
-  }
-  const archivedTurnIndices = indices as number[];
-  if (Math.max(...archivedTurnIndices) !== archive.idx) {
-    throw new Error(
-      `归档目录 idx 与 archivedTurnIndices 不一致: ${archive.name}`
-    );
-  }
-
-  return {
-    version: 1,
-    archivedTurnIndices: [...archivedTurnIndices],
-  };
-};
-
-const assertNoTargetConflicts = async (
-  directory: string,
-  fileNames: Iterable<string>
-): Promise<void> => {
-  const conflicts: string[] = [];
-  for (const fileName of fileNames) {
-    if (await pathExists(path.join(directory, fileName))) {
-      conflicts.push(fileName);
-    }
-  }
-  if (conflicts.length > 0) {
-    throw new Error(`目标文件已存在，拒绝覆盖: ${conflicts.join(', ')}`);
-  }
-};
-
-const prepareArchives = async (directory: string): Promise<PreparedArchive[]> => {
-  const archives = await findArchiveDirs(directory);
-  const prepared = await Promise.all(
-    archives.map(async (archive) => ({
-      archive,
-      metadata: await readCompressionMetadata(archive),
-      messageFiles: await listMessageFiles(archive.path),
-    }))
-  );
-
-  const seenIndices = new Set<number>();
-  const duplicateIndices = new Set<number>();
-  const seenFiles = new Set<string>();
-  const duplicateFiles = new Set<string>();
-
-  for (const item of prepared) {
-    for (const idx of item.metadata.archivedTurnIndices) {
-      if (seenIndices.has(idx)) {
-        duplicateIndices.add(idx);
-      }
-      seenIndices.add(idx);
-    }
-    for (const fileName of item.messageFiles) {
-      if (seenFiles.has(fileName)) {
-        duplicateFiles.add(fileName);
-      }
-      seenFiles.add(fileName);
-    }
-  }
-
-  if (duplicateIndices.size > 0) {
-    throw new Error(
-      `多个归档包含重复 idx: ${[...duplicateIndices].sort((a, b) => a - b).join(', ')}`
-    );
-  }
-  if (duplicateFiles.size > 0) {
-    throw new Error(
-      `多个归档包含重复消息文件: ${[...duplicateFiles].sort().join(', ')}`
-    );
-  }
-
-  await assertNoTargetConflicts(directory, seenFiles);
-  return prepared;
-};
-
 export const recoverWithLockHeld = async (
-  resolved: string,
+  directory: string,
   options: RecoveryOptions = {}
 ): Promise<RecoveryAction[]> => {
-  const stagingPath = await findStagingDir(resolved);
-  if (!stagingPath) {
-    return [];
+  const staging = await inspectStagingState(directory);
+  if (staging.state === 'absent') return [];
+  if (staging.state === 'invalid' && staging.reason === 'staging_path_invalid') {
+    throw archiveStateInvalid(staging.reason);
   }
 
-  const archives = await findArchiveDirs(resolved);
-  if (archives.length > 0) {
-    throw new Error('staging 与 archive 同时存在，状态有歧义，拒绝自动恢复');
+  const archiveSet = await inspectArchiveSet(directory);
+  if (archiveSet.state === 'invalid') throw archiveStateInvalid(archiveSet.reason);
+  if (archiveSet.state === 'valid') {
+    throw archiveStateInvalid('staging_archive_conflict');
   }
+  if (staging.state === 'invalid') throw archiveStateInvalid(staging.reason);
 
-  const messageFiles = await listMessageFiles(stagingPath);
-  await assertNoTargetConflicts(resolved, messageFiles);
   const actions: RecoveryAction[] =
-    messageFiles.length > 0
-      ? messageFiles.map((fileName) => ({
-          kind: 'rollback_staging' as const,
-          detail: fileName,
-        }))
+    staging.messageFiles.length > 0
+      ? staging.messageFiles.map((detail) => ({ kind: 'rollback_staging', detail }))
       : [{ kind: 'rollback_staging', detail: '清理空 staging' }];
+  if (options.dryRun) return actions;
 
-  if (options.dryRun) {
-    return actions;
-  }
-
-  for (const fileName of messageFiles) {
-    const sourcePath = path.join(stagingPath, fileName);
-    const targetPath = path.join(resolved, fileName);
+  for (const fileName of staging.messageFiles) {
+    const sourcePath = path.join(staging.path, fileName);
+    const targetPath = path.join(directory, fileName);
     await runLifecycleMutation(
       options.mutationHook,
       { point: 'rollback_staging_file', sourcePath, targetPath },
       () => fs.rename(sourcePath, targetPath)
     );
   }
-  if ((await listMessageFiles(stagingPath)).length > 0) {
-    throw new Error(`staging 中仍有消息文件，拒绝删除: ${stagingPath}`);
+  const afterMove = await inspectStagingState(directory);
+  if (afterMove.state === 'invalid') throw archiveStateInvalid(afterMove.reason);
+  if (afterMove.state === 'recoverable' && afterMove.messageFiles.length > 0) {
+    throw archiveStateInvalid('recovery_did_not_normalize');
   }
   await runLifecycleMutation(
     options.mutationHook,
-    { point: 'remove_staging', targetPath: stagingPath },
-    () => fs.rm(stagingPath, { recursive: true })
+    { point: 'remove_staging', targetPath: staging.path },
+    () => fs.rm(staging.path, { recursive: true })
   );
   return actions;
 };
@@ -225,39 +85,16 @@ export const recover = async (
   );
 };
 
-export const restoreArchivedTurnsWithLockHeld = async (
+const restorePreparedArchives = async (
   options: RestoreOptions,
-  directory: string
+  directory: string,
+  prepared: PreparedArchive[],
+  recoveryActions: RecoveryAction[] = []
 ): Promise<RestoreResult> => {
-  const recoveryActions = await recoverWithLockHeld(directory, {
-    dryRun: options.dryRun,
-    mutationHook: options.mutationHook,
-  });
-
-  if (options.dryRun && recoveryActions.length > 0) {
-    return {
-      restored: false,
-      skipReason: 'dry_run',
-      recoveryActions,
-    };
-  }
-
-  const prepared = await prepareArchives(directory);
-  if (prepared.length === 0) {
-    return {
-      restored: false,
-      skipReason: recoveryActions.length > 0 ? 'rolled_back_staging' : 'no_archive_found',
-      recoveryActions,
-    };
-  }
-
   const allIndices = new Set<number>();
   for (const item of prepared) {
-    for (const idx of item.metadata.archivedTurnIndices) {
-      allIndices.add(idx);
-    }
+    for (const idx of item.metadata.archivedTurnIndices) allIndices.add(idx);
   }
-
   if (options.dryRun) {
     return {
       restored: false,
@@ -277,14 +114,11 @@ export const restoreArchivedTurnsWithLockHeld = async (
         try {
           await fs.unlink(summaryPath);
         } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-            throw error;
-          }
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
         }
       }
     );
   }
-
   for (const item of prepared) {
     for (const fileName of item.messageFiles) {
       const sourcePath = path.join(item.archive.path, fileName);
@@ -296,10 +130,9 @@ export const restoreArchivedTurnsWithLockHeld = async (
       );
     }
   }
-
   for (const item of prepared) {
     if ((await listMessageFiles(item.archive.path)).length > 0) {
-      throw new Error(`归档中仍有消息文件，拒绝删除: ${item.archive.path}`);
+      throw archiveStateInvalid('archive_target_conflict');
     }
   }
   for (const item of prepared) {
@@ -309,7 +142,6 @@ export const restoreArchivedTurnsWithLockHeld = async (
       () => fs.rm(item.archive.path, { recursive: true })
     );
   }
-
   return {
     restored: true,
     turnsRestored: allIndices.size,
@@ -320,13 +152,34 @@ export const restoreArchivedTurnsWithLockHeld = async (
   };
 };
 
+/** Restore only. Callers own recovery policy before entering this function. */
+export const restoreArchivedTurnsWithLockHeld = async (
+  options: RestoreOptions,
+  directory: string
+): Promise<RestoreResult> => {
+  const inspection = await inspectArchiveSet(directory);
+  if (inspection.state === 'invalid') throw archiveStateInvalid(inspection.reason);
+  if (inspection.state === 'absent') {
+    return { restored: false, skipReason: 'no_archive_found', recoveryActions: [] };
+  }
+  return restorePreparedArchives(options, directory, inspection.archives);
+};
+
 export const restoreArchivedTurns = async (
   options: RestoreOptions
 ): Promise<RestoreResult> => {
   const directory = await assertDirectory(options.directory);
-  return withDirectoryLifecycleLock(directory, 'restore', () =>
-    restoreArchivedTurnsWithLockHeld(options, directory)
-  );
+  return withDirectoryLifecycleLock(directory, 'restore', async () => {
+    const recoveryActions = await recoverWithLockHeld(directory, {
+      dryRun: options.dryRun,
+      mutationHook: options.mutationHook,
+    });
+    if (options.dryRun && recoveryActions.length > 0) {
+      return { restored: false, skipReason: 'dry_run', recoveryActions };
+    }
+    const result = await restoreArchivedTurnsWithLockHeld(options, directory);
+    return { ...result, recoveryActions };
+  });
 };
 
 export type { RecoveryOptions, RestoreOptions, RestoreResult } from './types';

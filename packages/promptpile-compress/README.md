@@ -52,7 +52,20 @@ const {
 The default archive-pointer summary is deterministic and offline. Semantic
 summaries require an explicitly injected provider. Automated callers should
 use `runCompressionBeforeCompletion()` so compression completes and releases
-its lifecycle lock before the completion callback starts.
+its lifecycle lock before the completion callback starts. Its trigger decision
+is made from the authoritative live Conversation while holding that lock. A
+healthy compact Conversation below the trigger is left byte-for-byte unchanged:
+no archive restore, provider call, or recompression occurs.
+
+### Beta migration: operation report v2
+
+`runCompressionBeforeCompletion()` now returns `CompressionOperationReport`
+version 2. Callers must remove `plan`/`estimate_plan`, rename the `compress`
+phase to `maintain_context`, consume the discriminated `decision` and `commit`
+unions, allow `selection` to be absent for automatic gate skips, and read the
+required `archivesRestored` field. Archive Protocol v1, `compression.json` v1,
+manual `compressDirectory()` restore-first behavior, and manual dry-run behavior
+are unchanged.
 
 See the
 [package documentation](https://github.com/lithdoo/promptpile/tree/main/packages/promptpile-compress)

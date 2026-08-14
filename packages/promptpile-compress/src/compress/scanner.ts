@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { lifecycleError } from '../lifecycle/errors';
 import {
   findArchiveDirs,
   findStagingDir,
@@ -186,8 +187,10 @@ export const assertConversationGeneration = async (
 ): Promise<void> => {
   const actualGeneration = await captureConversationGeneration(directory);
   if (actualGeneration !== expectedGeneration) {
-    throw new Error(
-      'conversation 在 compression 规划期间发生变化，拒绝提交；请在 exclusive lifecycle phase 重试'
+    throw lifecycleError(
+      'CONVERSATION_CHANGED',
+      'conversation 在 compression 规划期间发生变化，拒绝提交；请在 exclusive lifecycle phase 重试',
+      true
     );
   }
 };

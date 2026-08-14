@@ -155,9 +155,13 @@ describe('Archive Protocol v1 conformance corpus', () => {
             assert.equal(result.skipReason, 'dry_run');
             assert.equal(result.turnsRestored, fixture.restore.turnCount);
           } else {
+            const expectedReason =
+              fixture.name === 'valid-staging-ignored'
+                ? 'staging_archive_conflict'
+                : 'archive_metadata_invalid';
             await assert.rejects(
               restoreArchivedTurns({ directory: root, dryRun: true }),
-              new RegExp(fixture.restore.error ?? '')
+              new RegExp(expectedReason)
             );
           }
 

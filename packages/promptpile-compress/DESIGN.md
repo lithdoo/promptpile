@@ -5,7 +5,7 @@
 > 稳定程度：Beta
 > 主要职责：conversation compression / archive commit / restore / recovery  
 > 上层契约：`../../doc/15-contracts/conversation-protocol-v1.md`、`../../doc/15-contracts/archive-protocol-v1.md`  
-> 最近复核：2026-08-06
+> 最近复核：2026-08-14
 
 ## 1. 定位
 
@@ -30,9 +30,11 @@ src/
 ├── index.ts
 ├── lifecycle/
 │   ├── lock.ts
+│   ├── errors.ts
 │   └── mutation.ts
 ├── compress/
 │   ├── index.ts
+│   ├── live-state.ts
 │   ├── budget.ts
 │   ├── scanner.ts
 │   ├── strategy.ts
@@ -41,6 +43,7 @@ src/
 │   └── types.ts
 └── restore/
     ├── index.ts
+    ├── inspection.ts
     ├── scanner.ts
     └── types.ts
 ```
@@ -72,7 +75,9 @@ Archive 对外格式以 [Archive Protocol v1](../../doc/15-contracts/archive-pro
 
 Restore 在修改文件前校验 manifest、duplicate idx/file 与目标冲突；正式执行时先删除对应 summary，再逐个恢复 archive 中的 conversation files，最后清理 archive。
 
-`recover()` 处理残留 staging。已有 archive 时重新 compress 会先 restore 完整历史，再从完整 conversation 重新计算，避免层层叠加 summary/archive。
+`recover()` 处理残留 staging。手动 `compressDirectory()` 保持 recover → restore → source evaluation 的 restore-first 语义。自动 `runCompressionBeforeCompletion()` 则先在 lock 内检查 authoritative lifecycle state：recovery 只执行一次规定的归一化动作并重新检查；healthy archive 只有在 compact live Conversation 达到 trigger 后才会 restore。Restore 后的压缩选择独立基于完整 original Conversation 重新计算，semantic provider 不会看到旧 summary。
+
+`restore/inspection.ts` 是 staging/archive mutation precondition 的唯一事实来源。reserved staging、archive-shaped path 与 matching summary 使用不跟随 symlink 的类型语义；malformed path、metadata/set contradiction、rollback/restore target conflict 均 fail closed。正常 lifecycle terminal state 只有 `healthy_plain` 与 `healthy_compacted`，失败后的磁盘状态必须由下一次 inspection 重新分类，不能从 operation report 反推。
 
 ### 4.1 Writer coordination
 
@@ -80,7 +85,7 @@ Compress、restore 与 recover 使用 conversation 顶层 `.promptpile-compress.
 
 同一主机上 owner PID 已不存在的有效 lock 可以自动恢复。跨主机 lock、仍存活的 PID 或损坏 metadata 均 fail closed，不按时间猜测并删除。Lock 是 package-private coordination artifact，read-only Archive Protocol consumer 必须忽略。
 
-Lock 不能阻止不遵守该约定的 writer。Compress 在 scan 前后以及 summary 后计算 SHA-256 conversation generation，覆盖 live message 内容、archive 和 staging；generation 变化时在创建 staging 前拒绝提交。校验与首次 mutation 之间仍不存在跨进程原子事务，因此 orchestrator 必须保证 active completion 与 lifecycle mutation 不并行。
+Lock 不能阻止不遵守该约定的 writer。Automatic lifecycle 获取 lock 后才进行 authoritative inspection、live token scan 与 trigger decision，不存在 pre-lock automatic plan。Original-source engine 在 scan 前后以及 summary 后计算 SHA-256 conversation generation，覆盖 live message、archive 和 staging；generation 变化时在创建 staging 前拒绝提交。校验与首次 mutation 之间仍不存在跨进程原子事务，因此 orchestrator 必须保证 active completion 与 lifecycle mutation 不并行。
 
 ### 4.2 Mutation 与 durability 边界
 
@@ -90,7 +95,7 @@ Atomic file write 使用同目录唯一临时文件，写入后先 sync file 再
 
 ### 4.3 Dry-run
 
-普通 dry-run 直接计算 selection。存在 staging 或 archive 时，在 OS 临时目录中的隔离副本执行 recover → restore → selection 模拟，并在 `finally` 清理；目标 conversation 前后 byte-for-byte 不变。规划阶段不调用 summary provider，`summaryTokens` 使用 resolved summary output limit 作为保守上限，并以 `summaryTokenBasis: 'upper-bound'` 标识；selection、turn 统计和 `tokensBefore` 与同一状态下的随后执行一致，真实执行生成一次 summary 后以 `summaryTokenBasis: 'actual'` 报告实测值。
+手动 `compressDirectory({ dryRun: true })` 直接计算 selection。存在 staging 或 archive 时，在 OS 临时目录中的隔离副本执行 recover → restore → selection 模拟，并在 `finally` 清理；目标 conversation 前后 byte-for-byte 不变。规划阶段不调用 summary provider，`summaryTokens` 使用 resolved summary output limit 作为保守上限，并以 `summaryTokenBasis: 'upper-bound'` 标识。Automatic lifecycle 不调用 manual dry-run，也不生成 pre-lock plan。
 
 ### 4.4 I/O 与性能基准
 
@@ -98,9 +103,11 @@ Live artifacts 在 scan 中并行读取一次并缓存，tokenizer 与 semantic 
 
 ### 4.5 Orchestrator boundary 与 operation report
 
-自动化调用使用 `runCompressionBeforeCompletion()`：同一 resolved directory 的调用先进入进程内队列，执行 provider-free read-only estimate/plan，再获取 filesystem lifecycle lock、重新校验并压缩，释放 lock 后才调用 completion callback。Semantic summary provider 只在实际 compress phase 调用一次。队列覆盖 callback 完成，因此通过该入口的下一次 lifecycle phase 不会与 active completion 重叠。跨进程 filesystem mutation 仍由 lock 与 generation precondition 防护；不采用此 API 的外部 writer 仍不在进程内队列保证范围内。
+自动化调用使用 `runCompressionBeforeCompletion()`，唯一 authority chain 是：prepare request → per-directory queue → acquire lock → inspect → optional one-shot recovery → healthy live decision → optional archive restore → original-source engine → release → completion。Compact live state 未达到 trigger 时只承担 coordination 成本，不 restore archive、不调用 semantic provider，也不修改 Conversation/archive。队列覆盖 callback 完成，因此同一入口的下一次 lifecycle phase 不会与 active completion 重叠。
 
-`CompressionOperationReport` 固定记录 phase status/duration、recovery actions、archived/kept idx、budget、commit state、summary idx 与稳定错误码。报告不包含 message/tool result、semantic summary 正文或 provider 原始错误文本。`compressDirectory` / `restoreArchivedTurns` 保留为手动 lifecycle API，不应被 orchestrator 与 active completion 并发调用。
+`CompressionOperationReport` 当前固定为 v2。Phase 为 `acquire_exclusive`、`maintain_context`、`release_exclusive`、`completion`；request-preparation failure 的 phases 为空，lifecycle 开始后未执行 phase 显式记为 `skipped`。`decision` 是 lock-held live fact 的 discriminated union；automatic gate skip 时 report `selection` 缺省，source engine 执行后才记录 original-source selection。`commit` 区分 `not_started`、`skipped`、`incomplete(summaryIdx)` 与 `committed(summaryIdx)`；archive publication 后的失败不会伪装成 skip。Maintain 与 release 同时失败时 maintain error 保持 primary，phase 仍保留 release failure fact。
+
+Report 只描述已向 builder 确认的 invocation facts，不是 mutation journal，也不是后续 lifecycle state authority。报告不包含 message/tool result、semantic summary 正文或 provider 原始错误文本。`compressDirectory` / `restoreArchivedTurns` 继续作为手动 lifecycle API。
 
 ## 5. 当前能力边界
 
@@ -118,7 +125,10 @@ Live artifacts 在 scan 中并行读取一次并缓存，tokenizer 与 semantic 
 - deterministic mutation fault injection 与 retry coverage；
 - compression manifest；
 - restore / recovery / recompress；
-- staging/archive-aware dry-run planning；
+- staging/archive-aware manual dry-run planning；
+- strict authoritative lifecycle inspection 与 one-shot recovery；
+- lock-held live trigger、original-source recompression 与 compact steady-state fast path；
+- fresh commit progress 与 Operation Report v2；
 - orchestrator lifecycle queue 与脱敏 structured operation report；
 - filesystem behavior tests；
 - Node 18/22 × Windows/Linux filesystem matrix；

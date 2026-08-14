@@ -3,19 +3,24 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {
-  findArchiveDirs,
-  findStagingDir,
-  STAGING_DIR,
-} from '../restore/scanner';
+import { findStagingDir, STAGING_DIR } from '../restore/scanner';
+import { inspectArchiveSet } from '../restore/inspection';
 import {
   recoverWithLockHeld,
   restoreArchivedTurnsWithLockHeld,
 } from '../restore';
 import {
+  acquireDirectoryLifecycleLock,
   removeDirectoryLifecycleLockFiles,
+  releaseDirectoryLifecycleLock,
   withDirectoryLifecycleLock,
 } from '../lifecycle/lock';
+import { archiveStateInvalid, lifecycleError } from '../lifecycle/errors';
+import {
+  inspectCompressionLifecycleState,
+  resolveCompressionRequest,
+} from './live-state';
+import type { CompressionLifecycleInspection } from './live-state';
 import {
   assertConversationGeneration,
   captureConversationGeneration,
@@ -37,6 +42,7 @@ import {
 import { createBudgetReport, resolveContextBudget } from './budget';
 import type {
   CompressionManifest,
+  CompressionDecisionReport,
   CompressionLifecycleOptions,
   CompressionLifecycleResult,
   CompressionOperationReport,
@@ -98,7 +104,9 @@ const classifyLifecycleError = (
   let retryable = false;
   if (taggedCode) {
     classified = taggedCode;
-    retryable = taggedCode === 'SUMMARY_PROVIDER_FAILED';
+    retryable =
+      (error as { retryable?: boolean } | undefined)?.retryable ??
+      taggedCode === 'SUMMARY_PROVIDER_FAILED';
   } else if (/lifecycle.*lock|生命周期.*锁|已被锁定/i.test(raw)) {
     classified = 'LIFECYCLE_LOCKED';
     retryable = true;
@@ -132,19 +140,6 @@ const classifyLifecycleError = (
   return { code: classified, message: safeMessages[classified], retryable };
 };
 
-const planOutcome = (
-  result: CompressResult
-): NonNullable<CompressionOperationReport['plan']>['outcome'] => {
-  if (result.dryRunPlan) return result.dryRunPlan.outcome;
-  if (
-    result.skipReason === 'below_threshold' ||
-    result.skipReason === 'no_turns_to_compress'
-  ) {
-    return result.skipReason;
-  }
-  return 'compressed';
-};
-
 const pathExists = async (targetPath: string): Promise<boolean> => {
   try {
     await fs.access(targetPath);
@@ -164,7 +159,7 @@ const assertDirectory = async (directory: string): Promise<string> => {
     stat = await fs.stat(resolved);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      throw new Error(`目录不存在: ${resolved}`);
+      throw lifecycleError('IO_ERROR', `目录不存在: ${resolved}`);
     }
     throw error;
   }
@@ -314,7 +309,8 @@ const prepareStaging = async (
 const commitStaging = async (
   directory: string,
   summaryIdx: number,
-  hook: LifecycleMutationHook | undefined
+  hook: LifecycleMutationHook | undefined,
+  progress: FreshCommitProgress
 ): Promise<string> => {
   const staging = path.join(directory, STAGING_DIR);
   const archivePath = path.join(directory, `[${summaryIdx}]system.md.archive`);
@@ -323,6 +319,8 @@ const commitStaging = async (
     { point: 'commit_archive', sourcePath: staging, targetPath: archivePath },
     async () => {
       await fs.rename(staging, archivePath);
+      progress.state = 'archive_published';
+      progress.summaryIdx = summaryIdx;
       await syncDirectory(directory);
     }
   );
@@ -333,8 +331,14 @@ const commitStaging = async (
     hook,
     'write_live_summary'
   );
+  progress.state = 'complete';
   return archivePath;
 };
+
+interface FreshCommitProgress {
+  state: 'not_started' | 'archive_published' | 'complete';
+  summaryIdx?: number;
+}
 
 const toPlannedOutcome = (
   result: CompressResult
@@ -405,10 +409,14 @@ const simulateLifecycleDryRun = async (
   }
 };
 
-const compressDirectoryWithLockHeld = async (
+const compressCurrentConversationWithLockHeld = async (
   options: CompressOptions,
   directory: string,
-  internal: { planOnly?: boolean } = {}
+  internal: {
+    planOnly?: boolean;
+    lifecycleDetails?: Pick<CompressResult, 'recoveryActions' | 'archivesRestored'>;
+    progress?: FreshCommitProgress;
+  } = {}
 ): Promise<CompressResult> => {
   const keepRecent = options.keepRecent ?? DEFAULT_KEEP_RECENT;
   const strategyKind = options.strategy ?? DEFAULT_STRATEGY;
@@ -422,32 +430,9 @@ const compressDirectoryWithLockHeld = async (
     throw new Error(`keepRecent 必须是非负整数: ${keepRecent}`);
   }
 
-  const recoveryActions = await recoverWithLockHeld(directory, {
-    dryRun,
-    mutationHook: options.mutationHook,
-  });
-
-  const archives = await findArchiveDirs(directory);
-  if (dryRun && (recoveryActions.length > 0 || archives.length > 0)) {
-    return simulateLifecycleDryRun(
-      options,
-      directory,
-      recoveryActions,
-      archives.length
-    );
-  }
-  if (archives.length > 0) {
-    await restoreArchivedTurnsWithLockHeld(
-      {
-        directory,
-        mutationHook: options.mutationHook,
-      },
-      directory
-    );
-  }
-  const lifecycleDetails = {
-    recoveryActions: recoveryActions.map((action) => action.detail),
-    archivesRestored: archives.length,
+  const lifecycleDetails = internal.lifecycleDetails ?? {
+    recoveryActions: [],
+    archivesRestored: 0,
   };
 
   const generation = await captureConversationGeneration(directory);
@@ -628,7 +613,8 @@ const compressDirectoryWithLockHeld = async (
   const archivePath = await commitStaging(
     directory,
     summaryIdx,
-    options.mutationHook
+    options.mutationHook,
+    internal.progress ?? { state: 'not_started' }
   );
 
   return {
@@ -649,6 +635,44 @@ const compressDirectoryWithLockHeld = async (
   };
 };
 
+const compressDirectoryWithLockHeld = async (
+  options: CompressOptions,
+  directory: string,
+  internal: { planOnly?: boolean } = {}
+): Promise<CompressResult> => {
+  const dryRun = options.dryRun === true;
+  const recoveryActions = await recoverWithLockHeld(directory, {
+    dryRun,
+    mutationHook: options.mutationHook,
+  });
+  const archiveSet = await inspectArchiveSet(directory);
+  if (archiveSet.state === 'invalid') throw archiveStateInvalid(archiveSet.reason);
+  const archivesToRestore = archiveSet.state === 'valid' ? archiveSet.archives.length : 0;
+  if (dryRun && (recoveryActions.length > 0 || archivesToRestore > 0)) {
+    return simulateLifecycleDryRun(
+      options,
+      directory,
+      recoveryActions,
+      archivesToRestore
+    );
+  }
+  let archivesRestored = 0;
+  if (archivesToRestore > 0) {
+    const restored = await restoreArchivedTurnsWithLockHeld(
+      { directory, mutationHook: options.mutationHook },
+      directory
+    );
+    archivesRestored = restored.archivesRestored ?? 0;
+  }
+  return compressCurrentConversationWithLockHeld(options, directory, {
+    planOnly: internal.planOnly,
+    lifecycleDetails: {
+      recoveryActions: recoveryActions.map((action) => action.detail),
+      archivesRestored,
+    },
+  });
+};
+
 export async function compressDirectory(
   options: CompressOptions
 ): Promise<CompressResult> {
@@ -658,176 +682,251 @@ export async function compressDirectory(
   );
 }
 
-/**
- * Orchestrator boundary: plan, compress under the filesystem lock, release it,
- * then start completion. Calls through this API are serialized per directory.
- */
+const automaticSkipResult = (
+  options: CompressOptions,
+  current: Extract<
+    CompressionLifecycleInspection,
+    { state: 'healthy_plain' | 'healthy_compacted' }
+  >,
+  reason: 'no_turns_to_compress' | 'below_threshold',
+  recoveryActions: string[],
+  archivesRestored: number
+): CompressResult => {
+  const tokenizer = options.tokenizer ?? heuristicTokenizer;
+  const budget = resolveContextBudget(options);
+  const empty = reason === 'no_turns_to_compress';
+  const tokens = empty ? 0 : current.live.tokens;
+  return {
+    compressed: false,
+    skipReason: reason,
+    turnsArchived: 0,
+    turnsKept: empty ? 0 : current.live.turns.length,
+    tokensBefore: tokens,
+    tokensAfter: tokens,
+    compressibleTokens: empty
+      ? 0
+      : estimateTotalTokens(current.live.turns.filter((turn) => !turn.isSystemTurn)),
+    budget: createBudgetReport(budget, tokenizer, tokens, tokens, 0),
+    recoveryActions,
+    archivesRestored,
+    selection: {
+      archivedTurnIndices: [],
+      keptTurnIndices: empty ? [] : current.live.turns.map((turn) => turn.idx),
+    },
+  };
+};
+
+const decisionFor = (
+  current: Extract<
+    CompressionLifecycleInspection,
+    { state: 'healthy_plain' | 'healthy_compacted' }
+  >
+): CompressionDecisionReport => {
+  const base = {
+    liveTokens: current.live.tokens,
+    triggerTokens: current.live.triggerTokens,
+  };
+  if (current.state === 'healthy_plain' && current.live.turns.length === 0) {
+    return {
+      ...base,
+      liveState: 'healthy_plain',
+      triggerReached: current.live.triggerReached,
+      action: 'skip',
+      reason: 'no_turns_to_compress',
+    };
+  }
+  if (!current.live.triggerReached) {
+    return {
+      ...base,
+      liveState: current.state,
+      triggerReached: false,
+      action: 'skip',
+      reason: 'below_threshold',
+    };
+  }
+  return current.state === 'healthy_plain'
+    ? { ...base, liveState: 'healthy_plain', triggerReached: true, action: 'evaluate_current' }
+    : {
+        ...base,
+        liveState: 'healthy_compacted',
+        triggerReached: true,
+        action: 'restore_then_evaluate',
+      };
+};
+
+const commitFact = (
+  progress: FreshCommitProgress,
+  lifecycleCompleted: boolean,
+  compression: CompressResult | undefined
+): CompressionOperationReport['commit'] => {
+  if (progress.state === 'archive_published') {
+    return { state: 'incomplete', summaryIdx: progress.summaryIdx! };
+  }
+  if (progress.state === 'complete') {
+    return { state: 'committed', summaryIdx: progress.summaryIdx! };
+  }
+  if (lifecycleCompleted && compression) return { state: 'skipped' };
+  return { state: 'not_started' };
+};
+
+/** Automatic lifecycle: coordinate first, then decide exclusively from lock-held state. */
 export async function runCompressionBeforeCompletion<T>(
   options: CompressionLifecycleOptions<T>
 ): Promise<CompressionLifecycleResult<T>> {
   let directory: string;
+  let resolvedRequest: ReturnType<typeof resolveCompressionRequest>;
   try {
     directory = await assertDirectory(options.compression.directory);
-  } catch {
+    resolvedRequest = resolveCompressionRequest(options.compression);
+  } catch (error) {
     return {
       ok: false,
       report: {
-        version: 1,
+        version: 2,
         operation: 'compress-before-completion',
         status: 'failed',
-        phases: [
-          { phase: 'estimate_plan', status: 'failed', durationMs: 0 },
-        ],
+        phases: [],
         recoveryActions: [],
-        selection: { archivedTurnIndices: [], keptTurnIndices: [] },
+        archivesRestored: 0,
         commit: { state: 'not_started' },
-        error: {
-          code: 'IO_ERROR',
-          message: 'The conversation directory is unavailable.',
-          retryable: false,
-        },
+        error: classifyLifecycleError(error),
       },
     };
   }
   return serializeOrchestratorPhase(directory, async () => {
     const phases: OperationPhaseReport[] = [];
     const report: CompressionOperationReport = {
-      version: 1,
+      version: 2,
       operation: 'compress-before-completion',
       status: 'failed',
       phases,
       recoveryActions: [],
-      selection: { archivedTurnIndices: [], keptTurnIndices: [] },
+      archivesRestored: 0,
       commit: { state: 'not_started' },
     };
-
-    const planStarted = Date.now();
+    const progress: FreshCommitProgress = { state: 'not_started' };
+    let lock: Awaited<ReturnType<typeof acquireDirectoryLifecycleLock>>;
+    const acquireStarted = Date.now();
     try {
-      const planned = await compressDirectory({
-        ...options.compression,
-        directory,
-        dryRun: true,
-        mutationHook: undefined,
-      });
+      lock = await acquireDirectoryLifecycleLock(directory, 'compress');
       phases.push({
-        phase: 'estimate_plan',
+        phase: 'acquire_exclusive',
         status: 'completed',
-        durationMs: Date.now() - planStarted,
+        durationMs: Date.now() - acquireStarted,
       });
-      report.plan = {
-        outcome: planOutcome(planned),
-        selection: planned.selection,
-        budget: planned.budget,
-      };
-      report.recoveryActions = planned.recoveryActions;
-      report.selection = planned.selection;
-      report.budget = planned.budget;
     } catch (error) {
       phases.push({
-        phase: 'estimate_plan',
+        phase: 'acquire_exclusive',
         status: 'failed',
-        durationMs: Date.now() - planStarted,
+        durationMs: Date.now() - acquireStarted,
       });
+      phases.push(
+        { phase: 'maintain_context', status: 'skipped', durationMs: 0 },
+        { phase: 'release_exclusive', status: 'skipped', durationMs: 0 },
+        { phase: 'completion', status: 'skipped', durationMs: 0 }
+      );
       report.error = classifyLifecycleError(error);
       return { ok: false, report };
     }
 
-    let acquired = false;
-    let compressionCompleted = false;
     let compression: CompressResult | undefined;
-    const acquireStarted = Date.now();
+    let maintainError: unknown;
+    let lifecycleCompleted = false;
+    const maintainStarted = Date.now();
     try {
-      compression = await withDirectoryLifecycleLock(
-        directory,
-        'compress',
-        async () => {
-          acquired = true;
-          phases.push({
-            phase: 'acquire_exclusive',
-            status: 'completed',
-            durationMs: Date.now() - acquireStarted,
+      let current = await inspectCompressionLifecycleState(directory, resolvedRequest);
+      if (current.state === 'invalid') throw archiveStateInvalid(current.reason);
+      if (current.state === 'recovery_required') {
+        if (current.reason === 'staging_recovery') {
+          const actions = await recoverWithLockHeld(directory, {
+            mutationHook: options.compression.mutationHook,
           });
-          const compressStarted = Date.now();
-          try {
-            const result = await compressDirectoryWithLockHeld(
-              {
-                ...options.compression,
-                directory,
-                dryRun: false,
-              },
-              directory
-            );
-            compression = result;
-            compressionCompleted = true;
-            phases.push({
-              phase: 'compress',
-              status: 'completed',
-              durationMs: Date.now() - compressStarted,
-            });
-            return result;
-          } catch (error) {
-            phases.push({
-              phase: 'compress',
-              status: 'failed',
-              durationMs: Date.now() - compressStarted,
-            });
-            throw error;
-          }
+          report.recoveryActions.push(...actions.map((action) => action.detail));
+        } else {
+          const restored = await restoreArchivedTurnsWithLockHeld(
+            { directory, mutationHook: options.compression.mutationHook },
+            directory
+          );
+          report.archivesRestored += restored.archivesRestored ?? 0;
         }
-      );
+        current = await inspectCompressionLifecycleState(directory, resolvedRequest);
+        if (current.state !== 'healthy_plain') {
+          throw archiveStateInvalid('recovery_did_not_normalize');
+        }
+      }
+
+      report.decision = decisionFor(current);
+      if (report.decision.action === 'skip') {
+        compression = automaticSkipResult(
+          options.compression,
+          current,
+          report.decision.reason,
+          report.recoveryActions,
+          report.archivesRestored
+        );
+        report.budget = compression.budget;
+      } else {
+        if (report.decision.action === 'restore_then_evaluate') {
+          const restored = await restoreArchivedTurnsWithLockHeld(
+            { directory, mutationHook: options.compression.mutationHook },
+            directory
+          );
+          report.archivesRestored += restored.archivesRestored ?? 0;
+        }
+        compression = await compressCurrentConversationWithLockHeld(
+          { ...options.compression, directory, dryRun: false },
+          directory,
+          {
+            lifecycleDetails: {
+              recoveryActions: report.recoveryActions,
+              archivesRestored: report.archivesRestored,
+            },
+            progress,
+          }
+        );
+        report.selection = compression.selection;
+        report.budget = compression.budget;
+      }
+      lifecycleCompleted = true;
+      phases.push({
+        phase: 'maintain_context',
+        status: 'completed',
+        durationMs: Date.now() - maintainStarted,
+      });
+    } catch (error) {
+      maintainError = error;
+      phases.push({
+        phase: 'maintain_context',
+        status: 'failed',
+        durationMs: Date.now() - maintainStarted,
+      });
+    }
+
+    const releaseStarted = Date.now();
+    let releaseError: unknown;
+    try {
+      await releaseDirectoryLifecycleLock(lock);
       phases.push({
         phase: 'release_exclusive',
         status: 'completed',
-        durationMs: 0,
+        durationMs: Date.now() - releaseStarted,
       });
     } catch (error) {
-      if (!acquired) {
-        phases.push({
-          phase: 'acquire_exclusive',
-          status: 'failed',
-          durationMs: Date.now() - acquireStarted,
-        });
-      } else if (compressionCompleted) {
-        phases.push({
-          phase: 'release_exclusive',
-          status: 'failed',
-          durationMs: 0,
-        });
-      } else {
-        phases.push({
-          phase: 'release_exclusive',
-          status: 'completed',
-          durationMs: 0,
-        });
-      }
-      report.error = classifyLifecycleError(error);
-      if (compression) {
-        report.recoveryActions = compression.recoveryActions;
-        report.selection = compression.selection;
-        report.budget = compression.budget;
-        report.commit = compression.compressed
-          ? {
-              state: 'committed',
-              ...(compression.summaryIdx !== undefined
-                ? { summaryIdx: compression.summaryIdx }
-                : {}),
-            }
-          : { state: 'skipped' };
-      }
+      releaseError = error;
+      phases.push({
+        phase: 'release_exclusive',
+        status: 'failed',
+        durationMs: Date.now() - releaseStarted,
+      });
+    }
+    report.commit = commitFact(progress, lifecycleCompleted, compression);
+    if (maintainError || releaseError) {
+      report.error = classifyLifecycleError(maintainError ?? releaseError);
+      phases.push({ phase: 'completion', status: 'skipped', durationMs: 0 });
       return { ok: false, report };
     }
 
-    report.recoveryActions = compression.recoveryActions;
-    report.selection = compression.selection;
-    report.budget = compression.budget;
-    report.commit = compression.compressed
-      ? {
-          state: 'committed',
-          ...(compression.summaryIdx !== undefined
-            ? { summaryIdx: compression.summaryIdx }
-            : {}),
-        }
-      : { state: 'skipped' };
+    if (!compression) throw new Error('automatic lifecycle completed without a result');
 
     const completionStarted = Date.now();
     try {
@@ -853,6 +952,8 @@ export async function runCompressionBeforeCompletion<T>(
 
 export type {
   CompressDryRunPlan,
+  CompressionCommitReport,
+  CompressionDecisionReport,
   CompressionLifecycleOptions,
   CompressionLifecycleResult,
   CompressionOperationReport,

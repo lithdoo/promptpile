@@ -202,7 +202,7 @@ describe('restoreArchivedTurns', () => {
 
       await assert.rejects(
         restoreArchivedTurns({ directory: root }),
-        /目标文件已存在/
+        /archive_target_conflict/
       );
       assert.deepEqual(snapshot(root), before);
     } finally {
@@ -227,7 +227,7 @@ describe('restoreArchivedTurns', () => {
 
       await assert.rejects(
         restoreArchivedTurns({ directory: root }),
-        /重复 idx/
+        /archive_set_conflict/
       );
       assert.deepEqual(snapshot(root), before);
     } finally {
@@ -251,7 +251,7 @@ describe('restoreArchivedTurns', () => {
 
       await assert.rejects(
         restoreArchivedTurns({ directory: root }),
-        /无法读取 compression\.json/
+        /archive_metadata_invalid/
       );
       assert.deepEqual(snapshot(root), before);
     } finally {
@@ -368,7 +368,7 @@ describe('recover', () => {
         indices: [1],
         files: { '[1]user.md': 'question' },
       });
-      await assert.rejects(recover(root), /状态有歧义/);
+      await assert.rejects(recover(root), /staging_archive_conflict/);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

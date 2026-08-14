@@ -56,7 +56,9 @@ await compressDirectory({
 
 默认 tokenizer 是明确标记为 fallback 的 `heuristicTokenizer`。需要按模型精确计数时使用 `await createTiktokenTokenizer(model)`，并在完成后调用 `dispose()`。`CompressResult.budget` 解释 trigger、压缩前 tokens、kept history、summary、固定开销、completion 预留、safety margin、总计划占用与剩余 context；`summaryTokenBasis` 区分真实执行的 `actual` 与 dry-run 的保守 `upper-bound`。旧 `threshold` 仍可单独使用，但不能和 `budget` 组合。
 
-Orchestrator 应调用 `runCompressionBeforeCompletion({ compression, completion })`。它按目录串行 plan → acquire → compress → release → completion：plan 只计算待归档 selection 并使用 summary token 上限，不调用 semantic provider；provider 仅在实际 compress phase 调用一次。返回的 `CompressionOperationReport` 包含 phase、recovery、selection、budget、commit 与稳定错误码，不记录 conversation 正文或 provider 原始错误。
+Orchestrator 应调用 `runCompressionBeforeCompletion({ compression, completion })`。它按目录串行 prepare → acquire → inspect → optional one-shot recovery → authoritative live decision → optional restore → original-source evaluation → release → completion。Healthy compact live state 未达到 trigger 时不会 restore archive、调用 semantic provider 或重新压缩；达到 trigger 后先恢复 original turns，provider 输入不包含旧 summary。
+
+返回的 `CompressionOperationReport` 为 v2：包含 discriminated `decision`、可选 original-source `selection`、required `archivesRestored`、budget、phase facts、discriminated `commit` 与稳定错误码；不再包含 `plan` / `estimate_plan`，`compress` phase 更名为 `maintain_context`。报告不记录 conversation 正文或 provider 原始错误，也不作为后续 filesystem lifecycle state authority。
 
 `promptpile-compress` 不实现或拥有：
 
