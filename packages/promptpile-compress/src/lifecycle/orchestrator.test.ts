@@ -66,6 +66,49 @@ describe('compression orchestrator v2 boundary', () => {
     assert.deepEqual(result.report.commit, { state: 'not_started' });
   });
 
+  it('classifies a non-directory lifecycle root as I/O', async () => {
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'ppc-root-file-'));
+    const file = path.join(parent, 'conversation');
+    fs.writeFileSync(file, 'not a directory');
+    try {
+      const result = await runCompressionBeforeCompletion({
+        compression: { directory: file, threshold: 0 },
+        completion: async () => 'unreachable',
+      });
+      assert.equal(result.ok, false);
+      assert.equal(result.report.error?.code, 'IO_ERROR');
+      assert.deepEqual(result.report.phases, []);
+    } finally {
+      fs.rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  it('prioritizes a filesystem error code over archive-shaped legacy text', async () => {
+    const root = makeConversation();
+    try {
+      const result = await runCompressionBeforeCompletion({
+        compression: {
+          directory: root,
+          threshold: 0,
+          keepRecent: 0,
+          mutationHook: ({ point, phase }) => {
+            if (point === 'create_staging' && phase === 'before') {
+              throw Object.assign(
+                new Error('archive compression.json read failed'),
+                { code: 'EIO' }
+              );
+            }
+          },
+        },
+        completion: async () => 'unreachable',
+      });
+      assert.equal(result.ok, false);
+      assert.equal(result.report.error?.code, 'IO_ERROR');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('validates all options before starting a lifecycle phase', async () => {
     const root = makeConversation();
     try {
@@ -195,6 +238,112 @@ describe('compression orchestrator v2 boundary', () => {
       releaseFirst();
       const results = await Promise.all([first, second]);
       assert.ok(results.every((result) => result.ok));
+    } finally {
+      releaseFirst?.();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('serializes physical-directory aliases through one completion queue', async (t) => {
+    const root = makeConversation();
+    const aliasParent = fs.mkdtempSync(path.join(os.tmpdir(), 'ppc-alias-'));
+    const alias = path.join(aliasParent, 'conversation-alias');
+    try {
+      try {
+        fs.symlinkSync(root, alias, 'junction');
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'EPERM') {
+          t.skip('symlink creation is not permitted on this host');
+          return;
+        }
+        throw error;
+      }
+      let releaseFirst!: () => void;
+      let firstStarted!: () => void;
+      const started = new Promise<void>((resolve) => (firstStarted = resolve));
+      const gate = new Promise<void>((resolve) => (releaseFirst = resolve));
+      let aliasCompletionStarted = false;
+      const first = runCompressionBeforeCompletion({
+        compression: { directory: root, threshold: 10_000 },
+        completion: async () => {
+          firstStarted();
+          await gate;
+          return 1;
+        },
+      });
+      await started;
+      const second = runCompressionBeforeCompletion({
+        compression: { directory: alias, threshold: 10_000 },
+        completion: async () => {
+          aliasCompletionStarted = true;
+          return 2;
+        },
+      });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      assert.equal(aliasCompletionStarted, false);
+      releaseFirst();
+      const results = await Promise.all([first, second]);
+      assert.ok(results.every((result) => result.ok));
+    } finally {
+      fs.rmSync(aliasParent, { recursive: true, force: true });
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails fast for same-directory completion reentrancy', async () => {
+    const root = makeConversation();
+    try {
+      let nestedResult: Awaited<ReturnType<typeof runCompressionBeforeCompletion>>;
+      const outer = await runCompressionBeforeCompletion({
+        compression: { directory: root, threshold: 10_000 },
+        completion: async () => {
+          nestedResult = await runCompressionBeforeCompletion({
+            compression: { directory: root, threshold: 10_000 },
+            completion: async () => 'unreachable',
+          });
+          return 'outer-completed';
+        },
+      });
+      assert.equal(outer.ok, true);
+      assert.equal(nestedResult!.ok, false);
+      assert.equal(nestedResult!.report.error?.code, 'LIFECYCLE_LOCKED');
+      assert.equal(nestedResult!.report.error?.retryable, false);
+      assert.deepEqual(nestedResult!.report.phases, []);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('freezes execution options before waiting in the same-process queue', async () => {
+    const root = makeConversation();
+    let releaseFirst!: () => void;
+    let firstStarted!: () => void;
+    const started = new Promise<void>((resolve) => (firstStarted = resolve));
+    const gate = new Promise<void>((resolve) => (releaseFirst = resolve));
+    try {
+      const first = runCompressionBeforeCompletion({
+        compression: { directory: root, threshold: 10_000 },
+        completion: async () => {
+          firstStarted();
+          await gate;
+          return 1;
+        },
+      });
+      await started;
+      const compression = { directory: root, threshold: 10_000 };
+      const second = runCompressionBeforeCompletion({
+        compression,
+        completion: async () => 2,
+      });
+      compression.threshold = 0;
+      releaseFirst();
+      const [, secondResult] = await Promise.all([first, second]);
+      assert.equal(secondResult.ok, true);
+      if (!secondResult.ok) return;
+      assert.equal(secondResult.report.decision?.action, 'skip');
+      assert.equal(secondResult.report.decision?.triggerTokens, 10_000);
+      assert.equal(secondResult.compression.budget.triggerTokens, 10_000);
+      assert.equal(secondResult.report.commit.state, 'skipped');
     } finally {
       releaseFirst?.();
       fs.rmSync(root, { recursive: true, force: true });

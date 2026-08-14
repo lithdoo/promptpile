@@ -57,6 +57,12 @@ is made from the authoritative live Conversation while holding that lock. A
 healthy compact Conversation below the trigger is left byte-for-byte unchanged:
 no archive restore, provider call, or recompression occurs.
 
+Lifecycle entry points canonicalize the conversation directory with `realpath`,
+so filesystem aliases share one lock and one in-process completion queue. Each
+automatic invocation also snapshots its resolved compression policy before it
+can wait in that queue. Re-entering the same physical directory from its active
+completion callback fails fast with a non-retryable `LIFECYCLE_LOCKED` report.
+
 ### Beta migration: operation report v2
 
 `runCompressionBeforeCompletion()` now returns `CompressionOperationReport`

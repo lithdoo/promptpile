@@ -1,5 +1,5 @@
-import { constants } from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -16,11 +16,16 @@ import {
   withDirectoryLifecycleLock,
 } from '../lifecycle/lock';
 import { archiveStateInvalid, lifecycleError } from '../lifecycle/errors';
+import { resolveLifecycleDirectory } from '../lifecycle/directory';
 import {
+  cloneCompressionExecution,
   inspectCompressionLifecycleState,
-  resolveCompressionRequest,
+  resolveCompressionExecution,
 } from './live-state';
-import type { CompressionLifecycleInspection } from './live-state';
+import type {
+  CompressionLifecycleInspection,
+  ResolvedCompressionExecution,
+} from './live-state';
 import {
   assertConversationGeneration,
   captureConversationGeneration,
@@ -31,15 +36,11 @@ import type {
   LifecycleMutationHook,
   LifecycleMutationPoint,
 } from '../lifecycle/mutation';
-import { createTurnSelector } from './strategy';
-import { createSummaryGenerator } from './summary';
 import {
   estimateTextTokens,
   estimateTotalTokens,
-  heuristicTokenizer,
-  assertTokenizerAdapter,
 } from './tokenizer';
-import { createBudgetReport, resolveContextBudget } from './budget';
+import { createBudgetReport } from './budget';
 import type {
   CompressionManifest,
   CompressionDecisionReport,
@@ -57,15 +58,15 @@ import type {
   Turn,
 } from './types';
 
-const DEFAULT_KEEP_RECENT = 4;
-const DEFAULT_STRATEGY: CompressStrategyKind = 'sliding-window';
 const SUMMARY_TEMP_FILE = '.summary.md';
 const orchestratorQueues = new Map<string, Promise<void>>();
+const activeOrchestratorDirectories = new AsyncLocalStorage<ReadonlySet<string>>();
 
 const serializeOrchestratorPhase = async <T>(
   directory: string,
   callback: () => Promise<T>
 ): Promise<T> => {
+  const inheritedDirectories = activeOrchestratorDirectories.getStore();
   const previous = orchestratorQueues.get(directory) ?? Promise.resolve();
   let release!: () => void;
   const gate = new Promise<void>((resolve) => {
@@ -75,7 +76,10 @@ const serializeOrchestratorPhase = async <T>(
   orchestratorQueues.set(directory, tail);
   await previous.catch(() => undefined);
   try {
-    return await callback();
+    return await activeOrchestratorDirectories.run(
+      new Set([...(inheritedDirectories ?? []), directory]),
+      callback
+    );
   } finally {
     release();
     if (orchestratorQueues.get(directory) === tail) {
@@ -107,6 +111,9 @@ const classifyLifecycleError = (
     retryable =
       (error as { retryable?: boolean } | undefined)?.retryable ??
       taggedCode === 'SUMMARY_PROVIDER_FAILED';
+  } else if (typeof code === 'string') {
+    classified = 'IO_ERROR';
+    retryable = ['EBUSY', 'EAGAIN', 'EMFILE', 'ENFILE'].includes(code);
   } else if (/lifecycle.*lock|生命周期.*锁|已被锁定/i.test(raw)) {
     classified = 'LIFECYCLE_LOCKED';
     retryable = true;
@@ -122,9 +129,6 @@ const classifyLifecycleError = (
     classified = 'ARCHIVE_STATE_INVALID';
   } else if (/must be|不能与|不支持|invalid|非负整数/i.test(raw)) {
     classified = 'INVALID_OPTIONS';
-  } else if (typeof code === 'string') {
-    classified = 'IO_ERROR';
-    retryable = ['EBUSY', 'EAGAIN', 'EMFILE', 'ENFILE'].includes(code);
   }
   const safeMessages: Record<LifecycleErrorCode, string> = {
     LIFECYCLE_LOCKED: 'The conversation lifecycle is busy; retry later.',
@@ -150,24 +154,6 @@ const pathExists = async (targetPath: string): Promise<boolean> => {
     }
     throw error;
   }
-};
-
-const assertDirectory = async (directory: string): Promise<string> => {
-  const resolved = path.resolve(directory);
-  let stat;
-  try {
-    stat = await fs.stat(resolved);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      throw lifecycleError('IO_ERROR', `目录不存在: ${resolved}`);
-    }
-    throw error;
-  }
-  if (!stat.isDirectory()) {
-    throw new Error(`路径不是目录: ${resolved}`);
-  }
-  await fs.access(resolved, constants.R_OK | constants.W_OK);
-  return resolved;
 };
 
 const syncDirectory = async (directory: string): Promise<void> => {
@@ -359,7 +345,7 @@ const toPlannedOutcome = (
 };
 
 const simulateLifecycleDryRun = async (
-  options: CompressOptions,
+  execution: ResolvedCompressionExecution,
   directory: string,
   recoveryActions: Array<{ detail: string }>,
   archivesToRestore: number
@@ -375,12 +361,10 @@ const simulateLifecycleDryRun = async (
     await removeDirectoryLifecycleLockFiles(simulationDirectory);
 
     const simulated = await compressDirectoryWithLockHeld(
-      {
-        ...options,
-        directory: simulationDirectory,
+      cloneCompressionExecution(execution, {
         dryRun: false,
         mutationHook: undefined,
-      },
+      }),
       simulationDirectory,
       { planOnly: true }
     );
@@ -410,7 +394,7 @@ const simulateLifecycleDryRun = async (
 };
 
 const compressCurrentConversationWithLockHeld = async (
-  options: CompressOptions,
+  execution: ResolvedCompressionExecution,
   directory: string,
   internal: {
     planOnly?: boolean;
@@ -418,17 +402,8 @@ const compressCurrentConversationWithLockHeld = async (
     progress?: FreshCommitProgress;
   } = {}
 ): Promise<CompressResult> => {
-  const keepRecent = options.keepRecent ?? DEFAULT_KEEP_RECENT;
-  const strategyKind = options.strategy ?? DEFAULT_STRATEGY;
-  const dryRun = options.dryRun === true;
-  const planOnly = dryRun || internal.planOnly === true;
-  const tokenizer = options.tokenizer ?? heuristicTokenizer;
-  assertTokenizerAdapter(tokenizer);
-  const contextBudget = resolveContextBudget(options);
-
-  if (!Number.isInteger(keepRecent) || keepRecent < 0) {
-    throw new Error(`keepRecent 必须是非负整数: ${keepRecent}`);
-  }
+  const planOnly = execution.dryRun || internal.planOnly === true;
+  const { contextBudget, keepRecent, strategyKind, tokenizer } = execution;
 
   const lifecycleDetails = internal.lifecycleDetails ?? {
     recoveryActions: [],
@@ -506,8 +481,7 @@ const compressCurrentConversationWithLockHeld = async (
     };
   }
 
-  const selector = createTurnSelector(strategyKind);
-  const { keep, archive } = selector.selectTurns(turns, {
+  const { keep, archive } = execution.selector.selectTurns(turns, {
     keepRecent,
     maxKeptTokens: contextBudget.maxKeptTokens,
   });
@@ -535,7 +509,7 @@ const compressCurrentConversationWithLockHeld = async (
     };
   }
 
-  const summaryGenerator = createSummaryGenerator(options.summary);
+  const summaryGenerator = execution.summaryGenerator;
   const summaryIdx = Math.max(...archive.map((turn) => turn.idx));
   const keptHistoryTokens = estimateTotalTokens(keep);
 
@@ -608,12 +582,12 @@ const compressCurrentConversationWithLockHeld = async (
     summaryTokens,
     tokensAfter,
     generation,
-    options.mutationHook
+    execution.mutationHook
   );
   const archivePath = await commitStaging(
     directory,
     summaryIdx,
-    options.mutationHook,
+    execution.mutationHook,
     internal.progress ?? { state: 'not_started' }
   );
 
@@ -636,21 +610,21 @@ const compressCurrentConversationWithLockHeld = async (
 };
 
 const compressDirectoryWithLockHeld = async (
-  options: CompressOptions,
+  execution: ResolvedCompressionExecution,
   directory: string,
   internal: { planOnly?: boolean } = {}
 ): Promise<CompressResult> => {
-  const dryRun = options.dryRun === true;
+  const dryRun = execution.dryRun;
   const recoveryActions = await recoverWithLockHeld(directory, {
     dryRun,
-    mutationHook: options.mutationHook,
+    mutationHook: execution.mutationHook,
   });
   const archiveSet = await inspectArchiveSet(directory);
   if (archiveSet.state === 'invalid') throw archiveStateInvalid(archiveSet.reason);
   const archivesToRestore = archiveSet.state === 'valid' ? archiveSet.archives.length : 0;
   if (dryRun && (recoveryActions.length > 0 || archivesToRestore > 0)) {
     return simulateLifecycleDryRun(
-      options,
+      execution,
       directory,
       recoveryActions,
       archivesToRestore
@@ -659,12 +633,12 @@ const compressDirectoryWithLockHeld = async (
   let archivesRestored = 0;
   if (archivesToRestore > 0) {
     const restored = await restoreArchivedTurnsWithLockHeld(
-      { directory, mutationHook: options.mutationHook },
+      { directory, mutationHook: execution.mutationHook },
       directory
     );
     archivesRestored = restored.archivesRestored ?? 0;
   }
-  return compressCurrentConversationWithLockHeld(options, directory, {
+  return compressCurrentConversationWithLockHeld(execution, directory, {
     planOnly: internal.planOnly,
     lifecycleDetails: {
       recoveryActions: recoveryActions.map((action) => action.detail),
@@ -676,14 +650,16 @@ const compressDirectoryWithLockHeld = async (
 export async function compressDirectory(
   options: CompressOptions
 ): Promise<CompressResult> {
-  const directory = await assertDirectory(options.directory);
+  const requestedDirectory = options.directory;
+  const execution = resolveCompressionExecution(options);
+  const directory = await resolveLifecycleDirectory(requestedDirectory);
   return withDirectoryLifecycleLock(directory, 'compress', () =>
-    compressDirectoryWithLockHeld(options, directory)
+    compressDirectoryWithLockHeld(execution, directory)
   );
 }
 
 const automaticSkipResult = (
-  options: CompressOptions,
+  execution: ResolvedCompressionExecution,
   current: Extract<
     CompressionLifecycleInspection,
     { state: 'healthy_plain' | 'healthy_compacted' }
@@ -692,8 +668,6 @@ const automaticSkipResult = (
   recoveryActions: string[],
   archivesRestored: number
 ): CompressResult => {
-  const tokenizer = options.tokenizer ?? heuristicTokenizer;
-  const budget = resolveContextBudget(options);
   const empty = reason === 'no_turns_to_compress';
   const tokens = empty ? 0 : current.live.tokens;
   return {
@@ -706,7 +680,13 @@ const automaticSkipResult = (
     compressibleTokens: empty
       ? 0
       : estimateTotalTokens(current.live.turns.filter((turn) => !turn.isSystemTurn)),
-    budget: createBudgetReport(budget, tokenizer, tokens, tokens, 0),
+    budget: createBudgetReport(
+      execution.contextBudget,
+      execution.tokenizer,
+      tokens,
+      tokens,
+      0
+    ),
     recoveryActions,
     archivesRestored,
     selection: {
@@ -774,10 +754,22 @@ export async function runCompressionBeforeCompletion<T>(
   options: CompressionLifecycleOptions<T>
 ): Promise<CompressionLifecycleResult<T>> {
   let directory: string;
-  let resolvedRequest: ReturnType<typeof resolveCompressionRequest>;
+  let execution: ResolvedCompressionExecution;
+  let completionCallback: CompressionLifecycleOptions<T>['completion'];
   try {
-    directory = await assertDirectory(options.compression.directory);
-    resolvedRequest = resolveCompressionRequest(options.compression);
+    const requestedDirectory = options.compression.directory;
+    completionCallback = options.completion;
+    execution = cloneCompressionExecution(
+      resolveCompressionExecution(options.compression),
+      { dryRun: false }
+    );
+    directory = await resolveLifecycleDirectory(requestedDirectory);
+    if (activeOrchestratorDirectories.getStore()?.has(directory)) {
+      throw lifecycleError(
+        'LIFECYCLE_LOCKED',
+        'same-directory automatic lifecycle reentrancy is not allowed'
+      );
+    }
   } catch (error) {
     return {
       ok: false,
@@ -834,22 +826,22 @@ export async function runCompressionBeforeCompletion<T>(
     let lifecycleCompleted = false;
     const maintainStarted = Date.now();
     try {
-      let current = await inspectCompressionLifecycleState(directory, resolvedRequest);
+      let current = await inspectCompressionLifecycleState(directory, execution);
       if (current.state === 'invalid') throw archiveStateInvalid(current.reason);
       if (current.state === 'recovery_required') {
         if (current.reason === 'staging_recovery') {
           const actions = await recoverWithLockHeld(directory, {
-            mutationHook: options.compression.mutationHook,
+            mutationHook: execution.mutationHook,
           });
           report.recoveryActions.push(...actions.map((action) => action.detail));
         } else {
           const restored = await restoreArchivedTurnsWithLockHeld(
-            { directory, mutationHook: options.compression.mutationHook },
+            { directory, mutationHook: execution.mutationHook },
             directory
           );
           report.archivesRestored += restored.archivesRestored ?? 0;
         }
-        current = await inspectCompressionLifecycleState(directory, resolvedRequest);
+        current = await inspectCompressionLifecycleState(directory, execution);
         if (current.state !== 'healthy_plain') {
           throw archiveStateInvalid('recovery_did_not_normalize');
         }
@@ -858,7 +850,7 @@ export async function runCompressionBeforeCompletion<T>(
       report.decision = decisionFor(current);
       if (report.decision.action === 'skip') {
         compression = automaticSkipResult(
-          options.compression,
+          execution,
           current,
           report.decision.reason,
           report.recoveryActions,
@@ -868,13 +860,13 @@ export async function runCompressionBeforeCompletion<T>(
       } else {
         if (report.decision.action === 'restore_then_evaluate') {
           const restored = await restoreArchivedTurnsWithLockHeld(
-            { directory, mutationHook: options.compression.mutationHook },
+            { directory, mutationHook: execution.mutationHook },
             directory
           );
           report.archivesRestored += restored.archivesRestored ?? 0;
         }
         compression = await compressCurrentConversationWithLockHeld(
-          { ...options.compression, directory, dryRun: false },
+          execution,
           directory,
           {
             lifecycleDetails: {
@@ -930,7 +922,7 @@ export async function runCompressionBeforeCompletion<T>(
 
     const completionStarted = Date.now();
     try {
-      const completion = await options.completion(compression);
+      const completion = await completionCallback(compression);
       phases.push({
         phase: 'completion',
         status: 'completed',

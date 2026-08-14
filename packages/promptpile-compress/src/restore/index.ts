@@ -1,8 +1,8 @@
-import { constants } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { withDirectoryLifecycleLock } from '../lifecycle/lock';
 import { archiveStateInvalid } from '../lifecycle/errors';
+import { resolveLifecycleDirectory } from '../lifecycle/directory';
 import { runLifecycleMutation } from '../lifecycle/mutation';
 import { inspectArchiveSet, inspectStagingState } from './inspection';
 import { listMessageFiles } from './scanner';
@@ -13,22 +13,6 @@ import type {
   RestoreOptions,
   RestoreResult,
 } from './types';
-
-const assertDirectory = async (directory: string): Promise<string> => {
-  const resolved = path.resolve(directory);
-  let stat;
-  try {
-    stat = await fs.stat(resolved);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      throw new Error(`目录不存在: ${resolved}`);
-    }
-    throw error;
-  }
-  if (!stat.isDirectory()) throw new Error(`路径不是目录: ${resolved}`);
-  await fs.access(resolved, constants.R_OK | constants.W_OK);
-  return resolved;
-};
 
 export const recoverWithLockHeld = async (
   directory: string,
@@ -79,7 +63,7 @@ export const recover = async (
   directory: string,
   options: RecoveryOptions = {}
 ): Promise<RecoveryAction[]> => {
-  const resolved = await assertDirectory(directory);
+  const resolved = await resolveLifecycleDirectory(directory);
   return withDirectoryLifecycleLock(resolved, 'recover', () =>
     recoverWithLockHeld(resolved, options)
   );
@@ -168,7 +152,7 @@ export const restoreArchivedTurnsWithLockHeld = async (
 export const restoreArchivedTurns = async (
   options: RestoreOptions
 ): Promise<RestoreResult> => {
-  const directory = await assertDirectory(options.directory);
+  const directory = await resolveLifecycleDirectory(options.directory);
   return withDirectoryLifecycleLock(directory, 'restore', async () => {
     const recoveryActions = await recoverWithLockHeld(directory, {
       dryRun: options.dryRun,

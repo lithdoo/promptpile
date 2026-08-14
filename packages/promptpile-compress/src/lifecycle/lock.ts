@@ -33,13 +33,20 @@ export const isLifecycleLockFileName = (name: string): boolean =>
 const readLockMetadata = async (
   lockPath: string
 ): Promise<LifecycleLockMetadata | null> => {
-  let parsed: unknown;
+  let content: string;
   try {
-    parsed = JSON.parse(await fs.readFile(lockPath, 'utf8'));
+    content = await fs.readFile(lockPath, 'utf8');
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       return null;
     }
+    throw error;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch (error) {
     throw new Error(
       `lifecycle lock 无法解析，拒绝自动删除: ${lockPath}: ${
         error instanceof Error ? error.message : String(error)
@@ -265,7 +272,7 @@ export const removeDirectoryLifecycleLockFiles = async (
 export const acquireDirectoryLifecycleLock = async (
   directory: string,
   operation: LifecycleOperation
-): Promise<DirectoryLifecycleLock> => acquireLock(path.resolve(directory), operation);
+): Promise<DirectoryLifecycleLock> => acquireLock(await fs.realpath(directory), operation);
 
 export const withDirectoryLifecycleLock = async <T>(
   directory: string,

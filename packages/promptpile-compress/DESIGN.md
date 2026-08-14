@@ -81,7 +81,7 @@ Restore 在修改文件前校验 manifest、duplicate idx/file 与目标冲突�
 
 ### 4.1 Writer coordination
 
-Compress、restore 与 recover 使用 conversation 顶层 `.promptpile-compress.lock.<host>.<pid>.<owner>` 唯一锁文件集合协调 cooperating lifecycle writers。每个 contender 原子发布完整 metadata，清理同机死进程的不可复用锁路径后重新扫描；只有自己的锁是唯一有效锁时才进入 mutation。活锁、异机锁、损坏锁以及旧版固定 `.promptpile-compress.lock` 一律 fail closed。公开入口不可重入；顶层 operation 只通过 package-private 内部函数复用已经持有的锁，mutation hook 不能绕过锁启动嵌套公开操作。
+Compress、restore 与 recover 使用 conversation 顶层 `.promptpile-compress.lock.<host>.<pid>.<owner>` 唯一锁文件集合协调 cooperating lifecycle writers。所有公开入口先把目录解析为存在后的 filesystem `realpath`；队列、锁与 mutation 共享这个 physical identity，因此 symlink/junction 等路径别名不能形成独立 writer lane。每个 contender 原子发布完整 metadata，清理同机死进程的不可复用锁路径后重新扫描；只有自己的锁是唯一有效锁时才进入 mutation。活锁、异机锁、损坏锁以及旧版固定 `.promptpile-compress.lock` 一律 fail closed。公开入口不可重入；顶层 operation 只通过 package-private 内部函数复用已经持有的锁，mutation hook 不能绕过锁启动嵌套公开操作。
 
 同一主机上 owner PID 已不存在的有效 lock 可以自动恢复。跨主机 lock、仍存活的 PID 或损坏 metadata 均 fail closed，不按时间猜测并删除。Lock 是 package-private coordination artifact，read-only Archive Protocol consumer 必须忽略。
 
@@ -103,9 +103,9 @@ Live artifacts 在 scan 中并行读取一次并缓存，tokenizer 与 semantic 
 
 ### 4.5 Orchestrator boundary 与 operation report
 
-自动化调用使用 `runCompressionBeforeCompletion()`，唯一 authority chain 是：prepare request → per-directory queue → acquire lock → inspect → optional one-shot recovery → healthy live decision → optional archive restore → original-source engine → release → completion。Compact live state 未达到 trigger 时只承担 coordination 成本，不 restore archive、不调用 semantic provider，也不修改 Conversation/archive。队列覆盖 callback 完成，因此同一入口的下一次 lifecycle phase 不会与 active completion 重叠。
+自动化调用使用 `runCompressionBeforeCompletion()`，唯一 authority chain 是：prepare request → per-directory queue → acquire lock → inspect → optional one-shot recovery → healthy live decision → optional archive restore → original-source engine → release → completion。Prepare 在第一次异步等待前把 budget、tokenizer、selector、summary generator、hook 与 dry-run policy 解析为不可变 execution snapshot；排队期间调用方继续修改原 options 不会改变本次 decision 或 execution。Compact live state 未达到 trigger 时只承担 coordination 成本，不 restore archive、不调用 semantic provider，也不修改 Conversation/archive。队列以 physical `realpath` 为 key 并覆盖 callback 完成，因此目录别名共享同一条 lane，下一次 lifecycle phase 不会与 active completion 重叠。Completion callback 在同一 async call chain 内重入同一 physical directory 会在 lifecycle 启动前以 non-retryable `LIFECYCLE_LOCKED` fail fast，避免等待自己的 queue tail；独立调用仍按队列正常等待。
 
-`CompressionOperationReport` 当前固定为 v2。Phase 为 `acquire_exclusive`、`maintain_context`、`release_exclusive`、`completion`；request-preparation failure 的 phases 为空，lifecycle 开始后未执行 phase 显式记为 `skipped`。`decision` 是 lock-held live fact 的 discriminated union；automatic gate skip 时 report `selection` 缺省，source engine 执行后才记录 original-source selection。`commit` 区分 `not_started`、`skipped`、`incomplete(summaryIdx)` 与 `committed(summaryIdx)`；archive publication 后的失败不会伪装成 skip。Maintain 与 release 同时失败时 maintain error 保持 primary，phase 仍保留 release failure fact。
+`CompressionOperationReport` 当前固定为 v2。Phase 为 `acquire_exclusive`、`maintain_context`、`release_exclusive`、`completion`；request-preparation failure（包括目录解析与同链重入拒绝）的 phases 为空，lifecycle 开始后未执行 phase 显式记为 `skipped`。`decision` 是 lock-held live fact 的 discriminated union；automatic gate skip 时 report `selection` 缺省，source engine 执行后才记录 original-source selection。`commit` 区分 `not_started`、`skipped`、`incomplete(summaryIdx)` 与 `committed(summaryIdx)`；archive publication 后的失败不会伪装成 skip。Maintain 与 release 同时失败时 maintain error 保持 primary，phase 仍保留 release failure fact。Tagged lifecycle error 优先，其次任何带 filesystem `code` 的 error 归为 `IO_ERROR`，message regex 只作为无 code 的 legacy fallback。
 
 Report 只描述已向 builder 确认的 invocation facts，不是 mutation journal，也不是后续 lifecycle state authority。报告不包含 message/tool result、semantic summary 正文或 provider 原始错误文本。`compressDirectory` / `restoreArchivedTurns` 继续作为手动 lifecycle API。
 

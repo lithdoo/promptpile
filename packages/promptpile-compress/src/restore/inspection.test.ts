@@ -5,7 +5,7 @@ import path from 'node:path';
 import { describe, it } from 'node:test';
 import {
   inspectCompressionLifecycleState,
-  resolveCompressionRequest,
+  resolveCompressionExecution,
 } from '../compress/live-state';
 import { inspectArchiveSet, inspectStagingState } from './inspection';
 import { STAGING_DIR } from './scanner';
@@ -112,7 +112,7 @@ describe('authoritative lifecycle inspection', () => {
       writeArchive(root, { summary: false });
       const state = await inspectCompressionLifecycleState(
         root,
-        resolveCompressionRequest({ directory: root, threshold: 100 })
+        resolveCompressionExecution({ directory: root, threshold: 100 })
       );
       assert.equal(state.state, 'recovery_required');
       if (state.state === 'recovery_required') {
@@ -129,7 +129,7 @@ describe('authoritative lifecycle inspection', () => {
       writeArchive(root);
       const state = await inspectCompressionLifecycleState(
         root,
-        resolveCompressionRequest({ directory: root, threshold: 100 })
+        resolveCompressionExecution({ directory: root, threshold: 100 })
       );
       assert.equal(state.state, 'healthy_compacted');
       if (state.state === 'healthy_compacted') assert.equal(state.archives.length, 1);
@@ -145,7 +145,7 @@ describe('authoritative lifecycle inspection', () => {
       writeArchive(root);
       let state = await inspectCompressionLifecycleState(
         root,
-        resolveCompressionRequest({ directory: root, threshold: 100 })
+        resolveCompressionExecution({ directory: root, threshold: 100 })
       );
       assert.deepEqual(state, { state: 'invalid', reason: 'staging_archive_conflict' });
 
@@ -153,7 +153,7 @@ describe('authoritative lifecycle inspection', () => {
       fs.writeFileSync(path.join(root, '[1]user.md'), 'conflict');
       state = await inspectCompressionLifecycleState(
         root,
-        resolveCompressionRequest({ directory: root, threshold: 100 })
+        resolveCompressionExecution({ directory: root, threshold: 100 })
       );
       assert.deepEqual(state, { state: 'invalid', reason: 'archive_target_conflict' });
     } finally {

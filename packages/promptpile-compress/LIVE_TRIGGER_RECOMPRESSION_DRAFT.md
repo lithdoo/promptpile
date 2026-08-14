@@ -4,15 +4,15 @@
 > Date: 2026-08-14  
 > Target: `promptpile-compress`  
 > Affects: `runCompressionBeforeCompletion()`  
-> Superseded by: [`LIVE_TRIGGER_RECOMPRESSION_IMPLEMENTATION_DRAFT.md`](./LIVE_TRIGGER_RECOMPRESSION_IMPLEMENTATION_DRAFT.md)
+> Superseded by: [`LIVE_TRIGGER_RECOMPRESSION_IMPLEMENTATION.md`](./LIVE_TRIGGER_RECOMPRESSION_IMPLEMENTATION.md)
 
 本文件是 live-trigger recompression 的初始方向草案，已被冻结实施契约取代，不再作为实现或验收依据。
 
 当前唯一实施 source of truth：
 
 ```text
-LIVE_TRIGGER_RECOMPRESSION_IMPLEMENTATION_DRAFT.md
-Status: Frozen Implementation Contract
+LIVE_TRIGGER_RECOMPRESSION_IMPLEMENTATION.md
+Status: Implemented and Accepted
 ```
 
 冻结契约已经明确并取代本草案中尚未定死的事项，包括：

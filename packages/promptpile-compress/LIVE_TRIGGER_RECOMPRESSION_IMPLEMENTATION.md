@@ -1,6 +1,6 @@
 # promptpile-compress Live Trigger Recompression 冻结实施契约
 
-> Status: **Frozen Implementation Contract — Revision 4.2 / Final Freeze Errata 2**  
+> Status: **Implemented and Accepted — Revision 4.2 / Final Freeze Errata 2**
 > Date: 2026-08-14  
 > Target: `packages/promptpile-compress`  
 > Primary API: `runCompressionBeforeCompletion()`  
@@ -8,7 +8,7 @@
 > Supersedes: `LIVE_TRIGGER_RECOMPRESSION_DRAFT.md` and Revision 1–4.1 of this contract  
 > Change policy: 实施过程中如需改变本文的 lifecycle state、trigger authority、recovery/restore 语义、filesystem coordination、summary source、fresh commit fact、automatic `CompressResult` 语义、error precedence 或 Operation Report v2，必须先修改本文并重新评审。
 
-> 文件名暂时保留 `IMPLEMENTATION_DRAFT.md`，避免 implementation 前产生纯治理性的 path churn；**Status header 是规范性状态**。实现验收并同步 `DESIGN.md` 后，可单独 rename。
+> Implementation accepted on 2026-08-14. The contract is retained as the historical design authority; current runtime behavior is summarized in `DESIGN.md`.
 
 ## 1. 最终冻结结论
 
@@ -992,7 +992,7 @@ completion callback failure
 → COMPLETION_FAILED
 ```
 
-现有 regex classifier 只作为 legacy fallback。
+分类顺序固定为 tagged lifecycle error → 带 filesystem `code` 的 error（`IO_ERROR`）→ legacy message regex fallback，避免 path/error message 中的领域词误分类。
 
 Public error message 继续脱敏，不暴露 Conversation content、provider payload 或内部敏感 path detail。
 
@@ -1030,7 +1030,7 @@ release this lifecycle lock
 → completion callback
 ```
 
-same-process orchestrator queue 继续覆盖 active completion；跨进程 completion transaction 不在本次范围。
+same-process orchestrator queue 继续覆盖 active completion，并以目录 `realpath` 作为 physical identity。调用进入任何异步排队前冻结 resolved execution，排队期间的 options mutation 不影响本次 operation。Completion async call chain 重入同一 physical directory 必须在 lifecycle 启动前以 non-retryable `LIFECYCLE_LOCKED` fail fast；独立调用继续按 queue tail 等待。跨进程 completion transaction 不在本次范围。
 
 ---
 

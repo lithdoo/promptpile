@@ -3,10 +3,19 @@ import type { InvalidLifecycleReason } from '../restore/inspection';
 import { lifecycleError } from '../lifecycle/errors';
 import { scanTurns } from './scanner';
 import { resolveContextBudget } from './budget';
+import type { ResolvedContextBudget } from './budget';
 import { assertTokenizerAdapter, estimateTotalTokens, heuristicTokenizer } from './tokenizer';
 import { createTurnSelector } from './strategy';
 import { createSummaryGenerator } from './summary';
-import type { CompressOptions, TokenizerAdapter, Turn } from './types';
+import type { LifecycleMutationHook } from '../lifecycle/mutation';
+import type {
+  CompressOptions,
+  CompressStrategyKind,
+  SummaryGenerator,
+  TokenizerAdapter,
+  Turn,
+  TurnSelector,
+} from './types';
 
 export interface LiveSnapshot {
   turns: Turn[];
@@ -35,35 +44,71 @@ export type CompressionLifecycleInspection =
     }
   | { state: 'invalid'; reason: InvalidLifecycleReason };
 
-export interface ResolvedCompressionRequest {
-  tokenizer: TokenizerAdapter;
-  triggerTokens: number;
+export interface ResolvedCompressionExecution {
+  readonly tokenizer: TokenizerAdapter;
+  readonly contextBudget: Readonly<ResolvedContextBudget>;
+  readonly keepRecent: number;
+  readonly strategyKind: CompressStrategyKind;
+  readonly selector: TurnSelector;
+  readonly summaryGenerator: SummaryGenerator;
+  readonly mutationHook?: LifecycleMutationHook;
+  readonly dryRun: boolean;
 }
 
-export const resolveCompressionRequest = (
+export const resolveCompressionExecution = (
   options: CompressOptions
-): ResolvedCompressionRequest => {
-  const tokenizer = options.tokenizer ?? heuristicTokenizer;
+): ResolvedCompressionExecution => {
+  const summary =
+    options.summary?.kind === 'semantic'
+      ? { ...options.summary }
+      : options.summary
+        ? { ...options.summary }
+        : undefined;
+  const normalized: CompressOptions = {
+    ...options,
+    ...(options.budget ? { budget: { ...options.budget } } : {}),
+    ...(summary ? { summary } : {}),
+  };
+  const tokenizer = normalized.tokenizer ?? heuristicTokenizer;
   assertTokenizerAdapter(tokenizer);
-  const keepRecent = options.keepRecent ?? 4;
+  const keepRecent = normalized.keepRecent ?? 4;
   if (!Number.isInteger(keepRecent) || keepRecent < 0) {
     throw new Error(`keepRecent must be a non-negative integer: ${keepRecent}`);
   }
+  const strategyKind = normalized.strategy ?? 'sliding-window';
+  let selector: TurnSelector;
+  let summaryGenerator: SummaryGenerator;
   try {
-    createTurnSelector(options.strategy ?? 'sliding-window');
-    createSummaryGenerator(options.summary);
+    selector = createTurnSelector(strategyKind);
+    summaryGenerator = createSummaryGenerator(normalized.summary);
   } catch (error) {
     throw lifecycleError(
       'INVALID_OPTIONS',
       error instanceof Error ? error.message : String(error)
     );
   }
-  return { tokenizer, triggerTokens: resolveContextBudget(options).triggerTokens };
+  return Object.freeze({
+    tokenizer,
+    contextBudget: Object.freeze(resolveContextBudget(normalized)),
+    keepRecent,
+    strategyKind,
+    selector,
+    summaryGenerator,
+    mutationHook: normalized.mutationHook,
+    dryRun: normalized.dryRun === true,
+  });
 };
+
+export const cloneCompressionExecution = (
+  execution: ResolvedCompressionExecution,
+  overrides: Partial<
+    Pick<ResolvedCompressionExecution, 'dryRun' | 'mutationHook'>
+  >
+): ResolvedCompressionExecution => Object.freeze({ ...execution, ...overrides });
 
 export const inspectCompressionLifecycleState = async (
   directory: string,
-  resolved: ResolvedCompressionRequest
+  execution: ResolvedCompressionExecution
 ): Promise<CompressionLifecycleInspection> => {
   const staging = await inspectStagingState(directory);
   const archiveSet = await inspectArchiveSet(directory);
@@ -89,13 +134,13 @@ export const inspectCompressionLifecycleState = async (
     };
   }
 
-  const turns = await scanTurns(directory, resolved.tokenizer);
+  const turns = await scanTurns(directory, execution.tokenizer);
   const tokens = estimateTotalTokens(turns);
   const live: LiveSnapshot = {
     turns,
     tokens,
-    triggerTokens: resolved.triggerTokens,
-    triggerReached: tokens >= resolved.triggerTokens,
+    triggerTokens: execution.contextBudget.triggerTokens,
+    triggerReached: tokens >= execution.contextBudget.triggerTokens,
   };
   return archiveSet.state === 'valid'
     ? {
