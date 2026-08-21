@@ -86,7 +86,7 @@ const run = (cwd, args) => new Promise((resolve, reject) => {
       ''
     ].join('\n'));
 
-    const result = await run(root, ['--config', config, '--output-format', 'stream-json']);
+    const result = await run(root, ['--config', config, '--output-format', 'stream-json', '--continue']);
     assert.strictEqual(result.code, 0, `stdout=${result.stdout}\nstderr=${result.stderr}`);
     assert.strictEqual(requests.length, 4, 'Thought, Observe, Check and Final use the real Promptpile CLI');
     const events = result.stdout.trim().split(/\r?\n/).map(JSON.parse);
@@ -113,6 +113,29 @@ const run = (cwd, args) => new Promise((resolve, reject) => {
     });
     assert.ok(!result.stdout.includes('thought result'));
     assert.ok(!result.stdout.includes('observe result'));
+    assert.deepStrictEqual(
+      requests[0].messages.map(message => message.role),
+      ['system', 'user'],
+      'Thought reads the authoritative user request after its inserted system prompt'
+    );
+    assert.strictEqual(requests[0].messages[1].content, 'answer the request');
+    assert.ok(
+      requests[1].messages.some(message => message.role === 'assistant' && message.content === 'thought result'),
+      'Observe reads Thought from the isolated work Conversation'
+    );
+    const finalMessages = requests[3].messages;
+    assert.ok(finalMessages.some(message => message.role === 'user' && message.content === 'answer the request'));
+    assert.ok(finalMessages.at(-1).content.includes('observe result'), 'Final receives the latest Observe handoff');
+    assert.strictEqual(finalMessages.at(-1).role, 'user', 'Final handoff is the last user message');
+    assert.ok(
+      !finalMessages.some(message => message.role === 'assistant' && message.content === 'thought result'),
+      'Final never reads the internal work Conversation'
+    );
+    assert.deepStrictEqual(
+      fs.readdirSync(messages).filter(name => /^\[\d+\]/.test(name)).sort(),
+      ['[0]user.md', '[1]assistant.md'],
+      'the authoritative Conversation contains only User then Final'
+    );
     console.log('promptpile-react real composed stream-json E2E ok');
   } finally {
     await new Promise(resolve => server.close(resolve));

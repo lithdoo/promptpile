@@ -19,6 +19,8 @@ export interface ReactCliOverrides {
   inputDirectories?: string[];
   /** Unique writable Conversation directory. */
   outputDirectory?: string;
+  /** Parent directory for session-owned internal Conversation directories. */
+  workRoot?: string;
   model?: string;
   apiKey?: string;
   apiBaseUrl?: string;
@@ -44,6 +46,12 @@ export interface ResolvedReactConfig {
   outputDirectoryAbs?: string;
   /** Compatibility conversation anchor: output directory, otherwise final input layer. */
   directoryAbs: string;
+  /** Canonical user-visible layers, including the writable session layer exactly once at the end. */
+  authoritativeReadLayersAbs: string[];
+  /** User-visible mutation target for append-user and persisted Final. */
+  userWritableAbs: string;
+  /** Optional configured parent for session-owned work directories. */
+  configuredWorkRootAbs?: string;
   quiet: boolean;
   inputMode: boolean;
   continueMode: boolean;
@@ -61,3 +69,9 @@ export interface ResolvedReactConfig {
 }
 
 export type ReactPhase = 'thought' | 'observe' | 'check' | 'final';
+
+export interface ReactSessionContext {
+  sessionId: string;
+  workRootAbs: string;
+  workDirectoryAbs: string;
+}

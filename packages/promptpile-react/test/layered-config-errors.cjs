@@ -57,6 +57,24 @@ try {
   assert.strictEqual(badOutput.status, 1);
   assert.match(badOutput.stderr, /cannot create, scan, or write conversation output directory/);
 
+  const nestedWorkCwd = path.join(tmp, 'nested-work');
+  fs.mkdirSync(path.join(nestedWorkCwd, 'messages'), { recursive: true });
+  const nestedWork = runConfig(
+    'nested-work',
+    '[promptpile-react]\ndir = "messages"\nwork_root = "messages/work"\n'
+  );
+  assert.strictEqual(nestedWork.status, 1);
+  assert.match(nestedWork.stderr, /work root is equal to or inside authoritative layer/i);
+
+  const helpRoot = path.join(tmp, 'help-work');
+  const help = spawnSync(
+    process.execPath,
+    [reactCli, '--work-root', helpRoot, '--help'],
+    { cwd: tmp, encoding: 'utf8' }
+  );
+  assert.strictEqual(help.status, 0);
+  assert.ok(!fs.existsSync(helpRoot), '--help does not create a work root or session');
+
   console.log('promptpile-react layered config error tests ok');
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });

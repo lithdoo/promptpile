@@ -1,5 +1,5 @@
 import { CHECK_DECISION_TOOL_NAME } from './check-decision-tool';
-import type { ReactPhase, ResolvedReactConfig } from './types';
+import type { ReactPhase, ReactSessionContext, ResolvedReactConfig } from './types';
 
 const appendLlm = (
   argv: string[],
@@ -34,7 +34,49 @@ const appendLlm = (
 export interface BuildPhaseArgvOptions {
   /** Override every Conversation directory (Check uses one empty temporary directory). */
   directoryOverride?: string;
+  session?: ReactSessionContext;
 }
+
+export interface PhaseConversationRouting {
+  directories: string[];
+  outputDirectory?: string;
+  continueMode: boolean;
+}
+
+export const resolvePhaseConversationRouting = (
+  phase: ReactPhase,
+  config: ResolvedReactConfig,
+  options?: BuildPhaseArgvOptions
+): PhaseConversationRouting => {
+  if (options?.directoryOverride !== undefined) {
+    return { directories: [options.directoryOverride], continueMode: false };
+  }
+  const session = options?.session;
+  if (session === undefined) {
+    throw new Error(`React session context is required for ${phase}`);
+  }
+  if (phase === 'thought') {
+    return {
+      directories: config.authoritativeReadLayersAbs,
+      outputDirectory: session.workDirectoryAbs,
+      continueMode: true
+    };
+  }
+  if (phase === 'observe') {
+    return {
+      directories: [...config.authoritativeReadLayersAbs, session.workDirectoryAbs],
+      continueMode: false
+    };
+  }
+  if (phase === 'final') {
+    return {
+      directories: config.authoritativeReadLayersAbs,
+      outputDirectory: config.continueMode ? config.userWritableAbs : undefined,
+      continueMode: config.continueMode
+    };
+  }
+  throw new Error('Check requires an isolated directory override');
+};
 
 /**
  * Base argv per ReAct phase (profile-only config plus explicit overrides).
@@ -45,16 +87,13 @@ export const buildPhaseArgv = (
   config: ResolvedReactConfig,
   options?: BuildPhaseArgvOptions
 ): string[] => {
-  const isolatedDirectory = options?.directoryOverride;
-  const directories = isolatedDirectory === undefined
-    ? config.inputDirectoriesAbs ?? [config.directoryAbs]
-    : [isolatedDirectory];
+  const routing = resolvePhaseConversationRouting(phase, config, options);
   const argv: string[] = [];
-  for (const directory of directories) {
+  for (const directory of routing.directories) {
     argv.push('-d', directory);
   }
-  if (isolatedDirectory === undefined && config.outputDirectoryAbs !== undefined) {
-    argv.push('--output-dir', config.outputDirectoryAbs);
+  if (routing.outputDirectory !== undefined) {
+    argv.push('--output-dir', routing.outputDirectory);
   }
   const llm = config.phases[phase];
   appendLlm(argv, config.configPath, llm);
@@ -80,7 +119,7 @@ export const buildPhaseArgv = (
     argv.push('--tool-choice', `function:${CHECK_DECISION_TOOL_NAME}`);
   }
 
-  if (config.continueMode && (phase === 'thought' || phase === 'final')) {
+  if (routing.continueMode) {
     argv.push('-c');
   }
 

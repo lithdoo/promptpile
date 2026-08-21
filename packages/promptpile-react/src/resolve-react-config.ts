@@ -11,6 +11,13 @@ import {
   type SharedTomlLayer
 } from './toml-config-react';
 import type { PhaseLlmSelection, ResolvedReactConfig, ReactCliOverrides } from './types';
+import {
+  assertProspectiveDirectoryUsable,
+  canonicalizeProspectivePath,
+  directoryIdentity,
+  isSameOrAncestor,
+  sameDirectory
+} from './react-path-identity';
 
 const resolveScanRelative = (scanAbs: string, rel: string | undefined): string | undefined => {
   if (rel === undefined) {
@@ -25,9 +32,6 @@ const resolveCwdRelative = (cwd: string, rel: string | undefined): string | unde
   }
   return path.isAbsolute(rel) ? rel : path.resolve(cwd, rel);
 };
-
-const directoryIdentity = (directory: string): string =>
-  process.platform === 'win32' ? directory.toLowerCase() : directory;
 
 const canonicalizeExistingPath = (candidate: string): string => {
   try {
@@ -197,6 +201,36 @@ export const resolveReactConfig = (cwd: string, argv: string[]): ResolvedReactCo
   }
 
   const directoryAbs = outputDirectoryAbs ?? inputDirectoriesAbs[inputDirectoriesAbs.length - 1];
+  const userWritableAbs = directoryAbs;
+  const authoritativeReadLayersAbs = [...inputDirectoriesAbs];
+  if (!authoritativeReadLayersAbs.some(directory => sameDirectory(directory, userWritableAbs))) {
+    authoritativeReadLayersAbs.push(userWritableAbs);
+  }
+
+  const workRootRel = pickStr(cli.workRoot, reactToml.workRoot);
+  let configuredWorkRootAbs: string | undefined;
+  if (workRootRel !== undefined) {
+    const candidate = path.isAbsolute(workRootRel)
+      ? path.normalize(workRootRel)
+      : path.resolve(cwd, workRootRel);
+    try {
+      assertProspectiveDirectoryUsable(candidate);
+      configuredWorkRootAbs = canonicalizeProspectivePath(candidate);
+      const conflictingLayer = authoritativeReadLayersAbs.find(layer =>
+        isSameOrAncestor(
+          canonicalizeProspectivePath(layer),
+          configuredWorkRootAbs!
+        )
+      );
+      if (conflictingLayer !== undefined) {
+        throw new Error(`work root is equal to or inside authoritative layer: ${conflictingLayer}`);
+      }
+    } catch (error) {
+      const detail = error instanceof Error ? `: ${error.message}` : '';
+      console.error(`Error: invalid React work root: ${candidate}${detail}`);
+      process.exit(1);
+    }
+  }
 
   const maxStep =
     pickInt(
@@ -316,6 +350,9 @@ export const resolveReactConfig = (cwd: string, argv: string[]): ResolvedReactCo
     inputDirectoriesAbs,
     outputDirectoryAbs,
     directoryAbs,
+    authoritativeReadLayersAbs,
+    userWritableAbs,
+    configuredWorkRootAbs,
     quiet,
     inputMode,
     continueMode,

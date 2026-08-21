@@ -1,4 +1,4 @@
-import type { ResolvedReactConfig } from './types';
+import type { ReactSessionContext, ResolvedReactConfig } from './types';
 import {
   CheckReactProcess,
   CoreReactProcess,
@@ -10,6 +10,10 @@ import type { IReactRuntime, ReactRuntimeStopReason } from './runtime';
 import { getPromptpileSpawnConfig, type PromptpileSpawnConfig } from './promptpile-invoker';
 import { PromptpileReactInvocationError } from './react-errors';
 import type { ReactFinalResultV1, ReactRuntimeFailureV1 } from './react-event-protocol';
+import {
+  writeFinalObservationHandoff,
+  type LatestSuccessfulObserve
+} from './final-observation-handoff';
 
 export type ReactPhaseStartedFact =
   | { phase: 'thought' | 'observe' | 'check'; stepIndex: number }
@@ -42,9 +46,12 @@ export class PromptpileReactRuntime implements IReactRuntime {
   private readonly config: ResolvedReactConfig;
   private readonly spawn: PromptpileSpawnConfig;
   private readonly observer: ReactRuntimeObserver;
+  private readonly session: ReactSessionContext;
+  private latestSuccessfulObserve?: LatestSuccessfulObserve;
 
   constructor(
     config: ResolvedReactConfig,
+    session: ReactSessionContext,
     spawn?: PromptpileSpawnConfig,
     observer: ReactRuntimeObserver = noopObserver
   ) {
@@ -52,6 +59,7 @@ export class PromptpileReactRuntime implements IReactRuntime {
     this.maxStep = config.maxStep;
     this.spawn = spawn ?? getPromptpileSpawnConfig();
     this.observer = observer;
+    this.session = session;
   }
 
   async nextStep(): Promise<void> {
@@ -70,6 +78,7 @@ export class PromptpileReactRuntime implements IReactRuntime {
       phase = 'observe';
       await this.observer.phaseStarted({ phase, stepIndex: this.currentStep });
       const observeText = await this.reactObserveProcess();
+      this.latestSuccessfulObserve = { stepIndex: this.currentStep, text: observeText };
       await this.observer.phaseCompleted({ phase, stepIndex: this.currentStep });
 
       phase = 'check';
@@ -97,7 +106,18 @@ export class PromptpileReactRuntime implements IReactRuntime {
         return;
       }
       await this.observer.phaseStarted({ phase: 'final', stepsCompleted: this.currentStep });
+      const session = this.requiredSession();
+      const observation = this.latestSuccessfulObserve;
+      if (observation === undefined) {
+        throw new PromptpileReactInvocationError('final', 'Final requires a successful Observe report');
+      }
+      const handoffPath = writeFinalObservationHandoff({
+        session,
+        observation,
+        stopReason: this.stopReason
+      });
       this.finalResult = await this.reactFinalAnswerProcess(
+        handoffPath,
         this.config.outputFormat === 'stream-json'
           ? content => this.observer.finalDelta(content)
           : undefined
@@ -120,8 +140,11 @@ export class PromptpileReactRuntime implements IReactRuntime {
     return new CheckReactProcess(this.reactProcessCtx(), this.config.prompts.check).run(observeText);
   }
 
-  async reactFinalAnswerProcess(onDelta?: (content: string) => Promise<void>): Promise<ReactFinalResultV1> {
-    return new FinalReactProcess(this.reactProcessCtx(), this.config.prompts.final).run(onDelta);
+  async reactFinalAnswerProcess(
+    handoffPath?: string,
+    onDelta?: (content: string) => Promise<void>
+  ): Promise<ReactFinalResultV1> {
+    return new FinalReactProcess(this.reactProcessCtx(), this.config.prompts.final).run(handoffPath, onDelta);
   }
 
   private recordFailure(error: unknown, phase: 'thought' | 'observe' | 'check' | 'final'): void {
@@ -151,6 +174,10 @@ export class PromptpileReactRuntime implements IReactRuntime {
   }
 
   private reactProcessCtx(): ReactProcessContext {
-    return { spawn: this.spawn, config: this.config };
+    return { spawn: this.spawn, config: this.config, session: this.requiredSession() };
+  }
+
+  private requiredSession(): ReactSessionContext {
+    return this.session;
   }
 }

@@ -11,8 +11,9 @@ import {
 } from './react-runtime';
 import { getPromptpileSpawnConfig, type PromptpileSpawnConfig } from './promptpile-invoker';
 import { resolveReactConfig } from './resolve-react-config';
-import type { ResolvedReactConfig } from './types';
+import type { ReactSessionContext, ResolvedReactConfig } from './types';
 import { ReactEventWriterV1 } from './react-event-writer';
+import { cleanupReactSessionWork, createReactSessionWork } from './react-session-work';
 
 async function runOneReactSession(runtime: PromptpileReactRuntime): Promise<void> {
   reactDebugLog('session start maxStep=', String(runtime.maxStep));
@@ -41,10 +42,14 @@ const createStreamObserver = (writer: ReactEventWriterV1): ReactRuntimeObserver 
   finalDelta: content => writer.emit({ type: 'final.delta', content })
 });
 
-async function runStreamJsonSession(config: ResolvedReactConfig, spawn: PromptpileSpawnConfig): Promise<void> {
+async function runStreamJsonSession(
+  config: ResolvedReactConfig,
+  spawn: PromptpileSpawnConfig,
+  session: ReactSessionContext
+): Promise<boolean> {
   const writer = new ReactEventWriterV1();
   await writer.emit({ type: 'session.started', max_steps: config.maxStep });
-  const runtime = new PromptpileReactRuntime(config, spawn, createStreamObserver(writer));
+  const runtime = new PromptpileReactRuntime(config, session, spawn, createStreamObserver(writer));
   await runOneReactSession(runtime);
 
   if (runtime.stopReason === 'error') {
@@ -62,7 +67,7 @@ async function runStreamJsonSession(config: ResolvedReactConfig, spawn: Promptpi
       });
     }
     process.exitCode = 1;
-    return;
+    return false;
   }
 
   if (runtime.stopReason === 'running') {
@@ -76,16 +81,24 @@ async function runStreamJsonSession(config: ResolvedReactConfig, spawn: Promptpi
     final: runtime.finalResult ?? { status: 'skipped' }
   });
   process.exitCode = 0;
+  return true;
 }
 
 async function runResolvedSession(config: ResolvedReactConfig, spawn: PromptpileSpawnConfig): Promise<void> {
-  if (config.outputFormat === 'stream-json') {
-    await runStreamJsonSession(config, spawn);
-    return;
+  const session = createReactSessionWork(config);
+  let succeeded = false;
+  try {
+    if (config.outputFormat === 'stream-json') {
+      succeeded = await runStreamJsonSession(config, spawn, session);
+      return;
+    }
+    const runtime = new PromptpileReactRuntime(config, session, spawn);
+    await runOneReactSession(runtime);
+    succeeded = runtime.stopReason !== 'error';
+    process.exitCode = succeeded ? 0 : 1;
+  } finally {
+    cleanupReactSessionWork({ session, succeeded });
   }
-  const runtime = new PromptpileReactRuntime(config, spawn);
-  await runOneReactSession(runtime);
-  process.exitCode = runtime.stopReason === 'error' ? 1 : 0;
 }
 
 async function main(): Promise<void> {
@@ -108,7 +121,7 @@ async function runInputMode(config: ResolvedReactConfig, spawn: PromptpileSpawnC
     return;
   }
   try {
-    await appendUserFromTerminal(spawn, config.outputDirectoryAbs ?? config.directoryAbs, userContent, config.cwd);
+    await appendUserFromTerminal(spawn, config.userWritableAbs, userContent, config.cwd);
     reactDebugLog('input userAppended');
   } catch (error) {
     console.error('Error:', error instanceof Error ? error.message : error);

@@ -22,7 +22,7 @@ const SHARED_KEYS = new Set([
 ]);
 
 const REACT_ONLY_KEYS = new Set([
-  'max_step', 'thought_prompt', 'observe_prompt', 'check_prompt', 'final_prompt',
+  'max_step', 'work_root', 'thought_prompt', 'observe_prompt', 'check_prompt', 'final_prompt',
   ...['thought', 'observe', 'check', 'final'].flatMap(phase => [
     `${phase}_llm_api`, `${phase}_llm_api_key`, `${phase}_llm_api_key_env`,
     `${phase}_llm_api_model`, `${phase}_llm_api_base_url`,
@@ -127,6 +127,7 @@ export const buildSharedTomlLayer = (
 
 export interface ReactOnlyTomlLayer {
   maxStep?: number;
+  workRoot?: string;
   thoughtPrompt?: string;
   observePrompt?: string;
   checkPrompt?: string;
@@ -163,6 +164,7 @@ export interface ReactOnlyTomlLayer {
 
 export const buildReactOnlyTomlLayer = (table: Record<string, unknown>): ReactOnlyTomlLayer => ({
   maxStep: getInt(table, 'max_step'),
+  workRoot: getStr(table, 'work_root'),
   thoughtPrompt: getStr(table, 'thought_prompt'),
   observePrompt: getStr(table, 'observe_prompt'),
   checkPrompt: getStr(table, 'check_prompt'),

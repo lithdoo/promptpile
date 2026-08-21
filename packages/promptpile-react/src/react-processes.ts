@@ -18,12 +18,18 @@ import {
   reactDebugLog,
 } from './react-debug-log';
 import { PromptpileReactInvocationError, type PromptpileReactPhase } from './react-errors';
-import type { ResolvedReactConfig } from './types';
+import type { ReactSessionContext, ResolvedReactConfig } from './types';
+import {
+  finalInvocationId,
+  finalReceiptPath,
+  validateFinalReceipt
+} from './final-receipt';
 
 /** 子进程阶段共享依赖（不持有 {@link PromptpileReactRuntime} 引用）。 */
 export type ReactProcessContext = {
   spawn: PromptpileSpawnConfig;
   config: ResolvedReactConfig;
+  session: ReactSessionContext;
 };
 
 export abstract class ReactProcess {
@@ -103,7 +109,7 @@ export class CoreReactProcess extends ReactProcess {
   }
 
   async run(): Promise<void> {
-    const argv = buildPhaseArgv('thought', this.ctx.config);
+    const argv = buildPhaseArgv('thought', this.ctx.config, { session: this.ctx.session });
 
     const core = this.coreBody.trim();
     let tempPath: string | undefined;
@@ -137,7 +143,7 @@ export class ObserveReactProcess extends ReactProcess {
     const resolvedOut = path.resolve(outPath);
 
     try {
-      const argv = buildPhaseArgv('observe', this.ctx.config);
+      const argv = buildPhaseArgv('observe', this.ctx.config, { session: this.ctx.session });
       argv.push('-o', resolvedOut);
 
       if (this.observeBody.trim() !== '') {
@@ -158,6 +164,9 @@ export class ObserveReactProcess extends ReactProcess {
           throw new Error(`观察输出文件不存在: ${resolvedOut}`);
         }
         text = fs.readFileSync(resolvedOut, 'utf8').trim();
+        if (text === '') {
+          throw new Error('观察输出文件为空');
+        }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         throw new PromptpileReactInvocationError('observe', msg, 'phase_output_missing');
@@ -191,7 +200,10 @@ export class CheckReactProcess extends ReactProcess {
     try {
       emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'promptpile-react-check-empty-'));
 
-      const argv = buildPhaseArgv('check', this.ctx.config, { directoryOverride: emptyDir });
+      const argv = buildPhaseArgv('check', this.ctx.config, {
+        directoryOverride: emptyDir,
+        session: this.ctx.session
+      });
 
       const injectDir = path.join(os.tmpdir(), `promptpile-react-check-inject-${baseId}`);
       fs.mkdirSync(injectDir, { recursive: true });
@@ -253,14 +265,27 @@ export class FinalReactProcess extends ReactProcess {
     super(ctx);
   }
 
-  async run(onDelta?: (content: string) => Promise<void>): Promise<{ status: 'skipped' } | { status: 'completed'; content: string }> {
+  async run(
+    handoffPath: string | undefined,
+    onDelta?: (content: string) => Promise<void>
+  ): Promise<{ status: 'skipped' } | { status: 'completed'; content: string }> {
     if (this.finalBody.trim() === '') {
       reactDebugLog('phase=final skip');
       return { status: 'skipped' };
     }
 
     reactDebugLog('phase=final');
-    const argv = buildPhaseArgv('final', this.ctx.config);
+    if (handoffPath === undefined) {
+      throw new PromptpileReactInvocationError('final', 'Final observation handoff is missing');
+    }
+    const argv = buildPhaseArgv('final', this.ctx.config, { session: this.ctx.session });
+    let receiptPath: string | undefined;
+    let expectedInvocationId: string | undefined;
+    if (this.ctx.config.continueMode) {
+      receiptPath = finalReceiptPath(this.ctx.session);
+      expectedInvocationId = finalInvocationId(this.ctx.session);
+      argv.push('--invocation-id', expectedInvocationId, '--receipt', receiptPath);
+    }
 
     let tempPath: string | undefined;
     try {
@@ -270,8 +295,12 @@ export class FinalReactProcess extends ReactProcess {
       );
       fs.writeFileSync(tempPath, this.finalBody, 'utf8');
       argv.push('--insert-files', path.resolve(tempPath));
+      argv.push('--append-files', path.resolve(handoffPath));
       if (onDelta === undefined) {
         await this.assertPromptpileSuccess(argv, 'final');
+        if (receiptPath !== undefined && expectedInvocationId !== undefined) {
+          this.validateReceipt(receiptPath, expectedInvocationId);
+        }
         return { status: 'completed', content: '' };
       }
       argv.push('--output-pile-fd', '3', '--output-pile-format', 'json');
@@ -290,9 +319,28 @@ export class FinalReactProcess extends ReactProcess {
       if (result.status !== 0) {
         throw new PromptpileReactInvocationError('final', `promptpile 退出码 ${result.status ?? 'null'}`, 'promptpile_exit_nonzero');
       }
+      if (receiptPath !== undefined && expectedInvocationId !== undefined) {
+        this.validateReceipt(receiptPath, expectedInvocationId);
+      }
       return { status: 'completed', content: result.content };
     } finally {
       this.unlinkQuiet(tempPath);
+    }
+  }
+
+  private validateReceipt(receiptPath: string, expectedInvocationId: string): void {
+    try {
+      validateFinalReceipt({
+        receiptPath,
+        expectedInvocationId,
+        userWritableAbs: this.ctx.config.userWritableAbs
+      });
+    } catch (error) {
+      throw new PromptpileReactInvocationError(
+        'final',
+        error instanceof Error ? error.message : String(error),
+        'internal_error'
+      );
     }
   }
 }

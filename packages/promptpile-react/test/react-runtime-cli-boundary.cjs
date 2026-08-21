@@ -27,6 +27,16 @@ fs.writeFileSync(
     'const argv = process.argv.slice(2);',
     "fs.appendFileSync(process.env.PPR_RUNTIME_CALLS_LOG, JSON.stringify(argv) + '\\n');",
     "const outputIndex = argv.indexOf('-o');",
+    "const conversationOutputIndex = argv.indexOf('--output-dir');",
+    "const profileIndex = argv.indexOf('--llm-api');",
+    "const profileName = profileIndex >= 0 ? argv[profileIndex + 1] : '';",
+    "let assistantPath = null;",
+    "if (argv.includes('-c') && conversationOutputIndex >= 0) {",
+    "  const directory = argv[conversationOutputIndex + 1];",
+    "  fs.mkdirSync(directory, { recursive: true });",
+    "  assistantPath = path.join(directory, '[0]assistant.md');",
+    "  fs.writeFileSync(assistantPath, profileName === 'thought-profile' ? 'thought state' : 'final answer');",
+    "}",
     'if (outputIndex >= 0) {',
     '  const output = argv[outputIndex + 1];',
     "  fs.writeFileSync(output, argv.includes('--tool-choice') ? 'check output' : 'observe report');",
@@ -36,7 +46,13 @@ fs.writeFileSync(
     '    const call = { id: "call-check", type: "function", function: { name: "react_check_decision", arguments: "{\\\"decision\\\":false}" } };',
     "    fs.writeFileSync(calls, JSON.stringify(call) + '\\n');",
     '  }',
-    '}'
+    '}',
+    "const receiptIndex = argv.indexOf('--receipt');",
+    "if (receiptIndex >= 0) {",
+    "  const invocationIndex = argv.indexOf('--invocation-id');",
+    "  const receipt = { schemaVersion: 1, status: 'completed', invocationId: argv[invocationIndex + 1], artifacts: { assistant: assistantPath, calls: null, extra: null, mainOutput: null, mainCalls: null, mainExtra: null }, model: 'fake', finishReason: 'stop', usage: null, hook: { status: 'skipped', failureMode: 'warn', reason: 'not_configured' } };",
+    "  fs.writeFileSync(argv[receiptIndex + 1], JSON.stringify(receipt));",
+    "}"
   ].join('\n')
 );
 
@@ -48,7 +64,11 @@ const profile = name => ({
 const config = {
   cwd: tmp,
   configPath,
+  inputDirectoriesAbs: [],
+  outputDirectoryAbs: messages,
   directoryAbs: messages,
+  authoritativeReadLayersAbs: [messages],
+  userWritableAbs: messages,
   quiet: true,
   inputMode: false,
   continueMode: true,
@@ -67,6 +87,10 @@ const config = {
   }
 };
 
+const work = path.join(tmp, 'work');
+fs.mkdirSync(work);
+const session = { sessionId: 'runtime-session', workRootAbs: tmp, workDirectoryAbs: work };
+
 const spawnConfig = {
   command: process.execPath,
   argvPrefix: [fakeCli],
@@ -78,7 +102,7 @@ const spawnConfig = {
     process.env.PPR_RUNTIME_CALLS_LOG = callsLog;
     process.env.PPR_RUNTIME_SECRET = 'must-not-appear-in-argv';
 
-    const runtime = new PromptpileReactRuntime(config, spawnConfig);
+    const runtime = new PromptpileReactRuntime(config, session, spawnConfig);
     await runtime.nextStep();
     await runtime.finalAnswer();
 
@@ -109,6 +133,10 @@ const spawnConfig = {
     assert.ok(thought.includes('--insert-files'));
     assert.ok(thought.includes('-c'));
     assert.ok(!thought.includes('--disable-tool'));
+    assert.deepStrictEqual(
+      thought.slice(thought.indexOf('--output-dir'), thought.indexOf('--output-dir') + 2),
+      ['--output-dir', work]
+    );
 
     assert.ok(observe.includes('--append-files'));
     assert.ok(observe.includes('--disable-tool'));
@@ -119,8 +147,11 @@ const spawnConfig = {
     assert.ok(check.includes('--tool-choice'));
 
     assert.ok(final.includes('--insert-files'));
+    assert.ok(final.includes('--append-files'));
     assert.ok(final.includes('--disable-tool'));
     assert.ok(final.includes('-c'));
+    assert.ok(!final.includes(work), 'Final does not read the internal work Conversation');
+    assert.ok(final.includes('--receipt'), 'persisted Final requires a Completion Receipt');
 
     console.log('promptpile-react runtime CLI boundary tests ok');
   } finally {

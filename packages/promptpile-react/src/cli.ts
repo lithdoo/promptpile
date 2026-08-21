@@ -60,6 +60,7 @@ const buildProgram = (): Command => {
       []
     )
     .option('--output-dir <path>', 'Unique writable Conversation directory')
+    .option('--work-root <path>', 'Parent directory for session-owned internal Conversation state')
     .option('-m, --model <model>', 'Model ID (overrides all phases when set)')
     .option('-k, --api-key <key>', 'API key (overrides all phases when set)')
     .option('-b, --api-base-url <url>', 'API base URL (overrides all phases when set)')
@@ -73,7 +74,7 @@ const buildProgram = (): Command => {
     )
     .option('-q, --quiet', 'Quiet: less stdout from `promptpile` subprocesses')
     .option('-i, --input', 'Terminal user message → next user file (this package; not sent as `promptpile -i`)')
-    .option('-c, --continue', 'Append assistant reply to message files (subprocesses append `-c` when set)')
+    .option('-c, --continue', 'Persist Final to the user Conversation; Thought always persists only to session work')
     .option(
       '--tools-file <path>',
       'Tools .toml path (CLI relative cwd; overrides TOML path relative to scan directory)'
@@ -107,6 +108,7 @@ export const parseReactCli = (argv: string[]): ReactCliOverrides => {
     config?: string;
     directory?: string[];
     outputDir?: string;
+    workRoot?: string;
     model?: string;
     apiKey?: string;
     apiBaseUrl?: string;
@@ -132,6 +134,10 @@ export const parseReactCli = (argv: string[]): ReactCliOverrides => {
   if (o.outputDir !== undefined && outputDirectory === undefined) {
     throw new Error('--output-dir value must not be empty');
   }
+  const workRoot = trimmed(o.workRoot);
+  if (o.workRoot !== undefined && workRoot === undefined) {
+    throw new Error('--work-root value must not be empty');
+  }
 
   return {
     configPath: trimmed(o.config),
@@ -140,6 +146,7 @@ export const parseReactCli = (argv: string[]): ReactCliOverrides => {
         ? inputDirectories
         : undefined,
     outputDirectory,
+    workRoot,
     model: trimmed(o.model),
     apiKey: trimmed(o.apiKey),
     apiBaseUrl: trimmed(o.apiBaseUrl),

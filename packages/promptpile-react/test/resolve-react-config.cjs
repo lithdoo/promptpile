@@ -7,9 +7,20 @@ const assert = require('assert');
 
 const root = path.join(__dirname, '..');
 const { resolveReactConfig } = require(path.join(root, 'dist', 'resolve-react-config.js'));
-const { buildPhaseArgv } = require(path.join(root, 'dist', 'build-phase-argv.js'));
+const { buildPhaseArgv: buildPhaseArgvRaw } = require(path.join(root, 'dist', 'build-phase-argv.js'));
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ppr-cfg-'));
+const testSession = {
+  sessionId: 'test-session',
+  workRootAbs: tmp,
+  workDirectoryAbs: path.join(tmp, 'react-work')
+};
+const buildPhaseArgv = (phase, config, options = {}) =>
+  buildPhaseArgvRaw(phase, config, {
+    session: testSession,
+    ...(phase === 'check' ? { directoryOverride: path.join(tmp, 'check-work') } : {}),
+    ...options
+  });
 const prevCwd = process.cwd();
 const envKeys = ['PROMPTPILE_REACT_MAX_STEP', 'DEEPSEEK_API_KEY'];
 const envBefore = new Map(envKeys.map(key => [key, process.env[key]]));
@@ -50,6 +61,27 @@ thought_llm_api = "deepseek"
   const fakeScript = path.join(tmp, 'fake-index.js');
   fs.writeFileSync(fakeScript, '');
 
+  const configuredWorkRoot = path.join(tmp, 'configured-work-root');
+  const cfgWorkRoot = resolveReactConfig(tmp, [
+    'node', fakeScript, '-d', msgRel, '--work-root', 'configured-work-root'
+  ]);
+  assert.strictEqual(cfgWorkRoot.configuredWorkRootAbs, configuredWorkRoot);
+  assert.ok(!fs.existsSync(configuredWorkRoot), 'resolve does not create the configured work root');
+  assert.deepStrictEqual(cfgWorkRoot.authoritativeReadLayersAbs, [msgAbs]);
+  assert.strictEqual(cfgWorkRoot.userWritableAbs, msgAbs);
+
+  const workConfigPath = path.join(tmp, 'work.toml');
+  fs.writeFileSync(
+    workConfigPath,
+    `[promptpile-react]\ndir = "${msgRel}"\nwork_root = "toml-work"\n`
+  );
+  const cfgTomlWork = resolveReactConfig(tmp, ['node', fakeScript, '--config', workConfigPath]);
+  assert.strictEqual(cfgTomlWork.configuredWorkRootAbs, path.join(tmp, 'toml-work'));
+  const cfgCliWork = resolveReactConfig(tmp, [
+    'node', fakeScript, '--config', workConfigPath, '--work-root', 'cli-work'
+  ]);
+  assert.strictEqual(cfgCliWork.configuredWorkRootAbs, path.join(tmp, 'cli-work'));
+
   const cfg = resolveReactConfig(tmp, [
     'node',
     fakeScript,
@@ -62,8 +94,8 @@ thought_llm_api = "deepseek"
   assert.doesNotMatch(JSON.stringify(cfg), /secret-from-named-env/, 'React does not resolve profile secrets');
   const profileArgv = buildPhaseArgv('thought', cfg);
   assert.deepStrictEqual(
-    profileArgv.slice(0, 6),
-    ['-d', msgAbs, '--llm-config', tomlPath, '--llm-api', 'deepseek'],
+    profileArgv.slice(profileArgv.indexOf('--llm-config'), profileArgv.indexOf('--llm-config') + 4),
+    ['--llm-config', tomlPath, '--llm-api', 'deepseek'],
     'React delegates profile loading and selection to Promptpile'
   );
   assert.ok(!profileArgv.includes('-k'), 'profile key is not expanded into argv');
@@ -188,7 +220,7 @@ thought_llm_api_temperature = 0.3
   ]);
   assert.strictEqual(cfgCont.continueMode, true, 'cli -c sets continueMode');
   const thoughtContArgv = buildPhaseArgv('thought', cfgCont);
-  assert.ok(thoughtContArgv.includes('-c'), 'thought argv has -c when continueMode');
+  assert.ok(thoughtContArgv.includes('-c'), 'Thought always persists to isolated work');
   const observeContArgv = buildPhaseArgv('observe', cfgCont);
   assert.ok(!observeContArgv.includes('-c'), 'observe argv must not have -c');
   const finalContArgv = buildPhaseArgv('final', cfgCont);
@@ -361,9 +393,9 @@ after_hook = "after.js"
   assert.strictEqual(cfgCliLayers.outputDirectoryAbs, cliSession);
   const layeredArgv = buildPhaseArgv('thought', cfgCliLayers);
   assert.deepStrictEqual(
-    layeredArgv.slice(0, 6),
-    ['-d', layerB, '-d', layerA, '--output-dir', cliSession],
-    'Thought forwards ordered input layers and the output directory'
+    layeredArgv.slice(0, 8),
+    ['-d', layerB, '-d', layerA, '-d', cliSession, '--output-dir', testSession.workDirectoryAbs],
+    'Thought reads authoritative layers and writes only the isolated work directory'
   );
   const isolated = path.join(tmp, 'isolated-check');
   const isolatedArgv = buildPhaseArgv('check', cfgCliLayers, { directoryOverride: isolated });
@@ -403,9 +435,9 @@ after_hook = "after.js"
   assert.deepStrictEqual(cfgOutputOnly.inputDirectoriesAbs, []);
   assert.strictEqual(cfgOutputOnly.directoryAbs, outputOnly);
   assert.deepStrictEqual(
-    buildPhaseArgv('observe', cfgOutputOnly).slice(0, 2),
-    ['--output-dir', outputOnly],
-    'output-only mode lets Promptpile use the output as its sole effective input'
+    buildPhaseArgv('observe', cfgOutputOnly).slice(0, 4),
+    ['-d', outputOnly, '-d', testSession.workDirectoryAbs],
+    'output-only mode reads the authoritative output and isolated work'
   );
 } finally {
   process.chdir(prevCwd);

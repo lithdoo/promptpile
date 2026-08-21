@@ -1,15 +1,21 @@
 'use strict';
 
 const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const root = path.join(__dirname, '..');
 const { PromptpileReactRuntime } = require(path.join(root, 'dist', 'react-runtime.js'));
+const workRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ppr-fsm-'));
+let sessionCounter = 0;
 
 const config = maxStep => ({
   cwd: process.cwd(),
   inputDirectoriesAbs: [],
   directoryAbs: process.cwd(),
+  authoritativeReadLayersAbs: [process.cwd()],
+  userWritableAbs: process.cwd(),
   quiet: true,
   inputMode: false,
   continueMode: false,
@@ -19,7 +25,13 @@ const config = maxStep => ({
 });
 
 const makeRuntime = ({ maxStep = 1, decisions = [false], failAt } = {}) => {
-  const runtime = new PromptpileReactRuntime(config(maxStep), {
+  const workDirectoryAbs = fs.mkdtempSync(path.join(workRoot, 'session-'));
+  const session = {
+    sessionId: `fsm-session-${sessionCounter++}`,
+    workRootAbs: workRoot,
+    workDirectoryAbs
+  };
+  const runtime = new PromptpileReactRuntime(config(maxStep), session, {
     command: process.execPath,
     argvPrefix: [],
     displayName: 'unused'
@@ -101,6 +113,7 @@ const runSession = async runtime => {
   }
 
   console.log('promptpile-react FSM tests ok');
+  fs.rmSync(workRoot, { recursive: true, force: true });
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;

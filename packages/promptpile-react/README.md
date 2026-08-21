@@ -46,6 +46,7 @@ running | final | max_step | error
 promptpile-react --config ./example.toml
 promptpile-react -d ./messages --max-step 3
 promptpile-react -d ./base -d ./reference --output-dir ./session
+promptpile-react -d ./messages --work-root ./react-work
 ```
 
 常用参数：
@@ -55,9 +56,10 @@ promptpile-react -d ./base -d ./reference --output-dir ./session
 | `--config <path>` | React 读取 `[promptpile-react]` 和少量 `[promptpile]` 兼容字段，并把同一文件作为 `--llm-config` 交给 Promptpile |
 | `-d, --directory <path>` | Conversation 输入层；可重复，保持参数顺序 |
 | `--output-dir <path>` | 唯一可写 Conversation 层 |
+| `--work-root <path>` | 每次 session 独占 work Conversation 的父目录；默认系统临时目录 |
 | `--max-step <N>` | 最大完整 ReAct iteration 数，默认 1 |
 | `-i, --input` | 从终端读取一次 user message、append 一次、运行一次 session 后退出 |
-| `-c, --continue` | Thought/Final 子调用传递 `promptpile -c`；不会启动进程级交互循环 |
+| `-c, --continue` | 仅控制 Final 是否写入用户 Conversation；Thought 始终只续写 session work |
 | `--tools-file <path>` | Thought 阶段工具定义 |
 | `--after-hook-path <path>` | Thought 成功后的 Promptpile hook |
 | `-q, --quiet` | 减少 Promptpile 子进程输出 |
@@ -91,6 +93,7 @@ React 不解析 `[[llm_api]]` 内容；profile 存在性和 provider 配置由 P
 - string 字段必须是非空 TOML string；
 - bool 字段必须是 TOML bool；
 - `max_step` 必须是正整数；
+- `work_root` 必须是非空 string；CLI/TOML 相对路径均相对 invocation cwd；
 - `dirs` 必须是非空 string 数组；
 - `*_extra_body` 必须是 TOML table；
 - `[promptpile-react]` 未知字段直接报错；
@@ -100,10 +103,10 @@ React 不解析 `[[llm_api]]` 内容；profile 存在性和 provider 配置由 P
 
 ## 阶段策略与边界
 
-- Thought：读取真实 Conversation，可使用 tools/hook，可按 `-c` 续写。
-- Observe：读取真实 Conversation，禁用工具，要求可读的 `-o` 文本输出。
+- Thought：读取权威 Conversation 与既有 session work，可使用 tools/hook，始终只续写 session work。
+- Observe：读取权威 Conversation 与 work，禁用工具，要求非空的 `-o` 文本输出；最后一次成功 Observe 成为 Final handoff。
 - Check：使用隔离临时 Conversation，只注入 check prompt 与 Observe 报告；要求合法 calls sidecar。
-- Final：只从 `final|max_step` 进入，禁用工具，非空 prompt 时必须成功。
+- Final：只从 `final|max_step` 进入，不读取 work，只读取权威 Conversation 和 `.user.md` Observe handoff；`-c` 时以唯一 Completion Receipt 证明持久化成功。
 
 Check 的通用 ToolCall 结构通过 `promptpile-protocol/tool` 的 `parseToolCallV1` 校验；React 只验证 `react_check_decision` 和 boolean `arguments.decision`。缺失或畸形的 required output 一律失败关闭。
 
@@ -122,4 +125,4 @@ npm run package:smoke -w promptpile-react
 
 专用 CI 在 Node 20/22 × Ubuntu/Windows 上执行构建、测试和 packed smoke。当前包仅支持 `promptpile-react` executable，不承诺 JavaScript library API。
 
-调试时可设置 `PROMPTPILE_REACT_DEBUG=1`，阶段诊断写入 stderr，不改变 stdout ownership。
+调试时可设置 `PROMPTPILE_REACT_DEBUG=1`，失败 session 的 work directory 会保留并把路径写入 stderr；成功 session 仍清理。该模式不改变 stdout ownership。
