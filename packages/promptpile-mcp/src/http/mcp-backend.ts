@@ -1,6 +1,10 @@
 import type { McpFileConfig } from '../mcp-config';
 import { StdioMcpSession } from '../mcp/stdio-session';
-import { routeExecToolName, toGatewayToolName } from '../mcp/tool-name';
+import {
+  parsePrefixedGatewayToolName,
+  routeExecToolName,
+  toGatewayToolName,
+} from '../mcp/tool-name';
 import { executeCallsWithPolicy } from './execution';
 import type { ExecCallItem, ExecCallResult, GatewayBackend, OpenAiToolEntry } from './types';
 import { PACKAGE_VERSION } from '../version';
@@ -76,6 +80,55 @@ function buildFlatToolIndex(
   return m;
 }
 
+function filterAllowedTools(
+  serverId: string,
+  tools: McpListedTool[],
+  allowedTools: string[] | undefined,
+): McpListedTool[] {
+  if (allowedTools === undefined) return tools;
+
+  const listedByName = new Map(tools.map((tool) => [tool.name, tool]));
+  const missing = allowedTools.filter((name) => !listedByName.has(name));
+  if (missing.length > 0) {
+    throw new Error(
+      `server "${serverId}" did not list allowed_tools: ${missing.join(', ')}`,
+    );
+  }
+  return allowedTools.map((name) => listedByName.get(name)!);
+}
+
+function validateRetrySafeTools(
+  config: McpFileConfig,
+  toolsByServer: ReadonlyMap<string, McpListedTool[]>,
+  status: Readonly<Record<string, 'up' | 'down'>>,
+): void {
+  if (config.execution.retry_safe_tools.length === 0) return;
+
+  const isUnavailable = (gatewayName: string): boolean => {
+    if (config.behavior.flat_names) {
+      for (const tools of toolsByServer.values()) {
+        if (tools.some((tool) => tool.name === gatewayName)) return false;
+      }
+      // Best-effort startup cannot validate tools belonging to an unavailable server.
+      return !Object.values(status).some((serverStatus) => serverStatus === 'down');
+    }
+
+    const parsed = parsePrefixedGatewayToolName(gatewayName);
+    if (!parsed || status[parsed.serverId] === undefined) return true;
+    if (status[parsed.serverId] === 'down') return false;
+    return !toolsByServer
+      .get(parsed.serverId)
+      ?.some((tool) => tool.name === parsed.mcpToolName);
+  };
+
+  const unavailable = config.execution.retry_safe_tools.filter(isUnavailable);
+  if (unavailable.length > 0) {
+    throw new Error(
+      `promptpile-mcp: execution.retry_safe_tools are not exported: ${unavailable.join(', ')}`,
+    );
+  }
+}
+
 /**
  * Connect to all configured MCP servers, cache `tools/list`, implement gateway routes.
  */
@@ -107,7 +160,7 @@ export async function createMcpGatewayBackend(config: McpFileConfig): Promise<Ga
       await session.connect();
       const listed = await session.listTools();
       const tools = (listed.tools ?? []) as McpListedTool[];
-      toolsByServer.set(id, tools);
+      toolsByServer.set(id, filterAllowedTools(id, tools, config.servers[id].allowed_tools));
       status[id] = 'up';
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -125,6 +178,13 @@ export async function createMcpGatewayBackend(config: McpFileConfig): Promise<Ga
   if (!anyUp) {
     await disposeSessions(sessions.values());
     throw new Error('promptpile-mcp: no MCP server connected');
+  }
+
+  try {
+    validateRetrySafeTools(config, toolsByServer, status);
+  } catch (error) {
+    await disposeSessions(sessions.values());
+    throw error;
   }
 
   const flatIndex = buildFlatToolIndex(toolsByServer);
@@ -178,6 +238,9 @@ export async function createMcpGatewayBackend(config: McpFileConfig): Promise<Ga
           const { serverId, mcpToolName } = routed;
           if (!serverIds.includes(serverId)) return { ok: false, error: 'unknown_server' };
           if (status[serverId] !== 'up') return { ok: false, error: 'server_down' };
+          if (!flatIndex.get(serverId)?.has(mcpToolName)) {
+            return { ok: false, error: 'tool_not_allowed' };
+          }
           const session = sessions.get(serverId);
           if (!session) return { ok: false, error: 'internal_no_session' };
 

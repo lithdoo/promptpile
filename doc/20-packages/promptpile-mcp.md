@@ -29,6 +29,8 @@ Conversation integration 推荐把 `PROMPTPILE_ASSISTANT_CALL_FILE` 作为 `exec
 
 ## Package and security boundary
 
+每个 `[servers.<id>]` 可声明非空的 `allowed_tools`，其成员是上游 `tools/list` 返回的精确原始工具名。声明后，工具发现缓存、导出、flat-name 路由和执行前授权检查共同使用过滤后的集合；缺少声明时为兼容现有配置而暴露该 server 列出的全部工具。allowlist 中存在上游未列出的名称时，该 server 按连接失败处理并服从 `failure_policy`；执行端仍会再次校验，带前缀名称不能绕过 allowlist。`execution.retry_safe_tools` 对已连接 server 必须引用实际导出且获准的 gateway 工具名；best-effort 模式下属于 down server 的项延迟到该 server 可发现时校验，不能把部分可用的 gateway 升级为全局启动失败。
+
 包只声明 CLI `bin`，不声明稳定 library `main`。CLI 与 MCP clientInfo 从 package metadata 读取同一版本。gateway 默认 loopback，可启用 bearer token；server command/cwd/env 等同本机代码执行权限。claim metadata 不包含 token、tool arguments 或 secret payload。
 
 ## Evidence

@@ -17,6 +17,8 @@ export type McpServerEntry = {
   args?: string[];
   env?: Record<string, string>;
   cwd?: string;
+  /** Exact upstream MCP tool names exposed by this gateway. Absent means all listed tools. */
+  allowed_tools?: string[];
   init_timeout_ms?: number;
   list_timeout_ms?: number;
   /** 缺省与 `"stdio"` 等价；非 stdio 在解析阶段拒绝。 */
@@ -215,7 +217,7 @@ function parseServerEntry(serverId: string, raw: unknown): McpServerEntry {
   if (!s) {
     throw new Error(`promptpile-mcp: [servers.${serverId}] 须为表`);
   }
-  knownKeys(s, ['command','args','env','cwd','init_timeout_ms','list_timeout_ms','transport'], `[servers.${serverId}]`);
+  knownKeys(s, ['command','args','env','cwd','allowed_tools','init_timeout_ms','list_timeout_ms','transport'], `[servers.${serverId}]`);
   const command = s.command;
   if (typeof command !== 'string' || command.trim().length === 0) {
     throw new Error(`promptpile-mcp: [servers.${serverId}] 缺少非空 command`);
@@ -229,6 +231,26 @@ function parseServerEntry(serverId: string, raw: unknown): McpServerEntry {
   const cwd = s.cwd;
   if (cwd !== undefined && typeof cwd !== 'string') {
     throw new Error(`promptpile-mcp: [servers.${serverId}] cwd 须为字符串`);
+  }
+  const allowedTools = s.allowed_tools;
+  if (
+    allowedTools !== undefined &&
+    (!Array.isArray(allowedTools) ||
+      allowedTools.length === 0 ||
+      !allowedTools.every(
+        (x) => typeof x === 'string' && x !== '' && x === x.trim(),
+      ))
+  ) {
+    throw new Error(
+      `promptpile-mcp: [servers.${serverId}] allowed_tools must be a non-empty array of tool names`,
+    );
+  }
+  const normalizedAllowedTools = allowedTools as string[] | undefined;
+  if (
+    normalizedAllowedTools &&
+    new Set(normalizedAllowedTools).size !== normalizedAllowedTools.length
+  ) {
+    throw new Error(`promptpile-mcp: [servers.${serverId}] allowed_tools must not contain duplicates`);
   }
   let init_timeout_ms: number | undefined;
   let list_timeout_ms: number | undefined;
@@ -250,6 +272,7 @@ function parseServerEntry(serverId: string, raw: unknown): McpServerEntry {
     args: args as string[] | undefined,
     env: parseEnvTable(s.env, `[servers.${serverId}]`),
     cwd: typeof cwd === 'string' ? cwd : undefined,
+    allowed_tools: normalizedAllowedTools,
     init_timeout_ms,
     list_timeout_ms,
   };

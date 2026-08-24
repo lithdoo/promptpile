@@ -1,4 +1,5 @@
 const readline = require('node:readline');
+const fs = require('node:fs');
 
 let counter = 0;
 function send(message) { process.stdout.write(JSON.stringify(message) + '\n'); }
@@ -22,6 +23,9 @@ readline.createInterface({ input: process.stdin }).on('line', async (line) => {
   } else if (request.method === 'tools/call') {
     const name = request.params.name;
     const args = request.params.arguments || {};
+    if (process.env.PROMPTPILE_MCP_FIXTURE_CALL_LOG) {
+      fs.appendFileSync(process.env.PROMPTPILE_MCP_FIXTURE_CALL_LOG, name + '\n');
+    }
     if (name === 'slow') await new Promise((resolve) => setTimeout(resolve, args.delay_ms || 100));
     if (name === 'counter') counter++;
     const text = name === 'echo' ? String(args.text || '') : name === 'counter' ? String(counter) : 'slow';

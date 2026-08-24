@@ -136,6 +136,36 @@ describe('readMcpConfig', () => {
     assert.equal(c.servers.x.transport, 'stdio');
   });
 
+  it('parses an exact per-server allowed_tools list', () => {
+    const p = path.join(dir, 'allowed-tools.toml');
+    fs.writeFileSync(
+      p,
+      '[gateway]\nport = 8080\n\n[servers.fs]\ncommand = "npx"\nallowed_tools = ["read_file", "list_directory"]\n',
+    );
+    assert.deepEqual(readMcpConfig(p).servers.fs.allowed_tools, [
+      'read_file',
+      'list_directory',
+    ]);
+  });
+
+  it('rejects empty, invalid, and duplicate allowed_tools lists', () => {
+    const values = [
+      '[]',
+      '[""]',
+      '[" read_file"]',
+      '["read_file", "read_file"]',
+      '"read_file"',
+    ];
+    for (const [index, value] of values.entries()) {
+      const p = path.join(dir, `bad-allowed-tools-${index}.toml`);
+      fs.writeFileSync(
+        p,
+        `[gateway]\nport = 8080\n\n[servers.fs]\ncommand = "x"\nallowed_tools = ${value}\n`,
+      );
+      assert.throws(() => readMcpConfig(p), /allowed_tools/);
+    }
+  });
+
   it('coerces env number and boolean to strings', () => {
     const p = path.join(dir, 'env.toml');
     fs.writeFileSync(

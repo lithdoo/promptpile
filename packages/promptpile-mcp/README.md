@@ -18,7 +18,14 @@ port = 8765
 [servers.fs]
 command = "npx"
 args = ["-y", "@modelcontextprotocol/server-filesystem", "/allowed/path"]
+allowed_tools = ["list_directory", "read_text_file"]
 ```
+
+`allowed_tools` contains exact upstream MCP names from `tools/list`. When present, only those
+tools are exported and executable; a configured name missing from `tools/list` fails closed.
+Omitting the field preserves the expose-all behavior for compatibility. An explicit empty list,
+duplicates, globs, and gateway-prefixed names such as `mcp__fs__read_text_file` are invalid or do
+not match: use raw upstream names such as `read_text_file`.
 
 ```bash
 promptpile-mcp launch --config mcp.toml
