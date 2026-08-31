@@ -1,16 +1,16 @@
 # ReAct Observe Carryover：文件原生闭环改造方案
 
-> 状态：**Draft**（2026-08-31）  
+> 状态：**Implementation-ready / design frozen**（2026-08-31）  
 > 范围：仅 `packages/promptpile-react`  
-> 目标：在不改变 Promptpile 文件优先设计、不扩大 Check 职责、不引入新的业务协议的前提下，让 Observe 可以成为后续 ReAct iteration 的显式上下文，并通过纯文件位置实现滑动窗口。  
+> 目标：在不改变 Promptpile 文件优先设计、不扩大 Check 职责、不引入新的业务协议的前提下，让 Observe 可以成为后续 ReAct iteration 的显式上下文，并通过文件位置实现可验证的滑动窗口。  
 > 默认：`observe_carryover = 0`，严格保持当前行为。  
-> 核心原则：**身份由 index 记录，可见性由文件位置决定。**
+> 核心原则：**身份由 append-only index 记录；可见性由文件位置决定；Promptpile 负责消息文件，React 只负责标识 Observe 身份与 retention。**
 
 ---
 
 ## 1. 结论先行
 
-现有 ReAct FSM 保持不变：
+现有 ReAct FSM 不变：
 
 ```text
 Thoughtₙ
@@ -22,7 +22,7 @@ Checkₙ
   └─ true  → Thoughtₙ₊₁
 ```
 
-本改造不把 Check 改成 feedback producer。四个 phase 的职责继续是：
+四个 phase 的职责继续冻结为：
 
 ```text
 Thought  = 执行 / 推进工作
@@ -31,71 +31,88 @@ Check    = current Observe → continue / stop
 Final    = 对外形成最终回复
 ```
 
-唯一新增能力是：当调用方显式配置 `observe_carryover > 0` 时，Observe 不再只是临时 `-o` 文本，而是同时作为标准 Promptpile assistant message 持久化进本 React session 的 work Conversation。
-
-最近 N 个 Observe message 保留在 work 根目录，因此自然参与后续读取 work Conversation 的 phase；更旧的 Observe message 被移动到：
+本改造只增加一个 React-only retention policy：
 
 ```text
-<session.workDirectoryAbs>/.observe_files/
+observe_carryover = N
 ```
 
-Promptpile 只扫描 Conversation directory 根层，不递归扫描子目录，因此：
+当 `N = 0`：
 
 ```text
-work 根目录                  = active React Conversation
-work/.observe_files/         = 已退出 active context 的 Observe archive
+完全保持现有行为
+```
+
+当 `N > 0`：
+
+```text
+Observe completion
+→ Promptpile 正常持久化为 work/[n]assistant.md
+→ Completion Receipt 证明该 persisted assistant 与本轮 -o 来自同一次 invocation
+→ React 把 n 追加登记为 Observe index
+→ 最近 N 个 Observe turn 留在 work 根目录
+→ 更旧 Observe artifact family move 到 work/.observe_files/
+→ 下一轮 Thought / Observe 通过正常扫描 work root 自然看到保留的 Observe
+```
+
+文件状态模型：
+
+```text
+work 根目录
+= active React Conversation
+
+work/.observe_files/
+= archived Observe artifact family
+
 work/.observe_files/index.json
-                             = 哪些 message index 属于 Observe
+= 本 session 所有 Observe message index 的 append-only identity ledger
 ```
 
-不生成额外 Thought handoff，不拼接 Observe 文本，不维护第二套内存 Observe history，不要求用户的 Observe prompt 是 cumulative summary。
+Promptpile 只扫描 Conversation directory 根层，不递归扫描 `.observe_files/`，因此不需要额外 handoff、过滤器或上下文拼装。
 
 ---
 
-## 2. 为什么从 sidecar handoff 改为文件原生 retention
+## 2. 为什么采用 file-native retention
 
-早期方案考虑过：
+不采用：
 
 ```text
 Observe text
-→ Runtime 保存 successfulObserves[]
+→ Runtime successfulObserves[]
 → 动态生成 thought-observations.user.md
 → --append-files
 → next Thought
 ```
 
-该方案功能正确，但与 Promptpile 的核心设计语言不够一致：
+原因：
 
-1. 同一条 Observe 同时存在为 Runtime 内存状态和 handoff 文本，形成第二套状态表示。
-2. Runtime 需要主动组装上下文，而不是让 Conversation directory 自然决定上下文。
-3. `observe_carryover=N` 会变成“特殊注入 N 条 Observe”，而不是普通 Conversation retention。
-4. 需要额外定义 handoff 格式、顺序、覆盖与生命周期。
+1. 同一 Observe 会同时存在为 Runtime 内存状态和 handoff 文本，形成第二套状态表示。
+2. Runtime 需要主动拼上下文，而不是由 Conversation directory 自然决定上下文。
+3. 需要额外定义 handoff 格式、顺序、覆盖与生命周期。
+4. 与 Promptpile 的核心模型“文件即消息、目录即 Conversation”不一致。
 
-新的 file-native 方案改为：
+file-native 方案只依赖现有 Promptpile primitives：
 
 ```text
-Observe completion
-→ Promptpile 正常写 [n]assistant.md
-→ React 记录 n 是 Observe
-→ 最近 N 个 Observe 留在 work 根目录
-→ 旧 Observe move 到 .observe_files/
+标准 Conversation message file
+标准 Completion Receipt
+标准根目录扫描
+标准同文件系统 rename
 ```
 
-于是 carryover 不再是“注入”，而是：
+因此 `observe_carryover` 的语义不是“向 Thought 注入 N 个 Observe”，而是：
 
-> **决定最近多少个 Observe message 仍属于 active React work Conversation。**
-
-这与 Promptpile “文件即消息、目录即 Conversation、目录位置决定是否参与扫描”的模型一致。
+> **active React work Conversation 中最多保留最近 N 个 Observe turn。**
 
 ---
 
-## 3. 配置语义
+## 3. 配置契约
 
 新增 React-only 非负整数：
 
 | 表面 | 键 | 默认 | 含义 |
 | --- | --- | ---: | --- |
-| CLI | `--observe-carryover <n>` | `0` | active work Conversation 中最多保留的最近 Observe message 数量 |
+| CLI | `--observe-carryover <n>` | `0` | active work Conversation 中最多保留的最近 Observe turn 数量 |
 | TOML | `[promptpile-react].observe_carryover` | `0` | 同上 |
 | Runtime | `ResolvedReactConfig.observeCarryover` | `0` | 已解析值 |
 
@@ -114,7 +131,7 @@ integer
 true / false
 ```
 
-需要保留 session 内全部 Observe 时，直接令：
+若希望 session 内所有 Observe 都保持 active：
 
 ```text
 observe_carryover >= max_step
@@ -128,7 +145,7 @@ CLI --observe-carryover
 > 0
 ```
 
-`observe_carryover` 只属于 `[promptpile-react]`，不得加入 `[promptpile]` shared keys。
+该键只属于 `[promptpile-react]`，不得加入 `[promptpile]` shared keys。
 
 ### 3.1 `observe_carryover = 0`
 
@@ -136,39 +153,46 @@ CLI --observe-carryover
 
 ```text
 Observe
-→ 继续使用临时 -o
+→ 继续只使用临时 -o
 → 不传 -c
 → 不写 session work Conversation
 → 不创建 .observe_files/
 → 不创建 index.json
+→ 不创建 Observe Receipt
 ```
 
-现有 Thought / Observe / Check / Final argv contract、Conversation routing、Agent Event Protocol 和 cleanup 行为保持不变。
+冻结要求：
+
+1. Thought argv 与当前一致。
+2. Observe argv 与当前一致。
+3. Check argv / tool schema 与当前一致。
+4. Final latest-Observe handoff 与当前一致。
+5. Agent Event Protocol 不变。
+6. session cleanup / debug-preserve 不变。
 
 ### 3.2 `observe_carryover = N > 0`
 
-Observe 同时完成两件事：
+Observe 同一 Promptpile invocation 同时产生：
 
 ```text
 -o <temporary-output>
-    → Runtime 取得 current Observe text，供 Check 与 latest Final handoff 使用
+→ Runtime 取得 current Observe text
 
 -c --output-dir <session-work>
-    → Promptpile 把同一 completion 作为标准 [n]assistant.md 持久化
+→ Promptpile 持久化标准 assistant turn
+
+--receipt <receipt-path>
+→ 原子证明本轮 committed artifacts
 ```
 
-每次成功 Observe 后，active work 根目录中最多保留最近 N 个 Observe turn。
-
-注意：这意味着最近 N 个 Observe 会被所有读取 work Conversation 的 phase 自然看到，当前包括：
+最近 N 个 Observe 会被所有读取 work Conversation 的 phase 自然看到；当前包括：
 
 ```text
 Thought
 Observe
 ```
 
-而不是只对 Thought 可见。
-
-这是刻意的语义：`observe_carryover` 定义 work Conversation retention，而不是 Thought-only injection。
+Check 仍不读取 work。
 
 ---
 
@@ -182,7 +206,7 @@ max_step = 4
 observe_carryover = 2
 ```
 
-运行若干 iteration 后，session work 可能是：
+稳定状态可能是：
 
 ```text
 work/
@@ -210,41 +234,36 @@ work/
 }
 ```
 
-语义：
+定义：
 
 ```text
-indices
-= 本 session 中所有由 Observe phase 产生的 Conversation message index
+registered Observe
+= index.json 中存在 n
+
+active Observe
+= registered n 且 work/[n]assistant.md 存在
+
+archived Observe
+= registered n 且 work/.observe_files/[n]assistant.md 存在
 ```
 
-它不记录 active / archived：
+稳定成功态要求每个 registered Observe index：
 
 ```text
-index 中 + work 根目录存在 [n]assistant.md
-→ active Observe
-
-index 中 + .observe_files/ 存在 [n]assistant.md
-→ archived Observe
+exactly one of:
+  active primary body exists
+  archived primary body exists
 ```
 
 因此：
 
-> **manifest 只记录身份，物理位置记录状态。**
+> **manifest 只记录身份；物理位置只记录 active/archive 状态。**
 
-不得再在 index 中维护：
-
-```json
-{
-  "active": [...],
-  "archived": [...]
-}
-```
-
-否则移动文件时会产生重复事实来源。
+不得把 `active` / `archived` 再写进 manifest。
 
 ---
 
-## 5. Observe index manifest
+## 5. Observe identity ledger
 
 固定路径：
 
@@ -264,33 +283,58 @@ interface ObserveFileIndexV1 {
 冻结约束：
 
 1. `version === 1`。
-2. `indices` 只能包含非负整数。
+2. `indices` 只包含非负整数。
 3. 严格升序。
 4. 不允许重复。
-5. 不记录 session id；父目录已有 `.promptpile-react-session.json`。
-6. 不记录文件路径；路径由 index + 固定 Conversation artifact 命名规则决定。
-7. 不记录 iteration；当前 message index 已足以标识持久化 Observe turn。
-8. 不作为 public protocol；仅属于 session-owned internal state。
+5. **append-only：成功登记后 index 永不删除。**
+6. archive / unarchive 不修改 identity ledger。
+7. 不记录 session id；父目录已有 `.promptpile-react-session.json`。
+8. 不记录路径；路径由 index + Promptpile artifact naming 推导。
+9. 不记录 iteration；message index 已足以标识 persisted Observe turn。
+10. 不是 public protocol，仅属于 session-owned internal state。
 
-写入必须使用：
+因此状态变化固定为：
 
 ```text
-write temp in same directory
-→ fsync/close（若现有 atomic helper 已覆盖则复用）
-→ rename to index.json
+identity history
+= append-only
+
+visibility
+= move-only
 ```
 
-至少保证不会对下一阶段暴露半写 JSON。
+例如：
 
-`.observe_files/` 在 `observe_carryover=0` 时不得创建；在 `N>0` 时可以 lazy 创建于第一个成功持久化 Observe 的登记阶段。
+```text
+register Observe 5:
+[1,3] → [1,3,5]
+
+archive Observe 1:
+index 仍是 [1,3,5]
+只发生 root/[1]... → .observe_files/[1]...
+```
+
+### 5.1 Atomic write
+
+`index.json` 必须原子替换：
+
+```text
+write temp in .observe_files/
+→ close / fsync as existing helper permits
+→ rename temp → index.json
+```
+
+至少保证下一阶段永远不会读取半写 JSON。
+
+`.observe_files/` 在 `carryover=0` 时不得创建；`N>0` 时 lazy 创建于首个成功 Observe register 阶段。
 
 ---
 
-## 6. 一个 Observe turn 的 artifact family
+## 6. Observe artifact family
 
-Observe 身份以 message index 为单位，而不是只以 `[n]assistant.md` 单文件为单位。
+Observe 身份以 Promptpile message index 为单位，不只以 `[n]assistant.md` 单文件为单位。
 
-同 index 的标准 Promptpile assistant artifact family 包括存在的：
+一个 Observe turn 的允许 artifact family：
 
 ```text
 [n]assistant.md
@@ -299,75 +343,78 @@ Observe 身份以 message index 为单位，而不是只以 `[n]assistant.md` �
 [n]assistant.result.jsonl
 ```
 
-当前 Observe phase 使用 `--disable-tool`，正常情况下不会产生 calls/result，但 retention/archive 逻辑仍应按同 index family 处理，避免未来 phase capability 变化后遗留半个 turn。
+当前 Observe 使用 `--disable-tool`，正常不会产生 calls/result，但 archive 逻辑仍按整个同-index family 处理。
 
-归档时：
+归档：
 
 ```text
 work/[n]assistant.*
 → work/.observe_files/[n]assistant.*
 ```
 
-只允许移动明确属于该 Observe index 的标准 artifact family；不得使用模糊前缀删除其它文件。
+只允许移动明确属于该 index 的标准 Promptpile artifact family；不得使用模糊前缀匹配或通配删除其它文件。
+
+Primary body：
+
+```text
+[n]assistant.md
+```
+
+是 active/archive 状态判定锚点。
 
 ---
 
-## 7. 如何可靠识别本轮 Observe 的 index
+## 7. Observe persistence 必须由 Promptpile 完成
 
-不要通过：
-
-```text
-Observe 前 readdir
-Observe 后 readdir
-→ diff 猜新增文件
-```
-
-也不要由 `promptpile-react` 自己计算 next index。
-
-Promptpile 已有 Completion Receipt v1，并在所有 receipt 引用 artifact 已存在后才原子发布。启用 carryover 时，Observe invocation 应增加：
+React 不得：
 
 ```text
---invocation-id <session-specific-observe-id>
---receipt <temporary-receipt-path>
+自行计算 next index
+自行 fs.writeFile([n]assistant.md)
+通过 Observe 前后 readdir diff 猜新文件
 ```
 
-成功后验证 Receipt：
+Promptpile 继续拥有 Conversation mutation/index allocation。
+
+启用 carryover 时 Observe invocation 使用：
 
 ```text
-schemaVersion == 1
-status == completed
-invocationId == 本轮 expected id
-artifacts.assistant != null
-assistant path exists
-assistant parent == session.workDirectoryAbs
-assistant basename == [n]assistant.md
+-c
+--output-dir <session-work>
+-o <temporary-output>
+--invocation-id <observe-invocation-id>
+--receipt <observe-receipt-path>
 ```
 
-然后从 receipt 的 `artifacts.assistant` basename 严格解析 `n`。
+Promptpile Completion Receipt 是唯一 commit proof。
 
-这样 index 的来源是：
+---
+
+## 8. Observe invocation correlation
+
+每轮 Observe invocation id 冻结为：
 
 ```text
-Promptpile commit proof
-→ exact persisted assistant artifact
-→ exact Conversation index
+${session.sessionId}-observe-${stepIndex}
 ```
 
-而不是 Runtime 对 Promptpile allocation 规则的猜测。
+要求：
 
-### 7.1 Receipt 生命周期
+1. 同一 session + step 唯一。
+2. 不与 Thought / Final invocation id 冲突。
+3. Receipt validation 必须 exact match。
 
-Observe Receipt 只是 phase commit proof，不需要长期保留。
+Receipt path 必须每轮唯一，禁止复用一个可能残留旧 Receipt 的固定路径。
 
-建议使用 session-owned 或系统临时路径：
+建议：
 
 ```text
-/tmp/promptpile-react-observe-receipt-<id>.json
+os.tmpdir()/promptpile-react-observe-receipt-<sessionId>-<stepIndex>-<random>.json
 ```
 
-读取验证后删除。
+读取验证后在 `finally` 删除。
 
-不要把每轮 Receipt 永久放入 `.observe_files/`；`.observe_files/` 保持只承载：
+`.observe_files/` 不保存 Receipt；其长期 session-internal 内容只允许：
 
 ```text
 index.json
@@ -376,9 +423,90 @@ archived Observe artifact family
 
 ---
 
-## 8. Observe phase routing
+## 9. Receipt 双绑定：证明 text 与 persisted message 来自同一次 completion
 
-当前 Observe：
+Observe success 不能只验证 `receipt.artifacts.assistant`。
+
+必须同时验证：
+
+```text
+schemaVersion == 1
+status == completed
+invocationId == expected observe invocation id
+
+artifacts.assistant != null
+artifacts.assistant exists
+assistant parent == session.workDirectoryAbs
+assistant basename 严格匹配 [n]assistant.md
+
+artifacts.mainOutput != null
+artifacts.mainOutput == 当前 invocation 的 exact resolved -o path
+mainOutput exists
+```
+
+然后：
+
+```text
+current Observe text
+= 从 exact -o path 读取
+
+persisted Observe identity
+= 从 exact assistant path 解析 n
+```
+
+这形成必须冻结的证明链：
+
+```text
+same invocation id
+      │
+      ├── receipt.mainOutput ──► Check 使用的 Observe text
+      │
+      └── receipt.assistant  ──► work 中 persisted Observe message
+```
+
+因此 Runtime 不会把一个 completion 的 `-o` 和另一个 completion 的 assistant artifact 错配。
+
+### 9.1 Receipt validator
+
+建议把当前 `final-receipt.ts` 中通用逻辑抽成：
+
+```text
+src/completion-receipt.ts
+```
+
+概念接口：
+
+```ts
+validateCompletionReceiptV1({
+  receiptPath,
+  expectedInvocationId
+}): ValidatedCompletionReceiptV1
+```
+
+返回：
+
+```ts
+{
+  assistant: string | null;
+  calls: string | null;
+  extra: string | null;
+  mainOutput: string | null;
+  mainCalls: string | null;
+  mainExtra: string | null;
+}
+```
+
+Final wrapper 再校验 assistant parent == userWritable；Observe wrapper 校验 assistant parent == session work、mainOutput == expected `-o`。
+
+不要复制两套 Receipt parser。
+
+---
+
+## 10. Observe phase routing
+
+### 10.1 `carryover = 0`
+
+保持当前：
 
 ```text
 read:
@@ -392,9 +520,9 @@ continueMode:
   false
 ```
 
-`observe_carryover = 0` 时完全保持。
+### 10.2 `carryover > 0`
 
-`observe_carryover > 0` 时建议切换为与 Thought 类似的 writable routing：
+切换为 writable work routing：
 
 ```text
 input directories:
@@ -407,18 +535,16 @@ continueMode:
   true
 ```
 
-Promptpile 会把 output directory 作为最后 Conversation layer，因此逻辑读取仍然是：
+Promptpile 会把 output directory 作为最后 input layer，所以逻辑读取仍是：
 
 ```text
 authoritative Conversation
 → existing session work Conversation
 ```
 
-同时 `-c` 把本轮 Observe completion 写回同一个 session work。
+Observe prompt 继续用现有 `--append-files <observe.system.md>` 注入，不进入 Conversation。
 
-Observe prompt 仍通过现有 `--append-files <observe.system.md>` 注入；该 prompt sidecar 本身不进入 Conversation。
-
-完整概念 argv：
+概念 argv：
 
 ```text
 promptpile
@@ -428,146 +554,257 @@ promptpile
   --disable-tool
   --append-files <observe-prompt.system.md>
   -o <observe-output.md>
-  --invocation-id <...>
-  --receipt <observe-receipt.json>
+  --invocation-id <sessionId-observe-stepIndex>
+  --receipt <unique-observe-receipt.json>
 ```
 
 ---
 
-## 9. Runtime 闭环顺序
+## 11. Frozen Observe commit sequence
 
-`observe_carryover > 0` 时，一轮 successful iteration 的冻结顺序为：
+当 `observe_carryover > 0` 时，一轮 successful Observe 的提交顺序固定为：
 
 ```text
-1. Thought
+1. Thought completed
    ↓
 2. Observe Promptpile invocation
-   - 生成临时 -o text
-   - 持久化 [n]assistant.md 到 work
-   - 原子发布 Completion Receipt
+   - temporary -o
+   - persisted assistant into work
+   - atomic Completion Receipt
    ↓
-3. Validate Observe Receipt
+3. Validate -o exists and trim() is non-empty
    ↓
-4. 从 receipt.artifacts.assistant 得到 Observe index n
+4. Validate Completion Receipt
    ↓
-5. register n 到 .observe_files/index.json
+5. Assert receipt.mainOutput == exact -o path
    ↓
-6. prune active Observe 到 observe_carryover 上限
+6. Assert receipt.assistant == valid direct child of session work
    ↓
-7. Observe phaseCompleted
+7. Parse Observe message index n from assistant basename
    ↓
-8. Check(current Observe text)
+8. Append-register n in .observe_files/index.json
    ↓
-9. continue / stop
+9. Prune active Observe to carryover limit
+   ↓
+10. Verify stable retention invariants
+   ↓
+11. Set latestSuccessfulObserve from current -o text
+   ↓
+12. phase.completed(observe)
+   ↓
+13. Check(current Observe text)
+   ↓
+14. continue / stop
 ```
 
-必须在 `phaseCompleted(observe)` 之前完成登记与 pruning。
-
-因此“Observe phase 成功”的含义变成：
+这里 `phase.completed(observe)` 的含义冻结为：
 
 ```text
 model completion succeeded
-AND temporary Observe output valid
-AND persisted work artifact receipt valid
+AND -o text valid
+AND persisted assistant Receipt valid
+AND mainOutput/assistant belong to this exact invocation
 AND Observe identity registered
-AND active Observe retention invariant satisfied
+AND retention/pruning succeeded
+AND stable invariants hold
 ```
 
 其中任一步失败：
 
 ```text
-session stopReason = error
-Check 不执行
-Final 不执行
+stopReason = error
+Check 不运行
+Final 不运行
 ```
-
-这保证后续 phase 永远不会在半完成 retention 状态上继续运行。
 
 ---
 
-## 10. Retention / pruning 算法
+## 12. Retention invariants
+
+每个 successful Observe phase commit 之后必须满足：
+
+### 12.1 Active count
+
+```text
+active Observe count <= observe_carryover
+```
+
+### 12.2 Registered location exclusivity
+
+对每个 registered index：
+
+```text
+exactly one primary body exists:
+  root/[n]assistant.md
+  OR
+  .observe_files/[n]assistant.md
+```
+
+### 12.3 Latest Observe must remain active
+
+若本轮新 Observe index 为 `newestObserveIndex`：
+
+```text
+work/[newestObserveIndex]assistant.md MUST exist
+```
+
+本轮新 Observe **绝不能在同一次 prune 中被 archive**。
+
+因此当 `N > 0`：
+
+```text
+newest Observe is always active
+```
+
+### 12.4 Active maximum index monotonicity
+
+由于：
+
+```text
+newest Observe 始终保留在 root
+```
+
+且它是刚由 Promptpile 分配的当前最新 message index，所以 Observe pruning 不得导致：
+
+```text
+max(active work Conversation message index)
+```
+
+下降。
+
+冻结 invariant：
+
+```text
+successful Observe archival never removes the current maximum Conversation index
+```
+
+这保证后续 Promptpile `-c` allocation 不会因为 archive 而重新使用一个已经归档的旧 index。
+
+### 12.5 Thought immutability under Observe pruning
+
+任何未登记在 `index.json` 的 message index 都不是 Observe retention 的 mutation target。
+
+因此：
+
+```text
+Thought artifacts 永远不会被 Observe pruning 移动
+```
+
+---
+
+## 13. Pruning algorithm
 
 输入：
 
 ```text
-carryover = N > 0
-index.indices = 所有 Observe indices
+N > 0
+registered indices
 ```
 
-定义 active Observe：
+计算：
 
 ```text
-index n 属于 active
-iff work 根目录存在 [n]assistant.md
-```
-
-定义 archived Observe：
-
-```text
-index n 属于 archived
-iff .observe_files/ 存在 [n]assistant.md
-```
-
-正常稳定态要求对每一个 registered Observe index：
-
-```text
-exactly one of:
-  active primary body exists
-  archived primary body exists
-```
-
-每次新 Observe 注册后：
-
-```text
-active = registered indices 中 primary body 位于 work 根目录者
+active = registered indices 中 primary body 位于 work root 的 indices
 active.sort(ascending)
-
-while active.length > N:
-  oldest = active.shift()
-  archiveObserveFamily(oldest)
 ```
 
-例如 `N=2`：
+冻结：
 
 ```text
-注册前 active = [3,5]
-新 Observe index = 7
-注册后 active = [3,5,7]
-→ archive 3
-最终 active = [5,7]
+newest = active.at(-1)
 ```
 
-不重新编号文件；Promptpile Conversation index 允许存在空洞：
+然后：
+
+```text
+while active.length > N:
+  oldest = active[0]
+
+  assert oldest != newest
+  archiveObserveFamily(oldest)
+  active.shift()
+```
+
+例如：
+
+```text
+N = 2
+active before = [3,5]
+new Observe = 7
+active after register = [3,5,7]
+newest = 7
+archive 3
+final active = [5,7]
+```
+
+不重新编号文件。Promptpile Conversation index 允许空洞：
 
 ```text
 [0], [2], [4], [5], [6], [7]
 ```
 
-仍按现存 index 升序扫描。
+---
+
+## 14. Archive operation
+
+`archiveObserveFamily(n)` 冻结要求：
+
+1. `n` 已在 identity ledger。
+2. `n` 不是当前 newest Observe。
+3. root primary `[n]assistant.md` 存在。
+4. archive primary 不存在。
+5. 收集 root 中该 index 的允许 artifact family。
+6. destination 任一同名文件已存在时 fail，不覆盖。
+7. 使用同文件系统 `rename`，不得 copy + delete。
+8. non-primary sidecars 先移动。
+9. primary `[n]assistant.md` 最后移动。
+10. primary rename 成功后，active/archive 状态才对扫描语义发生切换。
+11. 任一 rename 失败立即使 Observe phase failure；不得继续 Check。
+
+由于 source/destination 都在同一个 session work tree，正常是同文件系统 rename。
+
+不引入 WAL、跨进程事务或自动恢复协议。
 
 ---
 
-## 11. Archive 操作
+## 15. Stable state 与 failed debug state
 
-`archiveObserveFamily(n)` 必须：
+上述 retention invariants 只保证在：
 
-1. 确认 `n` 已在 `index.json`。
-2. 确认 root primary `[n]assistant.md` 存在。
-3. 确认 archive primary 不存在，防止覆盖。
-4. 收集 root 中该 index 的允许 artifact family。
-5. 对每个目标执行同文件系统 `rename`，不得 copy + delete。
-6. sidecar 可先移动，primary body 最后移动；primary body 的位置作为 active/archived 判定锚点。
-7. 任一 rename 失败立即使 Observe phase 失败，不继续 Check。
+```text
+successful Observe phase commit
+```
 
-由于 source 与 destination 都位于同一个 session work tree，正常情况下 `rename` 是同文件系统移动。
+之后成立。
 
-不要求实现复杂的跨进程事务或恢复日志：session work 本身是单 session 独占、失败即终止、无跨 session resume 保证的内部状态。
+如果：
 
-但必须 fail-closed：发生 archive/index mutation failure 后不得继续 ReAct。
+```text
+index write 成功
+archive sidecar rename 成功
+primary rename 失败
+```
+
+session 会立即 terminal，且可能在 debug-preserve 模式留下诊断性的 partial state。
+
+这类失败状态允许存在：
+
+```text
+root/[3]assistant.md
+archive/[3]assistant.extra.json
+```
+
+但其语义冻结为：
+
+> **debug-preserved failed session is diagnostic-only, not resumable state.**
+
+因此不要求为了失败调试目录实现 rollback 或 transaction log。
+
+成功 session 的 stable state 必须满足 §12 全部 invariants。
 
 ---
 
-## 12. Check 明确保持不变
+## 16. Check 保持完全不变
 
 Check 继续只接收：
 
@@ -599,26 +836,30 @@ repair
 next_action
 ```
 
-Check 的唯一职责仍然是：
+Check 不读取：
 
 ```text
-current Observe
-→ outer ReAct loop 是否继续
+session work
+.observe_files/
+index.json
+Observe history
 ```
 
-Observe carryover 不改变 Check 的输入可见性：Check 不读取 work Conversation，也不读取 `.observe_files/`。
+其唯一职责仍是：
+
+```text
+current Observe → outer loop continue / stop
+```
 
 ---
 
-## 13. Final 明确保持现状
-
-本改造只解决 iteration-to-iteration Observe retention，不改变 Final 当前状态隔离。
+## 17. Final 保持现有状态隔离
 
 Final 继续：
 
 ```text
 read authoritative Conversation only
-+ latest successful Observe explicit Final handoff
++ latestSuccessfulObserve explicit Final handoff
 ```
 
 Final 不读取：
@@ -631,47 +872,31 @@ Observe history
 
 即使：
 
-```toml
+```text
 observe_carryover = 5
 ```
 
-Final 仍只使用 latest successful Observe handoff。
+Final 仍只使用 latest successful Observe。
 
 原因：
 
-1. Final 不读 work 是已有权威历史隔离设计的重要 invariant。
-2. `observe_carryover` 定义 active ReAct work memory，不定义 Final history policy。
-3. 避免无关改变 Final token/context 行为。
-4. latest Observe text 已在 Runtime 中用于当前 Final handoff，不需要从 archive 重读。
-
-如果未来要让 Final 读取多轮 Observe，应作为独立设计讨论。
+1. Final 不读 work 是现有权威历史隔离 invariant。
+2. carryover 只定义 internal work memory。
+3. 不改变 Final token/context policy。
+4. Runtime 已持有 latestSuccessfulObserve 供现有 Final handoff。
 
 ---
 
-## 14. Work Conversation 的真实语义变化
+## 18. Work Conversation 的语义变化
 
-启用 carryover 前，work 根目录主要是：
-
-```text
-Thought₀
-Thought₁
-Thought₂
-...
-```
-
-启用后，work 根目录会形成：
+未启用 carryover：
 
 ```text
-Thought₀
-Observe₀
-Thought₁
-Observe₁
-Thought₂
-Observe₂
-...
+work root
+= Thought history
 ```
 
-经过 retention 后，旧 Observe 被移走，因此更准确地说：
+启用后：
 
 ```text
 work root
@@ -692,7 +917,7 @@ work/
     └── [1]assistant.md  Observe₀
 ```
 
-下一轮 Thought 与 Observe 自然看到：
+下一轮 Thought / Observe 自然看到：
 
 ```text
 Thought₀
@@ -701,132 +926,100 @@ Observe₁
 Thought₂
 ```
 
-而看不到 Observe₀。
+看不到 Observe₀。
 
-Runtime 不对 Observe 内容做任何解释，也不要求模型知道某 assistant message 是 Observe；调用方若需要显式 phase label，应由自己的 Observe prompt 让输出自描述。
+Runtime 不解释 Observe 内容，也不要求它 cumulative；用户自定义 prompt 决定 Observe 的语义。
 
 ---
 
-## 15. Failure semantics
+## 19. Failure semantics
 
-### 15.1 Promptpile Observe completion 失败
+### 19.1 Promptpile Observe invocation failure
 
 ```text
-无 valid receipt
-→ Observe phase error
-→ 不登记 index
-→ 不 Check
+Promptpile nonzero/spawn failure
+→ no successful Observe commit
+→ no Check
 ```
 
-Promptpile 是否已经留下部分 artifact 由其自身 Completion Receipt/commit contract 管理；React 不通过目录 diff 猜测成功状态。
-
-### 15.2 临时 `-o` 缺失或为空
-
-保持当前：
+### 19.2 `-o` missing / empty
 
 ```text
 phase_output_missing
-→ Observe phase error
+→ terminal session
+→ no Check
 ```
 
-若 carryover mode 中 Promptpile 已成功持久化 assistant 但 Runtime 随后发现 main output 无效，则 session 仍 terminal。session work 为内部临时状态，正常 cleanup 会整体删除；debug-preserve 模式可保留供诊断，不提供 resume guarantee。
+即使 Promptpile 已持久化 assistant，session work 仍只是失败诊断状态，最终 cleanup 或 debug-preserve 处理；不提供 resume。
 
-### 15.3 Receipt 无效
+### 19.3 Receipt invalid
 
 包括：
 
 ```text
-missing
+missing receipt
 invalid JSON
 wrong schema/status
 wrong invocation id
 assistant=null
 assistant outside session work
 invalid assistant basename
-artifact missing
+assistant missing
+mainOutput=null
+mainOutput != exact expected -o path
+mainOutput missing
 ```
 
-全部作为 Observe phase invocation/commit failure；不运行 Check。
+全部：
 
-### 15.4 index 写失败
+```text
+Observe phase failure
+→ no register/prune when validation has not reached that stage
+→ no Check
+```
 
-Observe phase error；不运行 Check。
+### 19.4 index write failure
 
-### 15.5 archive/prune 失败
+```text
+Observe phase failure
+→ no Check
+```
 
-Observe phase error；不运行 Check。
+### 19.5 archive/prune failure
 
-不需要尝试恢复用户权威 Conversation，因为所有 mutation 都只发生在 session-owned work tree。
+```text
+Observe phase failure
+→ no Check
+```
+
+不修改、不回滚 authoritative Conversation；所有新 mutation 都只在 session work tree。
 
 ---
 
-## 16. Completion Receipt validator 建议
+## 20. Suggested module boundaries
 
-当前 `final-receipt.ts` 已经实现 Completion Receipt v1 的大量通用校验，但接口是 Final-specific 且不返回 parsed artifact。
+### `src/completion-receipt.ts`
 
-为了避免 Observe 再复制一套 receipt parser，建议抽一个很小的通用层，例如：
+只负责通用 Completion Receipt v1 parse / validate。
 
-```text
-src/completion-receipt.ts
-```
+### `src/final-receipt.ts`
 
-职责：
+继续作为 Final-specific wrapper。
 
-```ts
-validateCompletionReceiptV1({
-  receiptPath,
-  expectedInvocationId,
-  expectedAssistantParentAbs
-}): ValidatedCompletionReceiptV1
-```
+### `src/observe-files.ts`
 
-返回至少：
-
-```ts
-{
-  assistant: string | null;
-  calls: string | null;
-  extra: string | null;
-  mainOutput: string | null;
-  mainCalls: string | null;
-  mainExtra: string | null;
-}
-```
-
-然后：
-
-```text
-final-receipt.ts
-→ Final-specific wrapper
-
-observe persistence
-→ Work-specific wrapper，要求 assistant 必须非 null 且 parent == session work
-```
-
-不要把 receipt validation、Observe index、archive policy 混成一个大 manager。
-
----
-
-## 17. 建议新增的文件模块
-
-建议新增一个小而纯的 filesystem module：
-
-```text
-src/observe-files.ts
-```
-
-只负责：
+只负责 filesystem state：
 
 ```text
 .observe_files path
-index.json parse / validate / atomic write
-register Observe index
-active/archive invariant inspection
-archive Observe artifact family
+index.json parse / validate / atomic append-register
+active/archive inspection
+artifact-family archive
+retention invariant verification
 prune to carryover
 ```
 
-建议接口可以保持朴素：
+建议朴素接口：
 
 ```ts
 registerObserveAndPrune({
@@ -836,54 +1029,29 @@ registerObserveAndPrune({
 }): void
 ```
 
-内部流程：
-
-```text
-assistantPath
-→ validate direct child of work
-→ parse message index
-→ append index atomically
-→ prune active Observe
-```
-
 不引入：
 
 ```text
-ObserveStore class
+ObserveStore
 RetentionManager
 ObservationChannel
 ReactMemoryProvider
 ArchiveRepository
 ```
 
-除非后续确实出现多实现需求。
+### `ObserveReactProcess`
 
----
-
-## 18. Runtime / Process 分层
-
-建议保持：
+负责：
 
 ```text
-ObserveReactProcess
-= 执行 Promptpile completion
-= 返回 current Observe text + persisted assistant path（carryover mode）
-
-PromptpileReactRuntime
-= 定义 phase 顺序
-= 在 Check 前要求 Observe retention commit 成功
-
-observe-files.ts
-= 文件状态 mutation
+Promptpile invocation
+-o output
+optional persistence/receipt
+receipt-specific validation wrapper
+返回 current text + persisted assistant path
 ```
 
-Observe process 返回值可从：
-
-```ts
-Promise<string>
-```
-
-扩展为：
+建议返回：
 
 ```ts
 interface ObserveReactResult {
@@ -892,47 +1060,23 @@ interface ObserveReactResult {
 }
 ```
 
-Runtime：
+### `PromptpileReactRuntime`
 
-```ts
-const observation = await this.reactObserveProcess();
+负责 phase ordering：
 
-this.latestSuccessfulObserve = {
-  stepIndex: this.currentStep,
-  text: observation.text
-};
-
-if (observation.persistedAssistantPath !== undefined) {
-  registerObserveAndPrune({
-    session: this.session,
-    assistantPath: observation.persistedAssistantPath,
-    carryover: this.config.observeCarryover
-  });
-}
-
-// 只有到这里 Observe phase 才 completed
-const continueOuter = await this.reactCheckProcess(observation.text);
+```text
+Observe result
+→ register/prune
+→ latestSuccessfulObserve
+→ phase.completed
+→ Check
 ```
 
-不要让 Runtime 保存：
-
-```ts
-successfulObserves: Observe[]
-```
-
-carryover history 的 source of truth 应是 filesystem。
-
-Runtime 只继续保留现有：
-
-```ts
-latestSuccessfulObserve
-```
-
-因为它属于 Final handoff 的既有需求，而不是 carryover history。
+Runtime 不保存 Observe history 数组；filesystem 是 carryover history source of truth。
 
 ---
 
-## 19. 预计代码改造面
+## 21. Expected code changes
 
 ### `src/types.ts`
 
@@ -951,7 +1095,7 @@ ResolvedReactConfig.observeCarryover: number
 --observe-carryover <n>
 ```
 
-解析为非负整数；与 `maxStep` 的“正整数”解析不要混淆。
+解析为非负整数。
 
 ### `src/toml-config-react.ts`
 
@@ -972,20 +1116,16 @@ observeCarryover?: number
 合并：
 
 ```text
-CLI
-> TOML
-> 0
+CLI > TOML > 0
 ```
-
-校验 `>=0`，写入 resolved config。
 
 ### `src/build-phase-argv.ts`
 
-Observe routing 按 `observeCarryover` 分支：
+Observe routing：
 
 ```text
 0:
-  保持当前 read authoritative + work / no output / no -c
+  保持当前 routing
 
 >0:
   authoritative inputs
@@ -999,120 +1139,132 @@ Observe：
 
 ```text
 继续 -o
-carryover>0 时增加 receipt + -c persistence
-验证 receipt
-返回 text + persisted assistant path
+N>0 增加 -c / output-dir / invocation-id / receipt
+验证 Receipt 双绑定
+返回 ObserveReactResult
 ```
 
 ### `src/react-runtime.ts`
 
-在 Observe completion 与 Check 之间执行：
+在 Observe 与 Check 之间：
 
 ```text
 registerObserveAndPrune
+verify invariants
+set latestSuccessfulObserve
 ```
-
-并把 retention failure 归入 Observe phase failure。
 
 ### `src/observe-files.ts`
 
 新增 file-native retention 实现。
 
-### Receipt validation
+---
 
-建议把 `final-receipt.ts` 中通用部分抽出，Final 行为保持兼容。
+## 22. Security / path identity
+
+所有 `.observe_files` mutation 必须限定在当前 session work：
+
+1. archive root 固定为 `session.workDirectoryAbs/.observe_files`。
+2. Receipt assistant parent 必须 canonical same-directory 于 session work。
+3. Receipt mainOutput 必须 exact match Runtime 本轮创建的 resolved `-o` path。
+4. 不接受 symlink/path traversal 后逃逸的 artifact。
+5. assistant basename 必须严格解析为标准 `[n]assistant.md`。
+6. archive destination 必须 canonical 位于当前 `.observe_files`。
+7. destination 已存在时 fail，不覆盖。
+8. 不读取或移动 authoritative Conversation 中的同 index 文件。
+9. 优先复用 `react-path-identity.ts` helper。
 
 ---
 
-## 20. Agent Event Protocol 保持不变
+## 23. Agent Event Protocol
 
 不新增：
 
 ```text
 observe.persisted
 observe.archived
-observe.delta
-handoff.created
 retention.updated
+handoff.created
 ```
 
-公开事件仍然只表达 phase lifecycle 与 Final output。
+公开事件仍只表达 phase lifecycle / Check decision / Final output。
 
-Observe retention 是内部 session filesystem implementation detail。
-
-`phase.completed(observe)` 只有在 retention commit 成功后才发出，因此外部无需知道内部步骤。
+`phase.completed(observe)` 只有在完整 retention commit 成功后才发出。
 
 ---
 
-## 21. Security / path identity
-
-所有 `.observe_files` mutation 必须限制在当前 session work：
-
-1. archive root 固定为 `session.workDirectoryAbs/.observe_files`。
-2. Receipt assistant parent 必须 canonical same-directory 于 `session.workDirectoryAbs`。
-3. 不接受 symlink/path traversal 逃逸后的 assistant artifact。
-4. index 只能解析标准非负 integer message index。
-5. archive destination 必须 canonical 位于当前 `.observe_files`。
-6. destination 已存在时 fail，不覆盖。
-7. 不读取或移动 authoritative Conversation 中的同 index 文件。
-
-现有 `react-path-identity.ts` 的 canonical/sameDirectory helper 应优先复用。
-
----
-
-## 22. 测试计划
-
-### 22.1 Config
+## 24. Tests: configuration
 
 覆盖：
 
 ```text
-默认 = 0
+default = 0
 CLI > TOML
-0 合法
-1 合法
-N 合法
-负数非法
-小数非法
-字符串非法
-unknown TOML key contract 更新
+0 valid
+1 valid
+N valid
+negative invalid
+fraction invalid
+non-numeric invalid
+unknown TOML key strictness updated
 ```
 
-### 22.2 Backward compatibility (`carryover=0`)
+---
 
-必须断言：
+## 25. Tests: backward compatibility
+
+`carryover=0` 必须断言：
 
 ```text
 Observe argv 与当前一致
 无 --output-dir work
 无 -c
-无 Observe receipt
+无 --receipt
+无 Observe invocation-id
 无 .observe_files
 work 中无 Observe assistant message
-Final handoff 行为不变
+Final handoff unchanged
 ```
 
-### 22.3 Observe persistence (`carryover>0`)
+最好保留 current argv snapshot/boundary test，使默认路径是真正 byte-level/argument-level 兼容，而不是只做语义近似。
 
-fake Promptpile 产生：
+---
+
+## 26. Tests: Observe persistence / receipt binding
+
+fake Promptpile：
 
 ```text
-work/[1]assistant.md
-receipt.artifacts.assistant = exact path
--o = observe text
+work/[1]assistant.md = observe persisted body
+-o = observe main output
+receipt.assistant = exact work/[1]assistant.md
+receipt.mainOutput = exact -o
+receipt.invocationId = expected
 ```
 
 断言：
 
 ```text
-Observe 返回 text
-index.json = [1]
-[1]assistant.md 留在 root
+Observe returns text
+index.json == [1]
+[1]assistant.md active in root
 ```
 
-### 22.4 Multiple iterations
+必须增加失败 case：
 
-`carryover=2`，模拟：
+```text
+assistant valid but mainOutput points to another file
+mainOutput valid but assistant points to another work file
+wrong invocation id
+```
+
+全部在 Check 前 fail。
+
+---
+
+## 27. Tests: retention and monotonic index
+
+`carryover=2`：
 
 ```text
 Thought 0
@@ -1129,49 +1281,27 @@ Observe 5
 root Observe = 3,5
 archive Observe = 1
 index = [1,3,5]
-Thought 0,2,4 全部仍在 root
+Thought 0,2,4 remain root
 ```
 
-### 22.5 不误归档 Thought
-
-给 work 根目录混合：
+再执行下一 Thought，必须由 Promptpile 产生：
 
 ```text
-[0]assistant.md Thought
-[1]assistant.md Observe
-[2]assistant.md Thought
-[3]assistant.md Observe
+[6]assistant.md
 ```
 
-prune 只能根据 manifest archive `1/3`，绝不能按“最旧 assistant 文件”移动 Thought。
+不得因为 `[1]` 被 archive 而复用旧 index。
 
-### 22.6 Artifact family
-
-Observe index 3 包含：
+显式测试 invariant：
 
 ```text
-[3]assistant.md
-[3]assistant.extra.json
+newest Observe always remains root
+max active Conversation index never decreases after prune
 ```
 
-淘汰后两者必须都位于 `.observe_files/`。
+---
 
-### 22.7 Receipt validation
-
-覆盖：
-
-```text
-missing receipt
-wrong invocation id
-assistant null
-assistant outside work
-assistant basename invalid
-assistant file missing
-```
-
-全部在 Check 前失败。
-
-### 22.8 Manifest strictness
+## 28. Tests: manifest strictness
 
 覆盖：
 
@@ -1184,61 +1314,102 @@ negative index
 non-integer
 ```
 
-### 22.9 Archive collision
-
-如果：
+同时测试 append-only：
 
 ```text
-root/[3]assistant.md
+register 1 → [1]
+register 3 → [1,3]
+archive 1 → still [1,3]
+```
+
+---
+
+## 29. Tests: artifact family / archive collision
+
+Observe index 3：
+
+```text
+[3]assistant.md
+[3]assistant.extra.json
+```
+
+淘汰后两者都在 `.observe_files/`。
+
+若 destination 任一 family file 已存在：
+
+```text
 archive/[3]assistant.md
 ```
 
 必须 fail，不覆盖。
 
-### 22.10 FSM
+测试 primary-last：若 sidecar move 成功、primary move 模拟失败：
+
+```text
+session fails
+no Check
+```
+
+允许 debug-preserve partial state，但不得被视为 stable/resumable。
+
+---
+
+## 30. Tests: FSM
 
 覆盖：
 
 ```text
-retention success → Check
-retention failure → no Check
+retention success → phase.completed(observe) → Check
+retention failure → no phase.completed(observe) success → no Check
 Check=false → Final
-Check=true + next step → next Thought sees active Observe via normal work scan
+Check=true + next step → next Thought sees retained Observe through normal root scan
 Check=true + max_step → Final
 ```
 
-### 22.11 Real Promptpile boundary
-
-至少一个真实 Promptpile CLI E2E，验证：
+特别断言：
 
 ```text
-Observe -c + -o + receipt 可同时工作
-receipt assistant path 指向 work/[n]assistant.md
-移入 .observe_files 后下一次 Promptpile scan 不再读取它
-root 中保留的 latest Observe 会正常进入后续 Thought/Observe messages
+current newest Observe remains active before Check
 ```
 
 ---
 
-## 23. 非目标
+## 31. Real Promptpile E2E
 
-本改造明确不做：
+至少一个真实 Promptpile CLI E2E 验证：
 
-1. 不修改 `react_check_decision` schema。
-2. 不把 Check 自然语言输出反馈给 Thought。
-3. 不新增 Observe 专用 role。
-4. 不修改 Promptpile 普通 Conversation 文件格式。
-5. 不给 `[n]assistant.md` 加 YAML phase metadata。
-6. 不修改 authoritative Conversation。
-7. 不让 Final 直接读取 session work。
-8. 不定义跨 session Observe archive 恢复协议。
-9. 不提供 session resume。
-10. 不让外部 package 依赖 `.observe_files` schema 作为公共 API。
-11. 不对 Observe 内容做 cumulative/local 语义假设。
+```text
+Observe -c + -o + receipt 可同时工作
+receipt.assistant points to work/[n]assistant.md
+receipt.mainOutput equals requested -o path
+同一次 invocation id 绑定二者
+移入 .observe_files 后下一次 scan 不再读取 archived Observe
+root retained Observe 会进入后续 Thought/Observe context
+prune 后下一次 -c index 继续单调递增，不复用 archived index
+```
 
 ---
 
-## 24. 完整示例：`observe_carryover=1`
+## 32. Non-goals
+
+明确不做：
+
+1. 不修改 `react_check_decision` schema。
+2. 不把 Check 自然语言输出反馈给 Thought。
+3. 不新增 Observe role。
+4. 不修改 Promptpile Conversation 文件格式。
+5. 不给 `[n]assistant.md` 增加 YAML phase metadata。
+6. 不修改 authoritative Conversation。
+7. 不让 Final 直接读取 session work。
+8. 不定义跨 session Observe archive 恢复协议。
+9. 不支持 session resume。
+10. 不把 `.observe_files` schema 作为 public API。
+11. 不对 Observe 内容做 cumulative/local 语义假设。
+12. 不引入 WAL / rollback transaction manager。
+
+---
+
+## 33. 完整示例：`observe_carryover=1`
 
 开始：
 
@@ -1257,6 +1428,23 @@ work/
 
 ### Iteration 0 / Observe
 
+Promptpile 同一 invocation：
+
+```text
+-o /tmp/observe-0.md
+-c --output-dir work
+--receipt /tmp/observe-receipt-0.json
+```
+
+Receipt 证明：
+
+```text
+mainOutput = /tmp/observe-0.md
+assistant  = work/[1]assistant.md
+```
+
+登记后：
+
 ```text
 work/
 ├── [0]assistant.md              Thought₀
@@ -1269,14 +1457,14 @@ Check₀=true。
 
 ### Iteration 1 / Thought
 
-Promptpile 正常扫描 root，因此自然看到：
+Promptpile 正常 scan：
 
 ```text
 Thought₀
 Observe₀
 ```
 
-写出：
+写：
 
 ```text
 [2]assistant.md                  Thought₁
@@ -1284,19 +1472,27 @@ Observe₀
 
 ### Iteration 1 / Observe
 
-写出：
+同一 invocation 产生：
 
 ```text
 [3]assistant.md                  Observe₁
+-o Observe₁ text
+Receipt binds both
 ```
 
-登记：
+append-register：
 
 ```json
 {"version":1,"indices":[1,3]}
 ```
 
-active Observe 数量 2 > carryover 1，因此 move Observe₀：
+active Observe：
+
+```text
+[1,3]
+```
+
+`N=1`，newest=3，archive oldest=1：
 
 ```text
 work/
@@ -1308,48 +1504,61 @@ work/
     └── [1]assistant.md          Observe₀ archived
 ```
 
-下一轮 active work Conversation 自动成为：
+稳定态：
 
 ```text
-Thought₀
-Thought₁
-Observe₁
+latest Observe 3 remains active
+active Observe count = 1
+max root message index = 3
 ```
 
-无需任何特殊 handoff 注入。
+Check₁=true 时下一 Thought 由 Promptpile 分配：
 
-如果 Check₁=false：
+```text
+[4]assistant.md
+```
+
+不会复用 archived index 1。
+
+若 Check₁=false：
 
 ```text
 Final
 = authoritative Conversation
-+ latestSuccessfulObserve(Observe₁) 的现有 Final handoff
++ latestSuccessfulObserve(Observe₁) existing Final handoff
 ```
 
-session 成功结束后，整个 work tree 按现有 cleanup policy 删除。
+session 成功后整个 work tree 按现有 cleanup policy 删除。
 
 ---
 
-## 25. 验收标准
+## 34. Acceptance criteria
 
-本设计可以认为落地完成，当以下条件全部成立：
+本设计实现完成必须同时满足：
 
-1. `observe_carryover=0` 的现有行为与 argv contract 无回归。
+1. `observe_carryover=0` argv / filesystem / event 行为无回归。
 2. `N>0` 时 Observe 由 Promptpile 自己持久化为标准 `[n]assistant.md`。
 3. React 不自行分配 Conversation index。
-4. Observe index 由 validated Completion Receipt 精确获得。
-5. `.observe_files/index.json` 是 Observe 身份唯一 source of truth。
-6. work root / `.observe_files` 的物理位置是 active/archive 状态唯一 source of truth。
-7. active Observe 永远不超过 N。
-8. Thought 文件永不因 Observe pruning 被移动。
-9. 同 index Observe artifact family 一起归档。
-10. Check 输入与 boolean protocol 完全不变。
-11. Final 仍只读 authoritative Conversation + latest Observe handoff。
-12. retention/index/archive 任一失败都会在 Check 前终止 session。
-13. Agent Event Protocol 不新增内部 retention 事件。
-14. session cleanup 与 debug-preserve 语义保持现状。
-15. real Promptpile E2E 证明“根目录保留即自然可见、移入子目录即自然不可见”。
+4. Observe identity 由 validated Completion Receipt 的 assistant artifact 精确获得。
+5. Check 使用的 `-o` 与 persisted Observe assistant 通过同一 Receipt / invocation id 双绑定。
+6. `.observe_files/index.json` 是 Observe identity 的唯一 source of truth。
+7. identity ledger append-only。
+8. root / `.observe_files` 物理位置是 active/archive 的唯一 source of truth。
+9. successful stable state 中每个 registered Observe primary 恰好位于一个位置。
+10. active Observe 永远不超过 N。
+11. newest Observe 永远保持 active。
+12. Observe pruning 永远不会降低 active work Conversation 的当前最大 message index。
+13. 后续 Promptpile mutation 不复用 archived Observe index。
+14. Thought 文件永不因 Observe pruning 被移动。
+15. 同 index Observe artifact family 一起归档，primary last。
+16. Check 输入与 boolean protocol 完全不变。
+17. Final 仍只读 authoritative Conversation + latest Observe handoff。
+18. retention/index/archive 任一失败都会在 Check 前终止 session。
+19. failed debug-preserve state 明确不可 resume，仅供诊断。
+20. Agent Event Protocol 不新增 retention event。
+21. session cleanup 与 debug-preserve 语义保持现状。
+22. real Promptpile E2E 证明“根目录保留即自然可见、移入子目录即自然不可见、index 持续单调分配”。
 
-最终架构可以压缩为一句话：
+最终架构压缩为一句话：
 
-> **`observe_carryover` 不负责把 Observe 注入后续 phase；它只决定哪些 Observe message 继续留在 active work Conversation。Promptpile 负责消息文件，React 只负责给 Observe 标身份并移动文件。**
+> **`observe_carryover` 不负责把 Observe 注入后续 phase；它只决定哪些由 Promptpile 正常生成的 Observe message 继续留在 active work Conversation。Promptpile 负责消息与 index，Completion Receipt 负责 commit proof，React 只负责 Observe 身份登记和文件 retention。**
