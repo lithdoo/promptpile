@@ -8,6 +8,7 @@ const path = require('path');
 const root = path.join(__dirname, '..');
 const {
   parseObserveFileIndexV1,
+  maxRootConversationIndex,
   readObserveFileIndex,
   registerObserveAndPrune,
   verifyObserveRetentionInvariants
@@ -76,6 +77,19 @@ try {
     /maximum index/
   );
   assert.ok(!fs.existsSync(path.join(staleWork, '.observe_files')), 'failed preflight has no ledger side effect');
+
+  const scannerWork = path.join(tmp, 'scanner-semantics');
+  fs.mkdirSync(scannerWork);
+  fs.writeFileSync(path.join(scannerWork, '[7]critic.json'), '{}');
+  fs.writeFileSync(path.join(scannerWork, '[8]assistant.calls.jsonl'), '');
+  fs.writeFileSync(path.join(scannerWork, '[9]assistant.txt'), 'ignored');
+  fs.mkdirSync(path.join(scannerWork, '[10]nested.md'));
+  const scannerSession = { sessionId: 'scanner', workRootAbs: tmp, workDirectoryAbs: scannerWork };
+  assert.strictEqual(
+    maxRootConversationIndex(scannerSession),
+    8,
+    'maximum index uses the public Conversation artifact classifier used by Promptpile scanning'
+  );
 
   const collisionWork = path.join(tmp, 'collision');
   fs.mkdirSync(path.join(collisionWork, '.observe_files'), { recursive: true });

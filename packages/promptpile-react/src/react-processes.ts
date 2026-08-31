@@ -26,6 +26,7 @@ import {
 } from './final-receipt';
 import { validateCompletionReceiptV1 } from './completion-receipt';
 import { sameDirectory } from './react-path-identity';
+import { maxRootConversationIndex } from './observe-files';
 
 /** 子进程阶段共享依赖（不持有 {@link PromptpileReactRuntime} 引用）。 */
 export type ReactProcessContext = {
@@ -218,11 +219,7 @@ export class ObserveReactProcess extends ReactProcess {
             throw new Error('Observe assistant artifact has an invalid basename');
           }
           const receiptIndex = Number(assistantMatch[1]);
-          const maximumIndex = fs.readdirSync(this.ctx.session.workDirectoryAbs, { withFileTypes: true })
-            .filter(entry => entry.isFile())
-            .map(entry => /^\[(0|[1-9]\d*)\](?:assistant|user|system)\.md$/.exec(entry.name))
-            .filter((match): match is RegExpExecArray => match !== null)
-            .reduce((maximum, match) => Math.max(maximum, Number(match[1])), -1);
+          const maximumIndex = maxRootConversationIndex(this.ctx.session);
           if (receiptIndex !== maximumIndex) {
             throw new Error('Observe assistant artifact is not the current Conversation maximum');
           }

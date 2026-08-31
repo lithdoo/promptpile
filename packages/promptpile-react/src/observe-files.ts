@@ -1,13 +1,13 @@
 import { randomBytes } from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import { classifyConversationArtifactNameV1 } from 'promptpile-protocol/conversation';
 import { sameDirectory } from './react-path-identity';
 import type { ReactSessionContext } from './types';
 
 const ARCHIVE_DIRECTORY = '.observe_files';
 const INDEX_NAME = 'index.json';
 const ASSISTANT_BODY = /^\[(0|[1-9]\d*)\]assistant\.md$/;
-const MESSAGE_BODY = /^\[(0|[1-9]\d*)\](?:assistant|user|system)\.md$/;
 const FAMILY_SUFFIXES = [
   'assistant.md',
   'assistant.calls.jsonl',
@@ -123,12 +123,12 @@ const parseDirectAssistantPath = (session: ReactSessionContext, assistantPath: s
 const activeIndices = (session: ReactSessionContext, registered: number[]): number[] =>
   registered.filter(index => fs.existsSync(path.join(session.workDirectoryAbs, bodyName(index))));
 
-const maxRootMessageIndex = (session: ReactSessionContext): number => {
+export const maxRootConversationIndex = (session: ReactSessionContext): number => {
   let maximum = -1;
   for (const entry of fs.readdirSync(session.workDirectoryAbs, { withFileTypes: true })) {
     if (!entry.isFile()) continue;
-    const match = MESSAGE_BODY.exec(entry.name);
-    if (match !== null) maximum = Math.max(maximum, Number(match[1]));
+    const artifact = classifyConversationArtifactNameV1(entry.name);
+    if (artifact !== undefined) maximum = Math.max(maximum, artifact.idx);
   }
   return maximum;
 };
@@ -198,7 +198,7 @@ export const registerObserveAndPrune = (options: {
   if (previous !== undefined && newestObserveIndex <= previous) {
     throw new Error('Observe indices must be registered in strictly ascending order');
   }
-  const beforeMaximum = maxRootMessageIndex(session);
+  const beforeMaximum = maxRootConversationIndex(session);
   if (newestObserveIndex !== beforeMaximum) {
     throw new Error('New Observe must be the current Conversation maximum index');
   }
@@ -212,7 +212,7 @@ export const registerObserveAndPrune = (options: {
     active.shift();
   }
   verifyObserveRetentionInvariants({ session, carryover, newestObserveIndex });
-  if (maxRootMessageIndex(session) < beforeMaximum) {
+  if (maxRootConversationIndex(session) < beforeMaximum) {
     throw new Error('Observe pruning decreased the active Conversation maximum index');
   }
   return newestObserveIndex;
