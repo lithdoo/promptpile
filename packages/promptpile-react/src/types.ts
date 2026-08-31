@@ -32,6 +32,7 @@ export interface ReactCliOverrides {
   inputMode?: boolean;
   continueMode?: boolean;
   maxStep?: number;
+  observeCarryover?: number;
   outputFormat?: ReactOutputFormat;
 }
 
@@ -56,6 +57,8 @@ export interface ResolvedReactConfig {
   inputMode: boolean;
   continueMode: boolean;
   maxStep: number;
+  /** Maximum recent persisted Observe turns kept in the active work Conversation. */
+  observeCarryover: number;
   outputFormat: ReactOutputFormat;
   toolsFileForCli?: string;
   afterHookForCli?: string;

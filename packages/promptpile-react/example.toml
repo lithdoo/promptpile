@@ -16,6 +16,8 @@ dir = "./message"
 # output_dir = "./session"
 
 max_step = 3
+# 默认 0；设为 N>0 时，最近 N 个 Observe 会保留在 active work Conversation。
+observe_carryover = 0
 continue = false
 input = false
 quiet = false

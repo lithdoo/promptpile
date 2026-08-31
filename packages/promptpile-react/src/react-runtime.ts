@@ -4,6 +4,7 @@ import {
   CoreReactProcess,
   FinalReactProcess,
   ObserveReactProcess,
+  type ObserveReactResult,
   type ReactProcessContext
 } from './react-processes';
 import type { IReactRuntime, ReactRuntimeStopReason } from './runtime';
@@ -14,6 +15,7 @@ import {
   writeFinalObservationHandoff,
   type LatestSuccessfulObserve
 } from './final-observation-handoff';
+import { registerObserveAndPrune } from './observe-files';
 
 export type ReactPhaseStartedFact =
   | { phase: 'thought' | 'observe' | 'check'; stepIndex: number }
@@ -77,7 +79,18 @@ export class PromptpileReactRuntime implements IReactRuntime {
 
       phase = 'observe';
       await this.observer.phaseStarted({ phase, stepIndex: this.currentStep });
-      const observeText = await this.reactObserveProcess();
+      const observeResult = await this.reactObserveProcess();
+      if (this.config.observeCarryover > 0) {
+        if (observeResult.persistedAssistantPath === undefined) {
+          throw new PromptpileReactInvocationError('observe', 'Persisted Observe assistant is missing');
+        }
+        registerObserveAndPrune({
+          session: this.requiredSession(),
+          assistantPath: observeResult.persistedAssistantPath,
+          carryover: this.config.observeCarryover
+        });
+      }
+      const observeText = observeResult.text;
       this.latestSuccessfulObserve = { stepIndex: this.currentStep, text: observeText };
       await this.observer.phaseCompleted({ phase, stepIndex: this.currentStep });
 
@@ -132,8 +145,8 @@ export class PromptpileReactRuntime implements IReactRuntime {
     await new CoreReactProcess(this.reactProcessCtx(), this.config.prompts.core).run();
   }
 
-  async reactObserveProcess(): Promise<string> {
-    return new ObserveReactProcess(this.reactProcessCtx(), this.config.prompts.observe).run();
+  async reactObserveProcess(): Promise<ObserveReactResult> {
+    return new ObserveReactProcess(this.reactProcessCtx(), this.config.prompts.observe).run(this.currentStep);
   }
 
   async reactCheckProcess(observeText: string): Promise<boolean> {

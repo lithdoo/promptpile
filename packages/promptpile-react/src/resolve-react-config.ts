@@ -242,6 +242,16 @@ export const resolveReactConfig = (cwd: string, argv: string[]): ResolvedReactCo
     process.exit(1);
   }
 
+  const observeCarryover =
+    pickInt(
+      cli.observeCarryover,
+      reactToml.observeCarryover
+    ) ?? 0;
+  if (observeCarryover < 0) {
+    console.error('Error: observe_carryover must be a non-negative integer');
+    process.exit(1);
+  }
+
   const toolsRel = pickStr(
     cli.toolsFile,
     sharedTomlReact.toolsFile,
@@ -357,6 +367,7 @@ export const resolveReactConfig = (cwd: string, argv: string[]): ResolvedReactCo
     inputMode,
     continueMode,
     maxStep,
+    observeCarryover,
     outputFormat: cli.outputFormat ?? 'terminal',
     toolsFileForCli,
     afterHookForCli,

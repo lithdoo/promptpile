@@ -36,6 +36,18 @@ const parseMaxStepCli = (raw: unknown): number | undefined => {
   return n;
 };
 
+const parseObserveCarryoverCli = (raw: unknown): number | undefined => {
+  if (raw === undefined || raw === null) return undefined;
+  const s = String(raw).trim();
+  if (s === '') return undefined;
+  const n = Number(s);
+  if (!Number.isInteger(n) || n < 0) {
+    console.error('Error: --observe-carryover must be a non-negative integer');
+    process.exit(1);
+  }
+  return n;
+};
+
 const collectDirectory = (value: string, previous: string[]): string[] => [
   ...previous,
   value
@@ -84,6 +96,7 @@ const buildProgram = (): Command => {
       'After-success hook for Thought phase only (CLI relative cwd)'
     )
     .option('--max-step <n>', 'Max successful ReAct iterations (this package only)')
+    .option('--observe-carryover <n>', 'Recent Observe turns retained in the active work Conversation')
     .option(
       '--output-format <format>',
       'Output format: terminal | stream-json',
@@ -118,6 +131,7 @@ export const parseReactCli = (argv: string[]): ReactCliOverrides => {
     input?: boolean;
     continue?: boolean;
     maxStep?: string;
+    observeCarryover?: string;
     temperature?: string;
     extraBody?: string;
     outputFormat?: ReactOutputFormat;
@@ -156,6 +170,7 @@ export const parseReactCli = (argv: string[]): ReactCliOverrides => {
     inputMode: o.input === true ? true : undefined,
     continueMode: o.continue === true ? true : undefined,
     maxStep: parseMaxStepCli(o.maxStep),
+    observeCarryover: parseObserveCarryoverCli(o.observeCarryover),
     temperature: trimmed(o.temperature),
     extraBody: trimmed(o.extraBody),
     outputFormat: o.outputFormat ?? 'terminal'

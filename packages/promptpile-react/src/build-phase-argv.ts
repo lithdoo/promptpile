@@ -63,6 +63,13 @@ export const resolvePhaseConversationRouting = (
     };
   }
   if (phase === 'observe') {
+    if (config.observeCarryover > 0) {
+      return {
+        directories: config.authoritativeReadLayersAbs,
+        outputDirectory: session.workDirectoryAbs,
+        continueMode: true
+      };
+    }
     return {
       directories: [...config.authoritativeReadLayersAbs, session.workDirectoryAbs],
       continueMode: false

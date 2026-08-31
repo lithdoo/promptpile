@@ -20,6 +20,7 @@ try {
   assert.throws(() => buildSharedTomlLayer(load('[promptpile-react]\ncontinue = "true"\n').promptpileReact), /continue must be a boolean/i);
   assert.throws(() => buildSharedTomlLayer(load('[promptpile-react]\ndir = 123\n').promptpileReact), /dir must be a string/i);
   assert.throws(() => buildReactOnlyTomlLayer(load('[promptpile-react]\nmax_step = "3"\n').promptpileReact), /max_step must be an integer/i);
+  assert.throws(() => buildReactOnlyTomlLayer(load('[promptpile-react]\nobserve_carryover = 1.5\n').promptpileReact), /observe_carryover must be an integer/i);
   assert.throws(() => buildReactOnlyTomlLayer(load('[promptpile-react]\nwork_root = 3\n').promptpileReact), /work_root must be a string/i);
   assert.throws(() => buildReactOnlyTomlLayer(load('[promptpile-react]\nthought_llm_api_model = 123\n').promptpileReact), /thought_llm_api_model must be a string/i);
   assert.throws(() => buildReactOnlyTomlLayer(load('[promptpile-react]\nthought_llm_api_extra_body = []\n').promptpileReact), /must be a TOML table/i);

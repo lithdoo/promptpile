@@ -90,6 +90,7 @@ thought_llm_api = "deepseek"
   ]);
   assert.strictEqual(cfg.directoryAbs, msgAbs, 'promptpile-react dir wins over promptpile');
   assert.strictEqual(cfg.maxStep, 3, 'toml max_step is used');
+  assert.strictEqual(cfg.observeCarryover, 0, 'observe carryover defaults to zero');
   assert.strictEqual(cfg.phases.thought.profileName, 'deepseek');
   assert.doesNotMatch(JSON.stringify(cfg), /secret-from-named-env/, 'React does not resolve profile secrets');
   const profileArgv = buildPhaseArgv('thought', cfg);
@@ -116,6 +117,24 @@ thought_llm_api = "deepseek"
   );
   const cfgEnvOnly = resolveReactConfig(tmp, ['node', fakeScript, '--config', 'app.toml']);
   assert.strictEqual(cfgEnvOnly.maxStep, 1, 'default max_step is one and ordinary process.env is ignored');
+
+  fs.writeFileSync(
+    tomlPath,
+    `[promptpile-react]\ndir = "${msgRel}"\nobserve_carryover = 2\n`
+  );
+  const cfgTomlCarryover = resolveReactConfig(tmp, ['node', fakeScript, '--config', 'app.toml']);
+  assert.strictEqual(cfgTomlCarryover.observeCarryover, 2, 'TOML observe_carryover is used');
+  const cfgCliCarryover = resolveReactConfig(tmp, [
+    'node', fakeScript, '--config', 'app.toml', '--observe-carryover', '1'
+  ]);
+  assert.strictEqual(cfgCliCarryover.observeCarryover, 1, 'CLI observe carryover overrides TOML');
+  const carryoverArgv = buildPhaseArgv('observe', cfgCliCarryover);
+  assert.deepStrictEqual(
+    carryoverArgv.slice(0, 4),
+    ['-d', msgAbs, '--output-dir', testSession.workDirectoryAbs],
+    'persisted Observe reads authoritative layers and writes session work'
+  );
+  assert.ok(carryoverArgv.includes('-c'), 'persisted Observe uses continue mode');
 
   const cfgCli = resolveReactConfig(tmp, [
     'node',

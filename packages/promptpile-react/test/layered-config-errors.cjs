@@ -66,6 +66,23 @@ try {
   assert.strictEqual(nestedWork.status, 1);
   assert.match(nestedWork.stderr, /work root is equal to or inside authoritative layer/i);
 
+  const negativeCarryover = runConfig(
+    'negative-carryover',
+    '[promptpile-react]\nobserve_carryover = -1\n'
+  );
+  assert.strictEqual(negativeCarryover.status, 1);
+  assert.match(negativeCarryover.stderr, /observe_carryover must be a non-negative integer/i);
+
+  for (const value of ['1.5', 'not-a-number', '-1']) {
+    const invalidCli = spawnSync(
+      process.execPath,
+      [reactCli, '--observe-carryover', value],
+      { cwd: tmp, encoding: 'utf8' }
+    );
+    assert.strictEqual(invalidCli.status, 1);
+    assert.match(invalidCli.stderr, /--observe-carryover must be a non-negative integer/i);
+  }
+
   const helpRoot = path.join(tmp, 'help-work');
   const help = spawnSync(
     process.execPath,

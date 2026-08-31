@@ -24,6 +24,8 @@ import {
   finalReceiptPath,
   validateFinalReceipt
 } from './final-receipt';
+import { validateCompletionReceiptV1 } from './completion-receipt';
+import { sameDirectory } from './react-path-identity';
 
 /** 子进程阶段共享依赖（不持有 {@link PromptpileReactRuntime} 引用）。 */
 export type ReactProcessContext = {
@@ -31,6 +33,14 @@ export type ReactProcessContext = {
   config: ResolvedReactConfig;
   session: ReactSessionContext;
 };
+
+export interface ObserveReactResult {
+  text: string;
+  persistedAssistantPath?: string;
+}
+
+export const observeInvocationId = (session: ReactSessionContext, stepIndex: number): string =>
+  `${session.sessionId}-observe-${stepIndex}`;
 
 export abstract class ReactProcess {
   protected constructor(protected readonly ctx: ReactProcessContext) {}
@@ -136,15 +146,25 @@ export class ObserveReactProcess extends ReactProcess {
     super(ctx);
   }
 
-  async run(): Promise<string> {
+  async run(stepIndex = 0): Promise<ObserveReactResult> {
     const baseId = `${Date.now()}-${randomBytes(8).toString('hex')}`;
     let injectPath: string | undefined;
     const outPath = path.join(os.tmpdir(), `promptpile-react-observe-out-${baseId}.md`);
     const resolvedOut = path.resolve(outPath);
+    const persist = this.ctx.config.observeCarryover > 0;
+    const expectedInvocationId = persist
+      ? observeInvocationId(this.ctx.session, stepIndex)
+      : undefined;
+    const receiptPath = persist
+      ? path.join(os.tmpdir(), `promptpile-react-observe-receipt-${this.ctx.session.sessionId}-${stepIndex}-${randomBytes(8).toString('hex')}.json`)
+      : undefined;
 
     try {
       const argv = buildPhaseArgv('observe', this.ctx.config, { session: this.ctx.session });
       argv.push('-o', resolvedOut);
+      if (receiptPath !== undefined && expectedInvocationId !== undefined) {
+        argv.push('--invocation-id', expectedInvocationId, '--receipt', receiptPath);
+      }
 
       if (this.observeBody.trim() !== '') {
         injectPath = path.join(
@@ -174,10 +194,52 @@ export class ObserveReactProcess extends ReactProcess {
 
       logObservePhaseLlmOutput(resolvedOut);
       reactDebugLog(`phase=observe text_len=${text.length}`);
-      return text;
+      let persistedAssistantPath: string | undefined;
+      if (receiptPath !== undefined && expectedInvocationId !== undefined) {
+        try {
+          const receipt = validateCompletionReceiptV1({ receiptPath, expectedInvocationId });
+          if (receipt.mainOutput === null || receipt.mainOutput !== resolvedOut) {
+            throw new Error('Observe Completion Receipt mainOutput does not match this invocation output');
+          }
+          if (receipt.assistant === null) {
+            throw new Error('Observe Completion Receipt assistant artifact is missing');
+          }
+          const stat = fs.lstatSync(receipt.assistant);
+          if (!stat.isFile() || stat.isSymbolicLink()) {
+            throw new Error('Observe assistant artifact must be an ordinary file');
+          }
+          const actualParent = fs.realpathSync(path.dirname(receipt.assistant));
+          const expectedParent = fs.realpathSync(this.ctx.session.workDirectoryAbs);
+          if (!sameDirectory(actualParent, expectedParent)) {
+            throw new Error('Observe assistant artifact is outside the session work directory');
+          }
+          const assistantMatch = /^\[(0|[1-9]\d*)\]assistant\.md$/.exec(path.basename(receipt.assistant));
+          if (assistantMatch === null) {
+            throw new Error('Observe assistant artifact has an invalid basename');
+          }
+          const receiptIndex = Number(assistantMatch[1]);
+          const maximumIndex = fs.readdirSync(this.ctx.session.workDirectoryAbs, { withFileTypes: true })
+            .filter(entry => entry.isFile())
+            .map(entry => /^\[(0|[1-9]\d*)\](?:assistant|user|system)\.md$/.exec(entry.name))
+            .filter((match): match is RegExpExecArray => match !== null)
+            .reduce((maximum, match) => Math.max(maximum, Number(match[1])), -1);
+          if (receiptIndex !== maximumIndex) {
+            throw new Error('Observe assistant artifact is not the current Conversation maximum');
+          }
+          persistedAssistantPath = receipt.assistant;
+        } catch (error) {
+          throw new PromptpileReactInvocationError(
+            'observe',
+            error instanceof Error ? error.message : String(error),
+            'internal_error'
+          );
+        }
+      }
+      return { text, persistedAssistantPath };
     } finally {
       this.unlinkQuiet(injectPath);
       this.unlinkQuiet(resolvedOut);
+      this.unlinkQuiet(receiptPath);
     }
   }
 }

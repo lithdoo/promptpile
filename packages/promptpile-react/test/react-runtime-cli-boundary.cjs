@@ -141,6 +141,15 @@ const spawnConfig = {
     assert.ok(observe.includes('--append-files'));
     assert.ok(observe.includes('--disable-tool'));
     assert.ok(!observe.includes('-c'));
+    assert.ok(!observe.includes('--output-dir'));
+    assert.ok(!observe.includes('--receipt'));
+    assert.ok(!observe.includes('--invocation-id'));
+    assert.ok(!fs.existsSync(path.join(work, '.observe_files')));
+    assert.deepStrictEqual(
+      fs.readdirSync(work).filter(name => /^\[\d+\]assistant\.md$/.test(name)),
+      ['[0]assistant.md'],
+      'default carryover=0 persists Thought only'
+    );
 
     assert.ok(check.includes('--insert-files'));
     assert.ok(check.includes('--tools-file'));

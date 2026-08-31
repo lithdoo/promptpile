@@ -45,7 +45,7 @@ const makeRuntime = ({ maxStep = 1, decisions = [false], failAt } = {}) => {
   runtime.reactObserveProcess = async () => {
     calls.push('observe');
     if (failAt === 'observe') throw new Error('observe failed');
-    return 'observation';
+    return { text: 'observation' };
   };
   runtime.reactCheckProcess = async () => {
     calls.push('check');
@@ -110,6 +110,35 @@ const runSession = async runtime => {
     runtime.stopReason = 'error';
     await runtime.finalAnswer();
     assert.deepStrictEqual(calls, []);
+  }
+
+  {
+    const workDirectoryAbs = fs.mkdtempSync(path.join(workRoot, 'retention-failure-'));
+    const session = {
+      sessionId: `fsm-session-${sessionCounter++}`,
+      workRootAbs: workRoot,
+      workDirectoryAbs
+    };
+    const facts = [];
+    const retentionConfig = { ...config(1), observeCarryover: 1 };
+    const runtime = new PromptpileReactRuntime(
+      retentionConfig,
+      session,
+      { command: process.execPath, argvPrefix: [], displayName: 'unused' },
+      {
+        phaseStarted: async fact => { facts.push(`started:${fact.phase}`); },
+        phaseCompleted: async fact => { facts.push(`completed:${fact.phase}`); },
+        finalDelta: async () => undefined
+      }
+    );
+    let checkCalled = false;
+    runtime.reactThoughtProcess = async () => undefined;
+    runtime.reactObserveProcess = async () => ({ text: 'observe without persisted assistant' });
+    runtime.reactCheckProcess = async () => { checkCalled = true; return false; };
+    await runtime.nextStep();
+    assert.strictEqual(runtime.stopReason, 'error');
+    assert.strictEqual(checkCalled, false, 'retention failure prevents Check');
+    assert.ok(!facts.includes('completed:observe'), 'retention failure prevents Observe completion event');
   }
 
   console.log('promptpile-react FSM tests ok');
