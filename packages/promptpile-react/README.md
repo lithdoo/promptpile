@@ -36,6 +36,7 @@ running | final | max_step | error
 - `currentStep` 是成功完成的完整 iteration 数量。
 - 默认 `maxStep=1`；`--max-step N` 要求 `N >= 1`。
 - Check 返回 `false` 时提前进入 `final`；返回 `true` 且达到上限时进入 `max_step`。
+- `max_step_policy=final`（默认）在 `max_step` 后继续执行 Final；`max_step_policy=error` 将其视为未收敛，跳过 Final 并令 session 失败。
 - Thought、Observe 或 Check 失败立即进入 `error`，不会再执行 Final。
 - Final prompt 非空时是 required phase；失败会令进程非零退出。空 Final prompt 会明确跳过。
 - 进程成功退出时，终态只能是 `final` 或 `max_step`。
@@ -59,6 +60,7 @@ promptpile-react -d ./messages --max-step 3 --observe-carryover 1
 | `--output-dir <path>` | 唯一可写 Conversation 层 |
 | `--work-root <path>` | 每次 session 独占 work Conversation 的父目录；默认系统临时目录 |
 | `--max-step <N>` | 最大完整 ReAct iteration 数，默认 1 |
+| `--max-step-policy <final\|error>` | 达到 `max_step` 后执行 Final 或直接失败，默认 `final` |
 | `--observe-carryover <N>` | active work Conversation 中保留的最近 Observe 数；非负整数，默认 0 |
 | `-i, --input` | 从终端读取一次 user message、append 一次、运行一次 session 后退出 |
 | `-c, --continue` | 仅控制 Final 是否写入用户 Conversation；Thought 始终只续写 session work |
@@ -82,6 +84,7 @@ base_url = "https://api.openai.com/v1"
 [promptpile-react]
 dir = "./messages"
 max_step = 3
+max_step_policy = "final"
 observe_carryover = 1
 thought_llm_api = "default"
 observe_llm_api = "default"
@@ -96,6 +99,7 @@ React 不解析 `[[llm_api]]` 内容；profile 存在性和 provider 配置由 P
 - string 字段必须是非空 TOML string；
 - bool 字段必须是 TOML bool；
 - `max_step` 必须是正整数；
+- `max_step_policy` 只允许 `final` 或 `error`；CLI 优先于 TOML，默认值为 `final`；
 - `observe_carryover` 必须是非负整数；CLI 优先于 TOML，默认值为 `0`；
 - `work_root` 必须是非空 string；CLI/TOML 相对路径均相对 invocation cwd；
 - `dirs` 必须是非空 string 数组；
@@ -111,6 +115,8 @@ React 不解析 `[[llm_api]]` 内容；profile 存在性和 provider 配置由 P
 - Observe：读取权威 Conversation 与 work，禁用工具，要求非空的 `-o` 文本输出；最后一次成功 Observe 成为 Final handoff。
 - Check：使用隔离临时 Conversation，只注入 check prompt 与 Observe 报告；要求合法 calls sidecar。
 - Final：只从 `final|max_step` 进入，不读取 work，只读取权威 Conversation 和 `.user.md` Observe handoff；`-c` 时以唯一 Completion Receipt 证明持久化成功。
+
+当 `max_step_policy=error` 且最后一次 Check 仍返回 `true` 时，Final 不会启动。terminal 模式在 stderr 输出诊断并非零退出；`stream-json` 模式以 `session.failed(phase="check", error.code="max_step_exhausted")` 收口，不产生 Final 事件或 `session.completed`。
 
 Check 的通用 ToolCall 结构通过 `promptpile-protocol/tool` 的 `parseToolCallV1` 校验；React 只验证 `react_check_decision` 和 boolean `arguments.decision`。缺失或畸形的 required output 一律失败关闭。
 

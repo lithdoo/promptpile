@@ -1,6 +1,6 @@
 # ReAct Max-Step Policy：终止语义最小改造方案
 
-> 状态：**Implementation-ready / design frozen**（2026-09-01）  
+> 状态：**Implemented / verified**（2026-09-01）  
 > 范围：仅 `packages/promptpile-react`  
 > 目标：在不改变现有 ReAct FSM、Check 协议、默认行为与 Final 语义的前提下，允许调用方选择“达到 `max_step` 后继续 Final”或“达到 `max_step` 后直接失败”。  
 > 默认：`max_step_policy = "final"`，严格保持当前行为。  

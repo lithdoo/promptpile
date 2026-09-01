@@ -41,7 +41,11 @@ try {
   const invoke = args => spawnSync(process.execPath, [cli, ...args], { cwd: consumer, encoding: 'utf8' });
 
   const help = invoke(['--help']);
-  if (help.status !== 0 || !help.stdout.includes('promptpile-react')) {
+  if (
+    help.status !== 0 ||
+    !help.stdout.includes('promptpile-react') ||
+    !help.stdout.includes('--max-step-policy <policy>')
+  ) {
     throw new Error(`packed --help failed:\n${help.stderr}`);
   }
   const version = invoke(['--version']);

@@ -20,6 +20,8 @@ try {
   assert.throws(() => buildSharedTomlLayer(load('[promptpile-react]\ncontinue = "true"\n').promptpileReact), /continue must be a boolean/i);
   assert.throws(() => buildSharedTomlLayer(load('[promptpile-react]\ndir = 123\n').promptpileReact), /dir must be a string/i);
   assert.throws(() => buildReactOnlyTomlLayer(load('[promptpile-react]\nmax_step = "3"\n').promptpileReact), /max_step must be an integer/i);
+  assert.throws(() => buildReactOnlyTomlLayer(load('[promptpile-react]\nmax_step_policy = "retry"\n').promptpileReact), /max_step_policy must be final or error/i);
+  assert.throws(() => buildReactOnlyTomlLayer(load('[promptpile-react]\nmax_step_policy = true\n').promptpileReact), /max_step_policy must be a string/i);
   assert.throws(() => buildReactOnlyTomlLayer(load('[promptpile-react]\nobserve_carryover = 1.5\n').promptpileReact), /observe_carryover must be an integer/i);
   assert.throws(() => buildReactOnlyTomlLayer(load('[promptpile-react]\nwork_root = 3\n').promptpileReact), /work_root must be a string/i);
   assert.throws(() => buildReactOnlyTomlLayer(load('[promptpile-react]\nthought_llm_api_model = 123\n').promptpileReact), /thought_llm_api_model must be a string/i);
@@ -30,6 +32,7 @@ try {
 
   const delegatedProfiles = load('[[llm_api]]\nname = 123\n[promptpile-react]\nmax_step = 1\n');
   assert.strictEqual(buildReactOnlyTomlLayer(delegatedProfiles.promptpileReact).maxStep, 1);
+  assert.strictEqual(buildReactOnlyTomlLayer(load('[promptpile-react]\nmax_step_policy = "error"\n').promptpileReact).maxStepPolicy, 'error');
 
   console.log('promptpile-react strict config tests ok');
 } finally {

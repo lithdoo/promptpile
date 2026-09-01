@@ -15,7 +15,8 @@ const valid = [
   { ...base, type: 'final.delta', content: 'answer' },
   { ...base, type: 'session.completed', stop_reason: 'final', steps_completed: 1, final: { status: 'completed', content: 'answer' } },
   { ...base, type: 'session.completed', stop_reason: 'max_step', steps_completed: 1, final: { status: 'skipped' } },
-  { ...base, type: 'session.failed', phase: 'check', steps_completed: 0, error: { code: 'check_decision_invalid', message: 'invalid' } }
+  { ...base, type: 'session.failed', phase: 'check', steps_completed: 0, error: { code: 'check_decision_invalid', message: 'invalid' } },
+  { ...base, type: 'session.failed', phase: 'check', steps_completed: 1, error: { code: 'max_step_exhausted', message: 'budget exhausted' } }
 ];
 for (const event of valid) assert.strictEqual(validate(event), true, JSON.stringify(validate.errors));
 assert.strictEqual(

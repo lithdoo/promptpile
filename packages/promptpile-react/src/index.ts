@@ -15,11 +15,24 @@ import type { ReactSessionContext, ResolvedReactConfig } from './types';
 import { ReactEventWriterV1 } from './react-event-writer';
 import { cleanupReactSessionWork, createReactSessionWork } from './react-session-work';
 
-async function runOneReactSession(runtime: PromptpileReactRuntime): Promise<void> {
+const MAX_STEP_EXHAUSTED_MESSAGE =
+  'React reached max_step while Check still requested continuation.';
+
+type ReactSessionPolicyResult = 'proceed' | 'max_step_exhausted';
+
+async function runOneReactSession(
+  runtime: PromptpileReactRuntime,
+  config: ResolvedReactConfig
+): Promise<ReactSessionPolicyResult> {
   reactDebugLog('session start maxStep=', String(runtime.maxStep));
   while (runtime.stopReason === 'running') await runtime.nextStep();
+  if (runtime.stopReason === 'max_step' && config.maxStepPolicy === 'error') {
+    reactDebugLog('session end stopReason=', runtime.stopReason);
+    return 'max_step_exhausted';
+  }
   await runtime.finalAnswer();
   reactDebugLog('session end stopReason=', runtime.stopReason);
+  return 'proceed';
 }
 
 const createStreamObserver = (writer: ReactEventWriterV1): ReactRuntimeObserver => ({
@@ -50,7 +63,20 @@ async function runStreamJsonSession(
   const writer = new ReactEventWriterV1();
   await writer.emit({ type: 'session.started', max_steps: config.maxStep });
   const runtime = new PromptpileReactRuntime(config, session, spawn, createStreamObserver(writer));
-  await runOneReactSession(runtime);
+  const policyResult = await runOneReactSession(runtime, config);
+
+  if (policyResult === 'max_step_exhausted') {
+    if (writer.isWritable()) {
+      await writer.emit({
+        type: 'session.failed',
+        phase: 'check',
+        steps_completed: runtime.currentStep,
+        error: { code: 'max_step_exhausted', message: MAX_STEP_EXHAUSTED_MESSAGE }
+      });
+    }
+    process.exitCode = 1;
+    return false;
+  }
 
   if (runtime.stopReason === 'error') {
     const failure = runtime.failure ?? {
@@ -93,7 +119,12 @@ async function runResolvedSession(config: ResolvedReactConfig, spawn: Promptpile
       return;
     }
     const runtime = new PromptpileReactRuntime(config, session, spawn);
-    await runOneReactSession(runtime);
+    const policyResult = await runOneReactSession(runtime, config);
+    if (policyResult === 'max_step_exhausted') {
+      console.error(MAX_STEP_EXHAUSTED_MESSAGE);
+      process.exitCode = 1;
+      return;
+    }
     succeeded = runtime.stopReason !== 'error';
     process.exitCode = succeeded ? 0 : 1;
   } finally {

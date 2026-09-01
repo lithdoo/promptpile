@@ -6,6 +6,7 @@ export type ReactErrorCodeV1 =
   | 'promptpile_exit_nonzero'
   | 'phase_output_missing'
   | 'check_decision_invalid'
+  | 'max_step_exhausted'
   | 'final_stream_invalid'
   | 'internal_error';
 

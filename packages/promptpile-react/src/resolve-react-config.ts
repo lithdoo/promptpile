@@ -241,6 +241,7 @@ export const resolveReactConfig = (cwd: string, argv: string[]): ResolvedReactCo
     console.error('Error: max_step must be a positive integer');
     process.exit(1);
   }
+  const maxStepPolicy = cli.maxStepPolicy ?? reactToml.maxStepPolicy ?? 'final';
 
   const observeCarryover =
     pickInt(
@@ -367,6 +368,7 @@ export const resolveReactConfig = (cwd: string, argv: string[]): ResolvedReactCo
     inputMode,
     continueMode,
     maxStep,
+    maxStepPolicy,
     observeCarryover,
     outputFormat: cli.outputFormat ?? 'terminal',
     toolsFileForCli,

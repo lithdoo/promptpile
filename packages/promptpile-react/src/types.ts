@@ -32,11 +32,13 @@ export interface ReactCliOverrides {
   inputMode?: boolean;
   continueMode?: boolean;
   maxStep?: number;
+  maxStepPolicy?: MaxStepPolicy;
   observeCarryover?: number;
   outputFormat?: ReactOutputFormat;
 }
 
 export type ReactOutputFormat = 'terminal' | 'stream-json';
+export type MaxStepPolicy = 'final' | 'error';
 
 export interface ResolvedReactConfig {
   cwd: string;
@@ -57,6 +59,8 @@ export interface ResolvedReactConfig {
   inputMode: boolean;
   continueMode: boolean;
   maxStep: number;
+  /** Determines whether max_step proceeds to Final or fails the session. */
+  maxStepPolicy: MaxStepPolicy;
   /** Maximum recent persisted Observe turns kept in the active work Conversation. */
   observeCarryover: number;
   outputFormat: ReactOutputFormat;

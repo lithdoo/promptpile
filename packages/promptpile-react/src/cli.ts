@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import fs from 'fs';
 import path from 'path';
-import type { ReactCliOverrides, ReactOutputFormat } from './types';
+import type { MaxStepPolicy, ReactCliOverrides, ReactOutputFormat } from './types';
 
 const packageVersion = (): string => {
   const metadataPath = path.resolve(__dirname, '..', 'package.json');
@@ -58,6 +58,11 @@ const parseOutputFormat = (value: string): ReactOutputFormat => {
   throw new Error('--output-format must be terminal or stream-json');
 };
 
+const parseMaxStepPolicy = (value: string): MaxStepPolicy => {
+  if (value === 'final' || value === 'error') return value;
+  throw new Error('--max-step-policy must be final or error');
+};
+
 const buildProgram = (): Command => {
   const program = new Command();
   program
@@ -96,6 +101,11 @@ const buildProgram = (): Command => {
       'After-success hook for Thought phase only (CLI relative cwd)'
     )
     .option('--max-step <n>', 'Max successful ReAct iterations (this package only)')
+    .option(
+      '--max-step-policy <policy>',
+      'On max_step: run Final or fail (final | error)',
+      parseMaxStepPolicy
+    )
     .option('--observe-carryover <n>', 'Recent Observe turns retained in the active work Conversation')
     .option(
       '--output-format <format>',
@@ -131,6 +141,7 @@ export const parseReactCli = (argv: string[]): ReactCliOverrides => {
     input?: boolean;
     continue?: boolean;
     maxStep?: string;
+    maxStepPolicy?: MaxStepPolicy;
     observeCarryover?: string;
     temperature?: string;
     extraBody?: string;
@@ -170,6 +181,7 @@ export const parseReactCli = (argv: string[]): ReactCliOverrides => {
     inputMode: o.input === true ? true : undefined,
     continueMode: o.continue === true ? true : undefined,
     maxStep: parseMaxStepCli(o.maxStep),
+    maxStepPolicy: o.maxStepPolicy,
     observeCarryover: parseObserveCarryoverCli(o.observeCarryover),
     temperature: trimmed(o.temperature),
     extraBody: trimmed(o.extraBody),
