@@ -1,6 +1,6 @@
 {
   "name": "promptpile-react",
-  "version": "0.1.0-beta.6",
+  "version": "0.1.0-beta.7",
   "description": "在 promptpile 公共 CLI 之上的 ReAct agent 编排",
   "repository": {
     "type": "git",
